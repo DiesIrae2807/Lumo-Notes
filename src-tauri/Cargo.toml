@@ -1,0 +1,18 @@
+[package]
+name = "lumo-notes"
+version = "0.1.0"
+description = "Lumo Notes desktop app"
+authors = ["Lumo Notes"]
+edition = "2021"
+
+[lib]
+name = "lumo_notes_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
