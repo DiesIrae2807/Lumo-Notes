@@ -16,12 +16,14 @@
   html,
   body,
   #root {
+    height: 100%;
     min-height: 100%;
   }
 
   body {
     margin: 0;
     min-width: 320px;
+    overflow: hidden;
     background:
       radial-gradient(circle at 4% 88%, rgba(45, 134, 217, 0.45), transparent 28%),
       radial-gradient(circle at 94% 78%, rgba(117, 58, 216, 0.42), transparent 28%),
@@ -78,9 +80,38 @@
   }
 
   .window-shell {
-    aspect-ratio: 16 / 9;
-    width: min(calc(100dvw - 56px), calc((100dvh - 56px) * 16 / 9), 1640px);
-    max-height: calc(100dvh - 40px);
+    height: 100dvh;
+    width: 100dvw;
+  }
+
+  .custom-titlebar {
+    background:
+      linear-gradient(90deg, rgba(156, 124, 244, 0.12), rgba(89, 213, 202, 0.07) 58%, rgba(8, 12, 22, 0.72)),
+      rgba(8, 12, 22, 0.88);
+    user-select: none;
+  }
+
+  .window-control {
+    display: grid;
+    height: 3rem;
+    width: 3rem;
+    place-items: center;
+    color: rgb(203 213 225);
+    transition: background-color 160ms ease, color 160ms ease;
+  }
+
+  .window-control:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: white;
+  }
+
+  .window-control:active {
+    background: rgba(255, 255, 255, 0.12);
+  }
+
+  .window-control-close:hover {
+    background: rgba(244, 63, 94, 0.9);
+    color: white;
   }
 
   .editor-section {
@@ -171,10 +202,7 @@
 
 @media (max-width: 1023px) {
   .window-shell {
-    aspect-ratio: auto;
-    width: 100%;
-    min-height: auto;
-    overflow: visible;
+    min-height: 100dvh;
   }
 
   .column-panel {
