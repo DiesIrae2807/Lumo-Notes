@@ -1,3 +1,4 @@
+import type { MouseEvent } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Editor } from "./components/Editor";
 import { InsightsPanel } from "./components/InsightsPanel";
@@ -8,7 +9,24 @@ import { BrandMark } from "./components/BrandMark";
 const appWindow = getCurrentWindow();
 
 function WindowTitleBar() {
-  const minimize = () => {
+  const startDragging = (event: MouseEvent<HTMLElement>) => {
+    if (event.button !== 0) {
+      return;
+    }
+
+    if ((event.target as HTMLElement).closest("button")) {
+      return;
+    }
+
+    void appWindow.startDragging();
+  };
+
+  const stopWindowControlEvent = (event: MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+  };
+
+  const minimize = (event: MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
     void appWindow.minimize();
   };
 
@@ -16,7 +34,13 @@ function WindowTitleBar() {
     void appWindow.toggleMaximize();
   };
 
-  const close = () => {
+  const toggleMaximizeFromButton = (event: MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    void appWindow.toggleMaximize();
+  };
+
+  const close = (event: MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
     void appWindow.close();
   };
 
@@ -24,9 +48,10 @@ function WindowTitleBar() {
     <header
       className="custom-titlebar flex h-12 shrink-0 items-center justify-between border-b border-white/[0.08] px-4"
       data-tauri-drag-region
+      onMouseDown={startDragging}
       onDoubleClick={toggleMaximize}
     >
-      <div className="flex items-center gap-3" data-tauri-drag-region>
+      <div className="flex items-center gap-3" data-tauri-drag-region onMouseDown={startDragging}>
         <BrandMark size="sm" />
         <h1 className="select-none text-sm font-semibold text-white" data-tauri-drag-region>
           Lumo <span className="text-lumo-violet">Notes</span>
@@ -37,6 +62,8 @@ function WindowTitleBar() {
           className="window-control"
           type="button"
           aria-label="Minimize window"
+          onMouseDown={stopWindowControlEvent}
+          onDoubleClick={stopWindowControlEvent}
           onClick={minimize}
         >
           <span className="h-px w-3.5 bg-current" />
@@ -45,7 +72,9 @@ function WindowTitleBar() {
           className="window-control"
           type="button"
           aria-label="Maximize or restore window"
-          onClick={toggleMaximize}
+          onMouseDown={stopWindowControlEvent}
+          onDoubleClick={stopWindowControlEvent}
+          onClick={toggleMaximizeFromButton}
         >
           <span className="h-3 w-3 rounded-[2px] border border-current" />
         </button>
@@ -53,6 +82,8 @@ function WindowTitleBar() {
           className="window-control window-control-close"
           type="button"
           aria-label="Close window"
+          onMouseDown={stopWindowControlEvent}
+          onDoubleClick={stopWindowControlEvent}
           onClick={close}
         >
           <span className="relative h-4 w-4">
