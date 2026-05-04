@@ -2,12 +2,14 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
   type ReactNode,
 } from "react";
-import { folders, starterNotes } from "../data/initialNotes";
-import type { Note, SidebarView } from "../types/note";
+import { folders as fallbackFolders } from "../data/initialNotes";
+import * as database from "../services/database";
+import type { Folder, Note, SidebarView } from "../types/note";
 
 type NotesContextValue = {
   notes: Note[];
@@ -17,9 +19,11 @@ type NotesContextValue = {
   activeFolderId: string | null;
   activeTag: string | null;
   activeView: SidebarView;
-  folders: typeof folders;
+  folders: Folder[];
   availableTags: string[];
   filteredNotes: Note[];
+  databaseError: string | null;
+  isDatabaseLoading: boolean;
   createNote: () => void;
   selectNote: (id: string) => void;
   updateSelectedNote: (changes: Partial<Pick<Note, "title" | "content" | "preview">>) => void;
@@ -50,23 +54,61 @@ const sortByUpdated = (notes: Note[]) =>
   );
 
 export function NotesProvider({ children }: { children: ReactNode }) {
-  const [notes, setNotes] = useState<Note[]>(starterNotes);
-  const [selectedNoteId, setSelectedNoteId] = useState<string | null>(
-    starterNotes[0]?.id ?? null,
-  );
+  const [notes, setNotes] = useState<Note[]>([]);
+  const [folders, setFolders] = useState<Folder[]>(fallbackFolders);
+  const [databaseTags, setDatabaseTags] = useState<string[]>([]);
+  const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeView, setActiveViewState] = useState<SidebarView>("all");
   const [activeFolderId, setActiveFolderIdState] = useState<string | null>(null);
   const [activeTag, setActiveTagState] = useState<string | null>(null);
+  const [isDatabaseLoading, setIsDatabaseLoading] = useState(true);
+  const [databaseError, setDatabaseError] = useState<string | null>(null);
 
   const selectedNote = notes.find((note) => note.id === selectedNoteId) ?? null;
 
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadDatabase() {
+      try {
+        const snapshot = await database.initializeDatabase();
+
+        if (!isMounted) {
+          return;
+        }
+
+        setNotes(snapshot.notes);
+        setFolders(snapshot.folders.length > 0 ? snapshot.folders : fallbackFolders);
+        setDatabaseTags(snapshot.tags);
+        setSelectedNoteId(snapshot.notes.find((note) => !note.isDeleted)?.id ?? snapshot.notes[0]?.id ?? null);
+        setDatabaseError(null);
+      } catch (error) {
+        if (!isMounted) {
+          return;
+        }
+
+        setDatabaseError(error instanceof Error ? error.message : String(error));
+      } finally {
+        if (isMounted) {
+          setIsDatabaseLoading(false);
+        }
+      }
+    }
+
+    void loadDatabase();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   const availableTags = useMemo(
     () =>
-      Array.from(new Set(notes.flatMap((note) => note.tags))).sort((a, b) =>
+      Array.from(new Set([...databaseTags, ...notes.flatMap((note) => note.tags)])).sort((a, b) =>
         a.localeCompare(b),
       ),
-    [notes],
+    [databaseTags, notes],
   );
 
   const filteredNotes = useMemo(() => {
@@ -133,41 +175,44 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       updatedAt: now,
     };
 
+    void database.createNote(newNote).catch((error) => {
+      setDatabaseError(error instanceof Error ? error.message : String(error));
+    });
     setNotes((current) => [newNote, ...current]);
     setSelectedNoteId(newNote.id);
     setActiveViewState("all");
     setActiveFolderIdState(null);
     setActiveTagState(null);
     setSearchQuery("");
-  }, []);
+  }, [folders]);
 
   const updateSelectedNote = useCallback(
     (changes: Partial<Pick<Note, "title" | "content" | "preview">>) => {
-      if (!selectedNoteId) {
+      if (!selectedNote) {
         return;
       }
 
+      const content = changes.content ?? selectedNote.content;
+      const nextPreview =
+        changes.content !== undefined
+          ? makePreview(content)
+          : changes.preview ?? selectedNote.preview;
+      const updatedNote: Note = {
+        ...selectedNote,
+        ...changes,
+        content,
+        preview: nextPreview,
+        updatedAt: new Date().toISOString(),
+      };
+
       setNotes((current) =>
-        current.map((note) => {
-          if (note.id !== selectedNoteId) {
-            return note;
-          }
-
-          const content = changes.content ?? note.content;
-          const nextPreview =
-            changes.content !== undefined ? makePreview(content) : changes.preview ?? note.preview;
-
-          return {
-            ...note,
-            ...changes,
-            content,
-            preview: nextPreview,
-            updatedAt: new Date().toISOString(),
-          };
-        }),
+        current.map((note) => (note.id === updatedNote.id ? updatedNote : note)),
       );
+      void database.updateNote(updatedNote).catch((error) => {
+        setDatabaseError(error instanceof Error ? error.message : String(error));
+      });
     },
-    [selectedNoteId],
+    [selectedNote],
   );
 
   const updateNoteById = useCallback((id: string, updater: (note: Note) => Note) => {
@@ -176,34 +221,54 @@ export function NotesProvider({ children }: { children: ReactNode }) {
 
   const toggleFavorite = useCallback(
     (id: string) => {
+      const target = notes.find((note) => note.id === id);
+      if (!target) return;
+      const updatedAt = new Date().toISOString();
+      const isFavorite = !target.isFavorite;
+
       updateNoteById(id, (note) => ({
         ...note,
-        isFavorite: !note.isFavorite,
-        updatedAt: new Date().toISOString(),
+        isFavorite,
+        updatedAt,
       }));
+      void database.toggleFavorite(id, isFavorite, updatedAt).catch((error) => {
+        setDatabaseError(error instanceof Error ? error.message : String(error));
+      });
     },
-    [updateNoteById],
+    [notes, updateNoteById],
   );
 
   const togglePinned = useCallback(
     (id: string) => {
+      const target = notes.find((note) => note.id === id);
+      if (!target) return;
+      const updatedAt = new Date().toISOString();
+      const isPinned = !target.isPinned;
+
       updateNoteById(id, (note) => ({
         ...note,
-        isPinned: !note.isPinned,
-        updatedAt: new Date().toISOString(),
+        isPinned,
+        updatedAt,
       }));
+      void database.togglePinned(id, isPinned, updatedAt).catch((error) => {
+        setDatabaseError(error instanceof Error ? error.message : String(error));
+      });
     },
-    [updateNoteById],
+    [notes, updateNoteById],
   );
 
   const moveToTrash = useCallback(
     (id: string) => {
+      const updatedAt = new Date().toISOString();
       updateNoteById(id, (note) => ({
         ...note,
         isDeleted: true,
         isPinned: false,
-        updatedAt: new Date().toISOString(),
+        updatedAt,
       }));
+      void database.softDeleteNote(id, updatedAt).catch((error) => {
+        setDatabaseError(error instanceof Error ? error.message : String(error));
+      });
       setActiveViewState("trash");
     },
     [updateNoteById],
@@ -211,11 +276,15 @@ export function NotesProvider({ children }: { children: ReactNode }) {
 
   const restoreNote = useCallback(
     (id: string) => {
+      const updatedAt = new Date().toISOString();
       updateNoteById(id, (note) => ({
         ...note,
         isDeleted: false,
-        updatedAt: new Date().toISOString(),
+        updatedAt,
       }));
+      void database.restoreNote(id, updatedAt).catch((error) => {
+        setDatabaseError(error instanceof Error ? error.message : String(error));
+      });
       setActiveViewState("all");
     },
     [updateNoteById],
@@ -251,6 +320,8 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       folders,
       availableTags,
       filteredNotes,
+      databaseError,
+      isDatabaseLoading,
       createNote,
       selectNote: setSelectedNoteId,
       updateSelectedNote,
@@ -269,7 +340,10 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       activeView,
       availableTags,
       createNote,
+      databaseError,
       filteredNotes,
+      folders,
+      isDatabaseLoading,
       moveToTrash,
       notes,
       restoreNote,
@@ -284,6 +358,27 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       updateSelectedNote,
     ],
   );
+
+  if (isDatabaseLoading) {
+    return (
+      <div className="grid min-h-[100dvh] place-items-center bg-night-950 text-slate-300">
+        <div className="rounded-2xl border border-white/10 bg-white/[0.035] px-6 py-5 text-sm">
+          Opening local notes...
+        </div>
+      </div>
+    );
+  }
+
+  if (databaseError && notes.length === 0) {
+    return (
+      <div className="grid min-h-[100dvh] place-items-center bg-night-950 px-6 text-slate-300">
+        <div className="max-w-md rounded-2xl border border-rose-400/25 bg-rose-400/[0.06] p-6">
+          <p className="font-medium text-white">Could not open local database</p>
+          <p className="mt-3 text-sm leading-6 text-slate-400">{databaseError}</p>
+        </div>
+      </div>
+    );
+  }
 
   return <NotesContext.Provider value={value}>{children}</NotesContext.Provider>;
 }
