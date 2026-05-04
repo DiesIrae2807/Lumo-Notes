@@ -1,35 +1,77 @@
-const goals = [
-  "Delightful and minimal experience",
-  "Powerful linking and knowledge capture",
-  "Clear structure across devices",
-  "Private, focused, and reliable",
-];
+import { useNotes } from "../store/notesStore";
 
-const roadmap = [
-  { label: "Define MVP scope", checked: true },
-  { label: "User research", checked: true },
-  { label: "Wireframes and prototype", checked: false },
-  { label: "Build core linking experience", checked: false },
-  { label: "Beta release", checked: false },
-];
+const editorTools = ["B", "I", "U", "List", "Bullets", "Link", "Code", "Image", "Grid"];
 
-export function Editor() {
+const wordCount = (content: string) =>
+  content.trim() ? content.trim().split(/\s+/).length : 0;
+
+function EmptyEditor() {
   return (
     <main className="column-panel editor-glow flex min-h-0 flex-col overflow-hidden">
       <div className="flex items-center justify-between border-b border-white/10 px-6 py-4">
-        <div className="flex items-center gap-2 text-sm text-slate-400">
-          <span className="h-2 w-2 rounded-full bg-lumo-blue" />
-          <span>Work</span>
-          <span>/</span>
-          <span className="font-medium text-lumo-violet">Project Aurora</span>
-          <span className="ml-2 text-amber-300">★</span>
+        <div className="text-sm text-slate-500">No note selected</div>
+      </div>
+      <div className="grid flex-1 place-items-center px-8 text-center">
+        <div className="max-w-sm rounded-2xl border border-dashed border-white/10 bg-white/[0.025] p-8">
+          <p className="text-base font-medium text-white">Select or create a note</p>
+          <p className="mt-3 text-sm leading-6 text-slate-500">
+            Choose a note from the list, or create a new one to start editing locally.
+          </p>
         </div>
-        <div className="flex items-center gap-2 text-xs text-slate-500">
-          <button className="rounded-lg px-3 py-1.5 transition hover:bg-white/[0.05] hover:text-slate-300 active:scale-95">
-            Saved
+      </div>
+    </main>
+  );
+}
+
+export function Editor() {
+  const {
+    moveToTrash,
+    restoreNote,
+    selectedNote,
+    toggleFavorite,
+    togglePinned,
+    updateSelectedNote,
+  } = useNotes();
+
+  if (!selectedNote) {
+    return <EmptyEditor />;
+  }
+
+  return (
+    <main className="column-panel editor-glow flex min-h-0 flex-col overflow-hidden">
+      <div className="flex items-center justify-between border-b border-white/10 px-6 py-4">
+        <div className="flex min-w-0 items-center gap-2 text-sm text-slate-400">
+          <span className="h-2 w-2 shrink-0 rounded-full bg-lumo-blue" />
+          <span className="truncate">{selectedNote.folderName}</span>
+          <span>/</span>
+          <span className="truncate font-medium text-lumo-violet">
+            {selectedNote.title || "Untitled Note"}
+          </span>
+        </div>
+        <div className="flex items-center gap-1 text-xs text-slate-500">
+          <button
+            className={`rounded-lg px-3 py-1.5 transition hover:bg-white/[0.05] hover:text-slate-300 active:scale-95 ${
+              selectedNote.isFavorite ? "text-amber-300" : ""
+            }`}
+            onClick={() => toggleFavorite(selectedNote.id)}
+          >
+            {selectedNote.isFavorite ? "Favorited" : "Favorite"}
           </button>
-          <button className="grid h-8 w-8 place-items-center rounded-lg transition hover:bg-white/[0.05] hover:text-white active:scale-95">
-            +
+          <button
+            className={`rounded-lg px-3 py-1.5 transition hover:bg-white/[0.05] hover:text-slate-300 active:scale-95 ${
+              selectedNote.isPinned ? "text-lumo-teal" : ""
+            }`}
+            onClick={() => togglePinned(selectedNote.id)}
+          >
+            {selectedNote.isPinned ? "Pinned" : "Pin"}
+          </button>
+          <button
+            className="rounded-lg px-3 py-1.5 transition hover:bg-white/[0.05] hover:text-slate-300 active:scale-95"
+            onClick={() =>
+              selectedNote.isDeleted ? restoreNote(selectedNote.id) : moveToTrash(selectedNote.id)
+            }
+          >
+            {selectedNote.isDeleted ? "Restore" : "Delete"}
           </button>
         </div>
       </div>
@@ -38,55 +80,28 @@ export function Editor() {
         <div className="mx-auto max-w-3xl">
           <div className="mb-7">
             <div className="mb-4 grid h-7 w-7 place-items-center text-xl text-lumo-violet">
-              ✧
+              *
             </div>
-            <h2 className="text-3xl font-semibold tracking-tight text-white md:text-4xl">
-              Project Aurora
-            </h2>
-            <p className="mt-3 text-base text-slate-300">
-              Product vision, goals, and roadmap
-            </p>
+            <input
+              className="w-full border-none bg-transparent text-3xl font-semibold tracking-tight text-white outline-none placeholder:text-slate-600 md:text-4xl"
+              value={selectedNote.title}
+              onChange={(event) => updateSelectedNote({ title: event.target.value })}
+              placeholder="Untitled Note"
+            />
+            <input
+              className="mt-3 w-full border-none bg-transparent text-base text-slate-300 outline-none placeholder:text-slate-600"
+              value={selectedNote.preview}
+              onChange={(event) => updateSelectedNote({ preview: event.target.value })}
+              placeholder="Short preview or subtitle"
+            />
           </div>
 
-          <section className="editor-section">
-            <h3>Vision</h3>
-            <p>
-              Create a calm, intelligent note-taking experience that helps people
-              think clearly and stay connected.
-            </p>
-          </section>
-
-          <section className="editor-section">
-            <h3>Goals</h3>
-            <ul className="space-y-2">
-              {goals.map((goal) => (
-                <li key={goal} className="flex gap-3 text-slate-300">
-                  <span className="mt-2 h-1.5 w-1.5 rounded-full bg-lumo-teal" />
-                  <span>{goal}</span>
-                </li>
-              ))}
-            </ul>
-          </section>
-
-          <section className="editor-section">
-            <h3>Roadmap</h3>
-            <div className="space-y-3">
-              {roadmap.map((item) => (
-                <label key={item.label} className="flex items-center gap-3 text-slate-300">
-                  <span
-                    className={`grid h-5 w-5 place-items-center rounded-md border ${
-                      item.checked
-                        ? "border-lumo-teal bg-lumo-teal text-night-950"
-                        : "border-slate-600 bg-white/[0.03]"
-                    }`}
-                  >
-                    {item.checked ? <span className="h-1.5 w-2.5 rotate-[-45deg] border-b-2 border-l-2 border-night-950" /> : null}
-                  </span>
-                  <span>{item.label}</span>
-                </label>
-              ))}
-            </div>
-          </section>
+          <textarea
+            className="min-h-[360px] w-full resize-none rounded-xl border border-white/10 bg-night-950/20 p-4 text-base leading-8 text-slate-200 outline-none transition placeholder:text-slate-600 focus:border-lumo-teal/35 focus:bg-night-950/35"
+            value={selectedNote.content}
+            onChange={(event) => updateSelectedNote({ content: event.target.value })}
+            placeholder="Start writing..."
+          />
 
           <div className="aurora-card mt-7 overflow-hidden rounded-xl border border-white/10 bg-white/[0.04]">
             <div className="aurora-landscape h-44 md:h-52" />
@@ -96,7 +111,7 @@ export function Editor() {
 
       <div className="flex items-center justify-between border-t border-white/10 px-6 py-3 text-slate-400">
         <div className="flex items-center gap-1">
-          {["B", "I", "U", "List", "Bullets", "Link", "Code", "Image", "Grid"].map((tool) => (
+          {editorTools.map((tool) => (
             <button
               key={tool}
               className="rounded-lg px-3 py-2 text-xs transition hover:bg-white/[0.05] hover:text-white active:scale-95"
@@ -105,7 +120,7 @@ export function Editor() {
             </button>
           ))}
         </div>
-        <span className="text-xs text-slate-300">1,345 words</span>
+        <span className="text-xs text-slate-300">{wordCount(selectedNote.content)} words</span>
       </div>
     </main>
   );

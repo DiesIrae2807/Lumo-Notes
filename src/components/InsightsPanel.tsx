@@ -1,5 +1,5 @@
-import { relatedNotes } from "../data/mockData";
 import { SectionHeader } from "./SectionHeader";
+import { useNotes } from "../store/notesStore";
 
 const accentMap = {
   violet: "bg-lumo-violet",
@@ -8,6 +8,11 @@ const accentMap = {
 } as const;
 
 export function InsightsPanel() {
+  const { notes, selectedNote, selectNote } = useNotes();
+  const relatedNotes = notes
+    .filter((note) => note.id !== selectedNote?.id && !note.isDeleted)
+    .slice(0, 3);
+
   return (
     <aside className="column-panel hidden min-h-0 flex-col overflow-hidden xl:flex">
       <div className="flex items-center justify-between border-b border-white/10 px-4 pt-4">
@@ -28,15 +33,21 @@ export function InsightsPanel() {
         <section className="insight-card">
           <h3 className="text-sm font-semibold text-white">Summary</h3>
           <p className="mt-4 text-sm leading-6 text-slate-300">
-            Project Aurora aims to deliver a beautiful note-taking workspace with
-            strong focus on simplicity, linking, and privacy.
+            {selectedNote
+              ? selectedNote.preview || "This note does not have a preview yet."
+              : "Select a note to see contextual details."}
           </p>
         </section>
 
         <section className="insight-card">
           <h3 className="text-sm font-semibold text-white">Key Points</h3>
           <div className="mt-4 space-y-3 text-sm text-slate-300">
-            {["Vision: Calm, intelligent, connected", "Goals: Minimal, powerful, seamless, secure", "Focus: Planning and research", "Next: MVP and user research"].map((point) => (
+            {[
+              `Folder: ${selectedNote?.folderName ?? "None"}`,
+              `Tags: ${selectedNote?.tags.join(", ") || "None"}`,
+              `Status: ${selectedNote?.isDeleted ? "In Trash" : "Active"}`,
+              `Pinned: ${selectedNote?.isPinned ? "Yes" : "No"}`,
+            ].map((point) => (
               <p key={point} className="flex gap-2">
                 <span className="mt-2 h-1.5 w-1.5 rounded-full bg-lumo-teal" />
                 <span>{point}</span>
@@ -48,14 +59,24 @@ export function InsightsPanel() {
         <section className="insight-card">
           <SectionHeader title="Related Notes" />
           <div className="mt-4 space-y-2">
-            {relatedNotes.map((note) => (
+            {relatedNotes.length === 0 ? (
+              <p className="text-xs leading-5 text-slate-500">No related local notes yet.</p>
+            ) : null}
+            {relatedNotes.map((note, index) => (
               <button
-                key={note.title}
+                key={note.id}
+                onClick={() => selectNote(note.id)}
                 className="flex w-full items-center gap-3 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-left transition hover:border-lumo-violet/25 hover:bg-white/[0.06] active:scale-[0.99]"
               >
-                <span className={`h-5 w-5 rounded-md ${accentMap[note.accent]}`} />
-                <span className="min-w-0 flex-1 truncate text-xs text-slate-300">{note.title}</span>
-                <span className="text-[11px] text-slate-500">{note.time}</span>
+                <span
+                  className={`h-5 w-5 rounded-md ${
+                    index === 0 ? accentMap.violet : index === 1 ? accentMap.teal : accentMap.rose
+                  }`}
+                />
+                <span className="min-w-0 flex-1 truncate text-xs text-slate-300">
+                  {note.title || "Untitled Note"}
+                </span>
+                <span className="text-[11px] text-slate-500">{note.folderName}</span>
               </button>
             ))}
           </div>

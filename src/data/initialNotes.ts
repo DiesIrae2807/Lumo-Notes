@@ -1,0 +1,136 @@
+import type { Folder, Note } from "../types/note";
+
+const now = Date.now();
+
+const timestamp = (offsetMs: number) => new Date(now - offsetMs).toISOString();
+
+export const folders: Folder[] = [
+  { id: "projects", name: "Projects", colorClass: "bg-lumo-violet" },
+  { id: "personal", name: "Personal", colorClass: "bg-lumo-teal" },
+  { id: "ideas", name: "Ideas", colorClass: "bg-emerald-300" },
+  { id: "learning", name: "Learning", colorClass: "bg-violet-400" },
+  { id: "archive", name: "Archive", colorClass: "bg-indigo-200" },
+];
+
+export const starterNotes: Note[] = [
+  {
+    id: "note-project-aurora",
+    title: "Project Aurora",
+    content:
+      "Vision\nCreate a calm, intelligent note-taking experience that helps people think clearly and stay connected.\n\nGoals\nDelightful and minimal experience\nPowerful linking and knowledge capture\nClear structure across devices\nPrivate, focused, and reliable\n\nRoadmap\nDefine MVP scope\nUser research\nWireframes and prototype\nBuild core linking experience\nBeta release",
+    preview: "Product vision, goals, and roadmap",
+    folderId: "projects",
+    folderName: "Projects",
+    tags: ["work", "product"],
+    isPinned: true,
+    isFavorite: true,
+    isDeleted: false,
+    createdAt: timestamp(1000 * 60 * 60 * 24 * 9),
+    updatedAt: timestamp(1000 * 60 * 2),
+  },
+  {
+    id: "note-branding-ideas",
+    title: "Branding Ideas",
+    content:
+      "Color, typography, style, and moodboard notes for the next Lumo identity pass.",
+    preview: "Color, typography, style, moodboard",
+    folderId: "personal",
+    folderName: "Personal",
+    tags: ["design", "personal"],
+    isPinned: true,
+    isFavorite: false,
+    isDeleted: false,
+    createdAt: timestamp(1000 * 60 * 60 * 24 * 5),
+    updatedAt: timestamp(1000 * 60 * 60),
+  },
+  {
+    id: "note-design-system",
+    title: "Design system exploration",
+    content:
+      "Explore compact panels, restrained color tokens, focus states, and editor controls.",
+    preview: "Color, typography, components",
+    folderId: "projects",
+    folderName: "Projects",
+    tags: ["design", "product"],
+    isPinned: false,
+    isFavorite: false,
+    isDeleted: false,
+    createdAt: timestamp(1000 * 60 * 60 * 24 * 3),
+    updatedAt: timestamp(1000 * 60 * 60 * 3),
+  },
+  {
+    id: "note-user-interviews",
+    title: "User interviews",
+    content:
+      "People want capture to feel fast, calm, and reliable. Organization should emerge without heavy setup.",
+    preview: "What users need, learnings, gratitude",
+    folderId: "personal",
+    folderName: "Personal",
+    tags: ["personal", "product"],
+    isPinned: false,
+    isFavorite: true,
+    isDeleted: false,
+    createdAt: timestamp(1000 * 60 * 60 * 24 * 2),
+    updatedAt: timestamp(1000 * 60 * 60 * 5),
+  },
+  {
+    id: "note-marketing-strategy",
+    title: "Marketing strategy",
+    content:
+      "Positioning, messaging, and channels for the first public Lumo Notes story.",
+    preview: "Positioning, messaging, channels",
+    folderId: "projects",
+    folderName: "Projects",
+    tags: ["work", "planning"],
+    isPinned: false,
+    isFavorite: false,
+    isDeleted: false,
+    createdAt: timestamp(1000 * 60 * 60 * 24 * 4),
+    updatedAt: timestamp(1000 * 60 * 60 * 24),
+  },
+  {
+    id: "note-user-research",
+    title: "User research synthesis",
+    content:
+      "Insights from interviews and surveys. The strongest request is lower friction around daily notes.",
+    preview: "Insights from interviews and surveys",
+    folderId: "learning",
+    folderName: "Learning",
+    tags: ["product", "learning"],
+    isPinned: false,
+    isFavorite: true,
+    isDeleted: false,
+    createdAt: timestamp(1000 * 60 * 60 * 24 * 7),
+    updatedAt: timestamp(1000 * 60 * 60 * 24 * 2),
+  },
+  {
+    id: "note-wireframe",
+    title: "Project Aurora - Wireframe",
+    content:
+      "Design system, new flows, and tasks for the editor, navigation, and note creation paths.",
+    preview: "Design system, new flows, and tasks",
+    folderId: "projects",
+    folderName: "Projects",
+    tags: ["work", "design"],
+    isPinned: false,
+    isFavorite: false,
+    isDeleted: false,
+    createdAt: timestamp(1000 * 60 * 60 * 24 * 8),
+    updatedAt: timestamp(1000 * 60 * 60 * 24 * 14),
+  },
+  {
+    id: "note-ideas-backlog",
+    title: "Ideas backlog",
+    content:
+      "Future ideas and inspiration. Keep this intentionally loose until a pattern appears.",
+    preview: "Future ideas and inspiration",
+    folderId: "ideas",
+    folderName: "Ideas",
+    tags: ["ideas", "planning"],
+    isPinned: false,
+    isFavorite: false,
+    isDeleted: false,
+    createdAt: timestamp(1000 * 60 * 60 * 24 * 24),
+    updatedAt: timestamp(1000 * 60 * 60 * 24 * 24),
+  },
+];

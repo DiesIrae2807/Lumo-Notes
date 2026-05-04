@@ -5,6 +5,7 @@ import { InsightsPanel } from "./components/InsightsPanel";
 import { NotesList } from "./components/NotesList";
 import { Sidebar } from "./components/Sidebar";
 import { BrandMark } from "./components/BrandMark";
+import { NotesProvider } from "./store/notesStore";
 
 const appWindow = getCurrentWindow();
 
@@ -98,22 +99,24 @@ function WindowTitleBar() {
 
 export default function App() {
   return (
-    <div className="app-root min-h-[100dvh] overflow-hidden bg-night-950 text-slate-100">
-      <div className="fixed inset-0 pointer-events-none">
-        <div className="absolute -left-24 top-12 h-80 w-80 rounded-full bg-lumo-violet/18 blur-3xl" />
-        <div className="absolute right-0 top-0 h-96 w-96 rounded-full bg-lumo-teal/14 blur-3xl" />
-        <div className="absolute bottom-0 left-1/3 h-72 w-72 rounded-full bg-blue-500/10 blur-3xl" />
-      </div>
+    <NotesProvider>
+      <div className="app-root min-h-[100dvh] overflow-hidden bg-night-950 text-slate-100">
+        <div className="fixed inset-0 pointer-events-none">
+          <div className="absolute -left-24 top-12 h-80 w-80 rounded-full bg-lumo-violet/18 blur-3xl" />
+          <div className="absolute right-0 top-0 h-96 w-96 rounded-full bg-lumo-teal/14 blur-3xl" />
+          <div className="absolute bottom-0 left-1/3 h-72 w-72 rounded-full bg-blue-500/10 blur-3xl" />
+        </div>
 
-      <div className="window-shell relative flex min-h-[100dvh] flex-col overflow-hidden bg-night-900/62 backdrop-blur-xl">
-        <WindowTitleBar />
-        <div className="workspace-grid grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[235px_330px_minmax(460px,1fr)] xl:grid-cols-[235px_330px_minmax(520px,1fr)_280px]">
-          <Sidebar />
-          <NotesList />
-          <Editor />
-          <InsightsPanel />
+        <div className="window-shell relative flex min-h-[100dvh] flex-col overflow-hidden bg-night-900/62 backdrop-blur-xl">
+          <WindowTitleBar />
+          <div className="workspace-grid grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[235px_330px_minmax(460px,1fr)] xl:grid-cols-[235px_330px_minmax(520px,1fr)_280px]">
+            <Sidebar />
+            <NotesList />
+            <Editor />
+            <InsightsPanel />
+          </div>
         </div>
       </div>
-    </div>
+    </NotesProvider>
   );
 }
