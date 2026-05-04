@@ -7,7 +7,6 @@ const navGlyphs: Record<string, string> = {
   "All Notes": "A",
   Favorites: "F",
   Recent: "R",
-  Starred: "S",
   Trash: "T",
 };
 
@@ -15,7 +14,6 @@ const navItems: Array<{ label: string; view: SidebarView }> = [
   { label: "All Notes", view: "all" },
   { label: "Favorites", view: "favorites" },
   { label: "Recent", view: "recent" },
-  { label: "Starred", view: "favorites" },
   { label: "Trash", view: "trash" },
 ];
 
