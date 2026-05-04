@@ -103,9 +103,6 @@ export function Editor() {
             placeholder="Start writing..."
           />
 
-          <div className="aurora-card mt-7 overflow-hidden rounded-xl border border-white/10 bg-white/[0.04]">
-            <div className="aurora-landscape h-44 md:h-52" />
-          </div>
         </div>
       </article>
 
