@@ -30,9 +30,9 @@ export default function App() {
         <div className="absolute bottom-0 left-1/3 h-72 w-72 rounded-full bg-blue-500/10 blur-3xl" />
       </div>
 
-      <div className="relative mx-auto flex min-h-[100dvh] max-w-[1580px] flex-col p-4 md:p-5">
+      <div className="relative mx-auto grid min-h-[100dvh] place-items-center p-4 md:p-5">
         <MobileHeader />
-        <div className="window-shell grid flex-1 min-h-0 grid-cols-1 gap-3 overflow-hidden rounded-[28px] border border-white/15 bg-night-900/60 p-3 shadow-[0_30px_120px_-70px_rgba(89,213,202,0.55)] backdrop-blur-xl lg:grid-cols-[240px_minmax(280px,340px)_minmax(440px,1fr)] xl:grid-cols-[240px_minmax(300px,360px)_minmax(480px,1fr)_300px]">
+        <div className="window-shell grid min-h-0 grid-cols-1 gap-3 overflow-hidden rounded-[28px] border border-white/15 bg-night-900/60 p-3 shadow-[0_30px_120px_-70px_rgba(89,213,202,0.55)] backdrop-blur-xl lg:grid-cols-[220px_310px_minmax(420px,1fr)] xl:grid-cols-[220px_310px_minmax(450px,1fr)_270px]">
           <Sidebar />
           <NotesList />
           <Editor />
