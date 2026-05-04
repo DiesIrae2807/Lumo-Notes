@@ -26,7 +26,7 @@ export const navigation: NavItem[] = [
   { label: "All Notes", count: 128, active: true },
   { label: "Favorites", count: 16 },
   { label: "Recent" },
-  { label: "Shared", count: 8 },
+  { label: "Starred", count: 8 },
   { label: "Trash" },
 ];
 
@@ -44,7 +44,7 @@ export const tags: Tag[] = [
   { label: "design" },
   { label: "personal" },
   { label: "ideas" },
-  { label: "learning" },
+  { label: "planning" },
 ];
 
 export const pinnedNotes: Note[] = [
@@ -57,8 +57,8 @@ export const pinnedNotes: Note[] = [
     active: true,
   },
   {
-    title: "Reading Notes",
-    preview: "Atomic Habits - key takeaways",
+    title: "Branding Ideas",
+    preview: "Color, typography, style, moodboard",
     tag: "Personal",
     time: "1h ago",
     accent: "rose",
@@ -74,8 +74,8 @@ export const todayNotes: Note[] = [
     accent: "amber",
   },
   {
-    title: "Daily reflections",
-    preview: "What went well, learnings, gratitude",
+    title: "User interviews",
+    preview: "What users need, learnings, gratitude",
     tag: "Personal",
     time: "5h ago",
     accent: "teal",
@@ -98,17 +98,17 @@ export const weekNotes: Note[] = [
     accent: "rose",
   },
   {
-    title: "Project Aurora - Milestone 2",
-    preview: "Design system, user flows, and tasks",
+    title: "Project Aurora - Wireframe",
+    preview: "Design system, new flows, and tasks",
     tag: "Work",
     time: "Apr 20",
     accent: "teal",
   },
   {
     title: "Ideas backlog",
-    preview: "Raw ideas and inspiration",
+    preview: "Future ideas and inspiration",
     tag: "Ideas",
-    time: "Apr 18",
+    time: "Apr 10",
     accent: "teal",
   },
 ];
