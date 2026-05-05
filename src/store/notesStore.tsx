@@ -31,6 +31,15 @@ type NotesContextValue = {
   togglePinned: (id: string) => void;
   moveToTrash: (id: string) => void;
   restoreNote: (id: string) => void;
+  createFolder: (name: string) => void;
+  renameFolder: (id: string, name: string) => void;
+  deleteFolder: (id: string) => void;
+  setSelectedNoteFolder: (folderId: string) => void;
+  createTag: (name: string) => void;
+  renameTag: (oldName: string, newName: string) => void;
+  deleteTag: (name: string) => void;
+  addTagToSelectedNote: (name: string) => void;
+  removeTagFromSelectedNote: (name: string) => void;
   setSearchQuery: (query: string) => void;
   setActiveView: (view: SidebarView) => void;
   setActiveFolderId: (folderId: string) => void;
@@ -52,6 +61,30 @@ const sortByUpdated = (notes: Note[]) =>
   [...notes].sort(
     (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
   );
+
+const slugify = (value: string) =>
+  value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+
+const uncategorizedFolder: Folder = {
+  id: "uncategorized",
+  name: "Uncategorized",
+  colorClass: "bg-slate-400",
+};
+
+const nextFolderColor = (index: number) =>
+  [
+    "bg-lumo-violet",
+    "bg-lumo-teal",
+    "bg-emerald-300",
+    "bg-violet-400",
+    "bg-indigo-200",
+    "bg-rose-400",
+    "bg-amber-300",
+  ][index % 7];
 
 export function NotesProvider({ children }: { children: ReactNode }) {
   const [notes, setNotes] = useState<Note[]>([]);
@@ -290,6 +323,220 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     [updateNoteById],
   );
 
+  const createFolder = useCallback(
+    (rawName: string) => {
+      const name = rawName.trim();
+      if (!name) return;
+      if (folders.some((folder) => folder.name.toLowerCase() === name.toLowerCase())) return;
+
+      const now = new Date().toISOString();
+      const folder: Folder = {
+        id: slugify(name) || `folder-${crypto.randomUUID()}`,
+        name,
+        colorClass: nextFolderColor(folders.length),
+      };
+
+      setFolders((current) => [...current, folder]);
+      void database.createFolder(folder, now, now).catch((error) => {
+        setDatabaseError(error instanceof Error ? error.message : String(error));
+      });
+    },
+    [folders],
+  );
+
+  const renameFolder = useCallback(
+    (id: string, rawName: string) => {
+      const name = rawName.trim();
+      if (!name) return;
+      if (folders.some((folder) => folder.id !== id && folder.name.toLowerCase() === name.toLowerCase())) return;
+
+      const existing = folders.find((folder) => folder.id === id);
+      if (!existing) return;
+      const updatedAt = new Date().toISOString();
+
+      setFolders((current) =>
+        current.map((folder) => (folder.id === id ? { ...folder, name } : folder)),
+      );
+      setNotes((current) =>
+        current.map((note) =>
+          note.folderId === id ? { ...note, folderName: name, updatedAt } : note,
+        ),
+      );
+      void database.updateFolder(id, name, existing.colorClass, updatedAt).catch((error) => {
+        setDatabaseError(error instanceof Error ? error.message : String(error));
+      });
+    },
+    [folders],
+  );
+
+  const deleteFolder = useCallback(
+    (id: string) => {
+      if (id === uncategorizedFolder.id) return;
+      const updatedAt = new Date().toISOString();
+
+      setFolders((current) => {
+        const remaining = current.filter((folder) => folder.id !== id);
+        return remaining.some((folder) => folder.id === uncategorizedFolder.id)
+          ? remaining
+          : [...remaining, uncategorizedFolder];
+      });
+      setNotes((current) =>
+        current.map((note) =>
+          note.folderId === id
+            ? {
+                ...note,
+                folderId: uncategorizedFolder.id,
+                folderName: uncategorizedFolder.name,
+                updatedAt,
+              }
+            : note,
+        ),
+      );
+      if (activeFolderId === id) {
+        setActiveFolderIdState(null);
+      }
+      void database.deleteFolder(id, updatedAt).catch((error) => {
+        setDatabaseError(error instanceof Error ? error.message : String(error));
+      });
+    },
+    [activeFolderId],
+  );
+
+  const setSelectedNoteFolder = useCallback(
+    (folderId: string) => {
+      if (!selectedNote) return;
+      const folder = folders.find((item) => item.id === folderId) ?? uncategorizedFolder;
+      const updatedAt = new Date().toISOString();
+      const updatedNote: Note = {
+        ...selectedNote,
+        folderId: folder.id,
+        folderName: folder.name,
+        updatedAt,
+      };
+
+      setNotes((current) =>
+        current.map((note) => (note.id === selectedNote.id ? updatedNote : note)),
+      );
+      void database
+        .setNoteFolder(selectedNote.id, folder.id, folder.name, updatedAt)
+        .catch((error) => {
+          setDatabaseError(error instanceof Error ? error.message : String(error));
+        });
+    },
+    [folders, selectedNote],
+  );
+
+  const createTag = useCallback(
+    (rawName: string) => {
+      const name = rawName.trim();
+      if (!name) return;
+      if (availableTags.some((tag) => tag.toLowerCase() === name.toLowerCase())) return;
+
+      const now = new Date().toISOString();
+      setDatabaseTags((current) => [...current, name].sort((a, b) => a.localeCompare(b)));
+      void database.createTag(name, now, now).catch((error) => {
+        setDatabaseError(error instanceof Error ? error.message : String(error));
+      });
+    },
+    [availableTags],
+  );
+
+  const renameTag = useCallback(
+    (oldName: string, rawNewName: string) => {
+      const newName = rawNewName.trim();
+      if (!newName) return;
+      if (
+        availableTags.some(
+          (tag) => tag.toLowerCase() === newName.toLowerCase() && tag.toLowerCase() !== oldName.toLowerCase(),
+        )
+      ) {
+        return;
+      }
+
+      const updatedAt = new Date().toISOString();
+      setDatabaseTags((current) =>
+        current.map((tag) => (tag === oldName ? newName : tag)).sort((a, b) => a.localeCompare(b)),
+      );
+      setNotes((current) =>
+        current.map((note) => ({
+          ...note,
+          tags: note.tags.map((tag) => (tag === oldName ? newName : tag)),
+          updatedAt: note.tags.includes(oldName) ? updatedAt : note.updatedAt,
+        })),
+      );
+      if (activeTag === oldName) {
+        setActiveTagState(newName);
+      }
+      void database.updateTag(oldName, newName, updatedAt).catch((error) => {
+        setDatabaseError(error instanceof Error ? error.message : String(error));
+      });
+    },
+    [activeTag, availableTags],
+  );
+
+  const deleteTag = useCallback(
+    (name: string) => {
+      setDatabaseTags((current) => current.filter((tag) => tag !== name));
+      setNotes((current) =>
+        current.map((note) => ({
+          ...note,
+          tags: note.tags.filter((tag) => tag !== name),
+        })),
+      );
+      if (activeTag === name) {
+        setActiveTagState(null);
+      }
+      void database.deleteTag(name).catch((error) => {
+        setDatabaseError(error instanceof Error ? error.message : String(error));
+      });
+    },
+    [activeTag],
+  );
+
+  const addTagToSelectedNote = useCallback(
+    (rawName: string) => {
+      if (!selectedNote) return;
+      const name = rawName.trim();
+      if (!name || selectedNote.tags.some((tag) => tag.toLowerCase() === name.toLowerCase())) return;
+
+      const updatedAt = new Date().toISOString();
+      setDatabaseTags((current) =>
+        current.some((tag) => tag.toLowerCase() === name.toLowerCase())
+          ? current
+          : [...current, name].sort((a, b) => a.localeCompare(b)),
+      );
+      setNotes((current) =>
+        current.map((note) =>
+          note.id === selectedNote.id
+            ? { ...note, tags: [...note.tags, name], updatedAt }
+            : note,
+        ),
+      );
+      void database.addTagToNote(selectedNote.id, name, updatedAt).catch((error) => {
+        setDatabaseError(error instanceof Error ? error.message : String(error));
+      });
+    },
+    [selectedNote],
+  );
+
+  const removeTagFromSelectedNote = useCallback(
+    (name: string) => {
+      if (!selectedNote) return;
+      const updatedAt = new Date().toISOString();
+      setNotes((current) =>
+        current.map((note) =>
+          note.id === selectedNote.id
+            ? { ...note, tags: note.tags.filter((tag) => tag !== name), updatedAt }
+            : note,
+        ),
+      );
+      void database.removeTagFromNote(selectedNote.id, name, updatedAt).catch((error) => {
+        setDatabaseError(error instanceof Error ? error.message : String(error));
+      });
+    },
+    [selectedNote],
+  );
+
   const setActiveView = useCallback((view: SidebarView) => {
     setActiveViewState(view);
     setActiveFolderIdState(null);
@@ -329,6 +576,15 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       togglePinned,
       moveToTrash,
       restoreNote,
+      createFolder,
+      renameFolder,
+      deleteFolder,
+      setSelectedNoteFolder,
+      createTag,
+      renameTag,
+      deleteTag,
+      addTagToSelectedNote,
+      removeTagFromSelectedNote,
       setSearchQuery,
       setActiveView,
       setActiveFolderId,
@@ -340,16 +596,24 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       activeView,
       availableTags,
       createNote,
+      createFolder,
+      createTag,
       databaseError,
+      deleteFolder,
+      deleteTag,
       filteredNotes,
       folders,
       isDatabaseLoading,
       moveToTrash,
+      removeTagFromSelectedNote,
+      renameFolder,
+      renameTag,
       notes,
       restoreNote,
       searchQuery,
       selectedNote,
       selectedNoteId,
+      setSelectedNoteFolder,
       setActiveFolderId,
       setActiveTag,
       setActiveView,

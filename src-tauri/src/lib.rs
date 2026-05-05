@@ -20,7 +20,16 @@ pub fn run() {
             db::toggle_favorite,
             db::toggle_pinned,
             db::get_folders,
-            db::get_tags
+            db::get_tags,
+            db::create_folder,
+            db::update_folder,
+            db::delete_folder,
+            db::set_note_folder,
+            db::create_tag,
+            db::update_tag,
+            db::delete_tag,
+            db::add_tag_to_note,
+            db::remove_tag_from_note
         ])
         .run(tauri::generate_context!())
         .expect("error while running Lumo Notes");

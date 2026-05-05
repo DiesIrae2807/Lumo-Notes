@@ -37,8 +37,14 @@ export function Sidebar() {
     activeTag,
     activeView,
     availableTags,
+    createFolder,
     createNote,
+    createTag,
+    deleteFolder,
+    deleteTag,
     folders,
+    renameFolder,
+    renameTag,
     notes,
     setActiveFolderId,
     setActiveTag,
@@ -55,6 +61,38 @@ export function Sidebar() {
     }
 
     return notes.filter((note) => !note.isDeleted).length;
+  };
+
+  const addFolder = () => {
+    const name = window.prompt("Folder name");
+    if (name) createFolder(name);
+  };
+
+  const editFolder = (folderId: string, currentName: string) => {
+    const nextName = window.prompt("Rename folder", currentName);
+    if (nextName) renameFolder(folderId, nextName);
+  };
+
+  const removeFolder = (folderId: string, name: string) => {
+    if (window.confirm(`Delete "${name}"? Notes will move to Uncategorized.`)) {
+      deleteFolder(folderId);
+    }
+  };
+
+  const addTag = () => {
+    const name = window.prompt("Tag name");
+    if (name) createTag(name);
+  };
+
+  const editTag = (tag: string) => {
+    const nextName = window.prompt("Rename tag", tag);
+    if (nextName) renameTag(tag, nextName);
+  };
+
+  const removeTag = (tag: string) => {
+    if (window.confirm(`Delete "${tag}"? It will be removed from notes.`)) {
+      deleteTag(tag);
+    }
   };
 
   return (
@@ -94,8 +132,19 @@ export function Sidebar() {
       <div className="my-6 h-px bg-white/10" />
 
       <div className="space-y-3">
-        <SectionHeader title="Views" action="+" />
+        <div className="flex items-center justify-between">
+          <SectionHeader title="Views" />
+          <button
+            className="rounded-lg px-2 py-1 text-xs text-slate-400 transition hover:bg-white/[0.05] hover:text-white"
+            onClick={addFolder}
+          >
+            +
+          </button>
+        </div>
         <div className="space-y-1">
+          {folders.length === 0 ? (
+            <p className="px-3 py-2 text-xs text-slate-500">No folders yet</p>
+          ) : null}
           {folders.map((collection) => (
             <button
               key={collection.id}
@@ -107,30 +156,75 @@ export function Sidebar() {
               }`}
             >
               <span className={`h-2.5 w-2.5 rounded ${collection.colorClass}`} />
-              <span>{collection.name}</span>
+              <span className="flex-1 text-left">{collection.name}</span>
+              <span
+                className="rounded px-1.5 py-0.5 text-[11px] text-slate-500 hover:bg-white/10 hover:text-white"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  editFolder(collection.id, collection.name);
+                }}
+              >
+                Edit
+              </span>
+              <span
+                className="rounded px-1.5 py-0.5 text-[11px] text-slate-500 hover:bg-rose-400/15 hover:text-rose-200"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  removeFolder(collection.id, collection.name);
+                }}
+              >
+                Del
+              </span>
             </button>
           ))}
         </div>
       </div>
 
       <div className="mt-6 space-y-3 border-t border-white/10 pt-5">
-        <SectionHeader title="Tags" action="+" />
+        <div className="flex items-center justify-between">
+          <SectionHeader title="Tags" />
+          <button
+            className="rounded-lg px-2 py-1 text-xs text-slate-400 transition hover:bg-white/[0.05] hover:text-white"
+            onClick={addTag}
+          >
+            +
+          </button>
+        </div>
         <div className="flex flex-wrap gap-2">
+          {availableTags.length === 0 ? (
+            <p className="text-xs text-slate-500">No tags yet</p>
+          ) : null}
           {availableTags.map((tag) => (
-            <button
+            <span
               key={tag}
-              onClick={() => setActiveTag(tag)}
               className={`rounded-lg border px-2.5 py-1.5 text-xs transition hover:border-lumo-violet/40 hover:text-white active:scale-95 ${
                 activeTag === tag
                   ? "border-lumo-violet/40 bg-lumo-violet/15 text-white"
                   : "border-white/10 bg-white/[0.04] text-slate-300"
               }`}
             >
-              {tag}
-            </button>
+              <button onClick={() => setActiveTag(tag)}>{tag}</button>
+              <button
+                className="ml-2 text-slate-500 hover:text-white"
+                onClick={() => editTag(tag)}
+                title="Rename tag"
+              >
+                e
+              </button>
+              <button
+                className="ml-1 text-slate-500 hover:text-rose-200"
+                onClick={() => removeTag(tag)}
+                title="Delete tag"
+              >
+                x
+              </button>
+            </span>
           ))}
         </div>
-        <button className="w-full rounded-xl border border-dashed border-white/10 px-3 py-2 text-left text-sm text-slate-500 transition hover:border-lumo-teal/30 hover:text-slate-300">
+        <button
+          className="w-full rounded-xl border border-dashed border-white/10 px-3 py-2 text-left text-sm text-slate-500 transition hover:border-lumo-teal/30 hover:text-slate-300"
+          onClick={addTag}
+        >
           + New tag
         </button>
       </div>

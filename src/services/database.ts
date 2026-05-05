@@ -46,3 +46,49 @@ export async function toggleFavorite(id: string, isFavorite: boolean, updatedAt:
 export async function togglePinned(id: string, isPinned: boolean, updatedAt: string) {
   return invoke<void>("toggle_pinned", { id, isPinned, updatedAt });
 }
+
+export async function createFolder(folder: Folder, createdAt: string, updatedAt: string) {
+  return invoke<void>("create_folder", { folder, createdAt, updatedAt });
+}
+
+export async function updateFolder(
+  id: string,
+  name: string,
+  colorClass: string,
+  updatedAt: string,
+) {
+  return invoke<void>("update_folder", { id, name, colorClass, updatedAt });
+}
+
+export async function deleteFolder(id: string, updatedAt: string) {
+  return invoke<void>("delete_folder", { id, updatedAt });
+}
+
+export async function setNoteFolder(
+  noteId: string,
+  folderId: string,
+  folderName: string,
+  updatedAt: string,
+) {
+  return invoke<void>("set_note_folder", { noteId, folderId, folderName, updatedAt });
+}
+
+export async function createTag(name: string, createdAt: string, updatedAt: string) {
+  return invoke<void>("create_tag", { name, createdAt, updatedAt });
+}
+
+export async function updateTag(oldName: string, newName: string, updatedAt: string) {
+  return invoke<void>("update_tag", { oldName, newName, updatedAt });
+}
+
+export async function deleteTag(name: string) {
+  return invoke<void>("delete_tag", { name });
+}
+
+export async function addTagToNote(noteId: string, tagName: string, updatedAt: string) {
+  return invoke<void>("add_tag_to_note", { noteId, tagName, updatedAt });
+}
+
+export async function removeTagFromNote(noteId: string, tagName: string, updatedAt: string) {
+  return invoke<void>("remove_tag_from_note", { noteId, tagName, updatedAt });
+}

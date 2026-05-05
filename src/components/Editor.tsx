@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useNotes } from "../store/notesStore";
 
 const editorTools = ["B", "I", "U", "List", "Bullets", "Link", "Code", "Image", "Grid"];
@@ -25,17 +26,32 @@ function EmptyEditor() {
 
 export function Editor() {
   const {
+    addTagToSelectedNote,
+    availableTags,
+    createTag,
+    folders,
     moveToTrash,
+    removeTagFromSelectedNote,
     restoreNote,
     selectedNote,
+    setSelectedNoteFolder,
     toggleFavorite,
     togglePinned,
     updateSelectedNote,
   } = useNotes();
+  const [tagInput, setTagInput] = useState("");
 
   if (!selectedNote) {
     return <EmptyEditor />;
   }
+
+  const submitTag = () => {
+    const name = tagInput.trim();
+    if (!name) return;
+    createTag(name);
+    addTagToSelectedNote(name);
+    setTagInput("");
+  };
 
   return (
     <main className="column-panel editor-glow flex min-h-0 flex-col overflow-hidden">
@@ -94,6 +110,77 @@ export function Editor() {
               onChange={(event) => updateSelectedNote({ preview: event.target.value })}
               placeholder="Short preview or subtitle"
             />
+            <div className="mt-5 grid gap-3 rounded-xl border border-white/10 bg-white/[0.025] p-3 md:grid-cols-[220px_1fr]">
+              <label className="space-y-2">
+                <span className="text-xs font-medium uppercase tracking-[0.16em] text-slate-500">
+                  Folder
+                </span>
+                <select
+                  className="h-10 w-full rounded-lg border border-white/10 bg-night-950/70 px-3 text-sm text-slate-200 outline-none focus:border-lumo-teal/40"
+                  value={selectedNote.folderId}
+                  onChange={(event) => setSelectedNoteFolder(event.target.value)}
+                >
+                  {folders.map((folder) => (
+                    <option key={folder.id} value={folder.id}>
+                      {folder.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <div className="space-y-2">
+                <span className="text-xs font-medium uppercase tracking-[0.16em] text-slate-500">
+                  Tags
+                </span>
+                <div className="flex flex-wrap gap-2">
+                  {selectedNote.tags.length === 0 ? (
+                    <span className="rounded-lg border border-dashed border-white/10 px-2.5 py-1.5 text-xs text-slate-500">
+                      No tags
+                    </span>
+                  ) : null}
+                  {selectedNote.tags.map((tag) => (
+                    <span
+                      key={tag}
+                      className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-xs text-slate-300"
+                    >
+                      {tag}
+                      <button
+                        className="text-slate-500 transition hover:text-rose-200"
+                        onClick={() => removeTagFromSelectedNote(tag)}
+                      >
+                        x
+                      </button>
+                    </span>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    className="h-9 flex-1 rounded-lg border border-white/10 bg-night-950/70 px-3 text-sm text-slate-200 outline-none placeholder:text-slate-600 focus:border-lumo-teal/40"
+                    value={tagInput}
+                    onChange={(event) => setTagInput(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        submitTag();
+                      }
+                    }}
+                    list="lumo-note-tags"
+                    placeholder="Add tag"
+                  />
+                  <datalist id="lumo-note-tags">
+                    {availableTags.map((tag) => (
+                      <option key={tag} value={tag} />
+                    ))}
+                  </datalist>
+                  <button
+                    className="rounded-lg border border-white/10 px-3 text-sm text-slate-300 transition hover:border-lumo-teal/30 hover:text-white"
+                    onClick={submitTag}
+                  >
+                    Add
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
 
           <textarea

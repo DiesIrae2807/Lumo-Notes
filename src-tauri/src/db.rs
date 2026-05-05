@@ -187,6 +187,32 @@ fn replace_note_tags(connection: &Connection, note: &NoteDto) -> Result<(), Stri
     Ok(())
 }
 
+fn tag_id_for(name: &str) -> String {
+    name.trim().to_lowercase()
+}
+
+fn resolve_tag_id(connection: &Connection, name: &str) -> Result<String, String> {
+    let normalized = tag_id_for(name);
+    connection
+        .query_row(
+            "SELECT id FROM tags WHERE name = ?1 OR id = ?2 LIMIT 1",
+            params![name.trim(), normalized],
+            |row| row.get::<_, String>(0),
+        )
+        .map_err(|_| format!("Tag '{}' does not exist", name))
+}
+
+fn ensure_uncategorized_folder(connection: &Connection, updated_at: &str) -> Result<(), String> {
+    connection
+        .execute(
+            "INSERT OR IGNORE INTO folders (id, name, color, created_at, updated_at)
+             VALUES ('uncategorized', 'Uncategorized', 'bg-slate-400', ?1, ?1)",
+            params![updated_at],
+        )
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
 fn get_notes_from_connection(connection: &Connection) -> Result<Vec<NoteDto>, String> {
     let mut statement = connection
         .prepare(
@@ -394,6 +420,192 @@ pub fn toggle_pinned(
         .execute(
             "UPDATE notes SET is_pinned = ?2, updated_at = ?3 WHERE id = ?1",
             params![id, is_pinned as i64, updated_at],
+        )
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn create_folder(
+    state: tauri::State<'_, DbState>,
+    folder: FolderDto,
+    created_at: String,
+    updated_at: String,
+) -> Result<(), String> {
+    let connection = connect(&state.path)?;
+    connection
+        .execute(
+            "INSERT INTO folders (id, name, color, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![folder.id, folder.name, folder.color_class, created_at, updated_at],
+        )
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn update_folder(
+    state: tauri::State<'_, DbState>,
+    id: String,
+    name: String,
+    color_class: String,
+    updated_at: String,
+) -> Result<(), String> {
+    let connection = connect(&state.path)?;
+    connection
+        .execute(
+            "UPDATE folders SET name = ?2, color = ?3, updated_at = ?4 WHERE id = ?1",
+            params![id, name, color_class, updated_at],
+        )
+        .map_err(|error| error.to_string())?;
+    connection
+        .execute(
+            "UPDATE notes SET folder_name = ?2, updated_at = ?3 WHERE folder_id = ?1",
+            params![id, name, updated_at],
+        )
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn delete_folder(
+    state: tauri::State<'_, DbState>,
+    id: String,
+    updated_at: String,
+) -> Result<(), String> {
+    let connection = connect(&state.path)?;
+    ensure_uncategorized_folder(&connection, &updated_at)?;
+    connection
+        .execute(
+            "UPDATE notes
+             SET folder_id = 'uncategorized', folder_name = 'Uncategorized', updated_at = ?2
+             WHERE folder_id = ?1",
+            params![id, updated_at],
+        )
+        .map_err(|error| error.to_string())?;
+    connection
+        .execute("DELETE FROM folders WHERE id = ?1", params![id])
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn set_note_folder(
+    state: tauri::State<'_, DbState>,
+    note_id: String,
+    folder_id: String,
+    folder_name: String,
+    updated_at: String,
+) -> Result<(), String> {
+    let connection = connect(&state.path)?;
+    connection
+        .execute(
+            "UPDATE notes SET folder_id = ?2, folder_name = ?3, updated_at = ?4 WHERE id = ?1",
+            params![note_id, folder_id, folder_name, updated_at],
+        )
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn create_tag(
+    state: tauri::State<'_, DbState>,
+    name: String,
+    created_at: String,
+    updated_at: String,
+) -> Result<(), String> {
+    let connection = connect(&state.path)?;
+    let tag_id = tag_id_for(&name);
+    connection
+        .execute(
+            "INSERT INTO tags (id, name, created_at, updated_at) VALUES (?1, ?2, ?3, ?4)",
+            params![tag_id, name.trim(), created_at, updated_at],
+        )
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn update_tag(
+    state: tauri::State<'_, DbState>,
+    old_name: String,
+    new_name: String,
+    updated_at: String,
+) -> Result<(), String> {
+    let connection = connect(&state.path)?;
+    let old_id = resolve_tag_id(&connection, &old_name)?;
+    connection
+        .execute(
+            "UPDATE tags SET name = ?2, updated_at = ?3 WHERE id = ?1",
+            params![old_id, new_name.trim(), updated_at],
+        )
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn delete_tag(state: tauri::State<'_, DbState>, name: String) -> Result<(), String> {
+    let connection = connect(&state.path)?;
+    let tag_id = resolve_tag_id(&connection, &name)?;
+    connection
+        .execute("DELETE FROM note_tags WHERE tag_id = ?1", params![tag_id])
+        .map_err(|error| error.to_string())?;
+    connection
+        .execute("DELETE FROM tags WHERE id = ?1", params![tag_id])
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn add_tag_to_note(
+    state: tauri::State<'_, DbState>,
+    note_id: String,
+    tag_name: String,
+    updated_at: String,
+) -> Result<(), String> {
+    let connection = connect(&state.path)?;
+    let tag_id = tag_id_for(&tag_name);
+    connection
+        .execute(
+            "INSERT OR IGNORE INTO tags (id, name, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?3)",
+            params![tag_id, tag_name.trim(), updated_at],
+        )
+        .map_err(|error| error.to_string())?;
+    connection
+        .execute(
+            "INSERT OR IGNORE INTO note_tags (note_id, tag_id) VALUES (?1, ?2)",
+            params![note_id, tag_id],
+        )
+        .map_err(|error| error.to_string())?;
+    connection
+        .execute(
+            "UPDATE notes SET updated_at = ?2 WHERE id = ?1",
+            params![note_id, updated_at],
+        )
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn remove_tag_from_note(
+    state: tauri::State<'_, DbState>,
+    note_id: String,
+    tag_name: String,
+    updated_at: String,
+) -> Result<(), String> {
+    let connection = connect(&state.path)?;
+    let tag_id = resolve_tag_id(&connection, &tag_name)?;
+    connection
+        .execute(
+            "DELETE FROM note_tags WHERE note_id = ?1 AND tag_id = ?2",
+            params![note_id, tag_id],
+        )
+        .map_err(|error| error.to_string())?;
+    connection
+        .execute(
+            "UPDATE notes SET updated_at = ?2 WHERE id = ?1",
+            params![note_id, updated_at],
         )
         .map_err(|error| error.to_string())?;
     Ok(())
