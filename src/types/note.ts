@@ -19,4 +19,4 @@ export type Folder = {
   colorClass: string;
 };
 
-export type SidebarView = "all" | "favorites" | "recent" | "trash";
+export type SidebarView = "all" | "favorites" | "recent" | "trash" | "graph";

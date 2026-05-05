@@ -2,6 +2,7 @@ import { useEffect, type MouseEvent } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Editor } from "./components/Editor";
 import { InsightsPanel } from "./components/InsightsPanel";
+import { GraphView } from "./components/GraphView";
 import { NotesList } from "./components/NotesList";
 import { Sidebar } from "./components/Sidebar";
 import { BrandMark } from "./components/BrandMark";
@@ -152,6 +153,15 @@ export default function App() {
   return (
     <NotesProvider>
       <AppShortcuts />
+      <Workspace />
+    </NotesProvider>
+  );
+}
+
+function Workspace() {
+  const { activeView } = useNotes();
+
+  return (
       <div className="app-root min-h-[100dvh] overflow-hidden bg-night-950 text-slate-100">
         <div className="fixed inset-0 pointer-events-none">
           <div className="absolute -left-24 top-12 h-80 w-80 rounded-full bg-lumo-violet/18 blur-3xl" />
@@ -164,11 +174,16 @@ export default function App() {
           <div className="workspace-grid grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[235px_330px_minmax(460px,1fr)] xl:grid-cols-[235px_330px_minmax(520px,1fr)_280px]">
             <Sidebar />
             <NotesList />
-            <Editor />
-            <InsightsPanel />
+            {activeView === "graph" ? (
+              <GraphView />
+            ) : (
+              <>
+                <Editor />
+                <InsightsPanel />
+              </>
+            )}
           </div>
         </div>
       </div>
-    </NotesProvider>
   );
 }

@@ -322,6 +322,80 @@
     text-underline-offset: 4px;
   }
 
+  .graph-canvas {
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.06),
+      inset 0 0 80px rgba(89, 213, 202, 0.035);
+  }
+
+  .graph-edge {
+    stroke: rgba(148, 163, 184, 0.28);
+    stroke-width: 1.4;
+    transition: stroke 160ms ease, stroke-width 160ms ease, opacity 160ms ease;
+  }
+
+  .graph-edge-active {
+    stroke: rgba(89, 213, 202, 0.7);
+    stroke-width: 2.2;
+  }
+
+  .graph-node {
+    cursor: pointer;
+    transition: opacity 160ms ease;
+  }
+
+  .graph-node-dimmed {
+    opacity: 0.32;
+  }
+
+  .graph-node-halo {
+    fill: url("#nodeGlow");
+    opacity: 0.55;
+    transition: opacity 160ms ease;
+  }
+
+  .graph-node-core {
+    fill: rgba(18, 25, 45, 0.94);
+    stroke: rgba(156, 124, 244, 0.55);
+    stroke-width: 1.4;
+    filter: drop-shadow(0 0 16px rgba(156, 124, 244, 0.22));
+    transition: fill 160ms ease, stroke 160ms ease, stroke-width 160ms ease;
+  }
+
+  .graph-node:hover .graph-node-core,
+  .graph-node-selected .graph-node-core {
+    fill: rgba(31, 42, 72, 0.96);
+    stroke: rgba(89, 213, 202, 0.85);
+    stroke-width: 2;
+  }
+
+  .graph-node:hover .graph-node-halo,
+  .graph-node-selected .graph-node-halo {
+    opacity: 0.95;
+  }
+
+  .graph-node-pin {
+    fill: #59d5ca;
+  }
+
+  .graph-node-favorite {
+    fill: #fcd34d;
+  }
+
+  .graph-node-label {
+    fill: rgb(241 245 249);
+    font-size: 13px;
+    font-weight: 650;
+    letter-spacing: 0;
+    pointer-events: none;
+  }
+
+  .graph-node-meta {
+    fill: rgb(100 116 139);
+    font-size: 10px;
+    pointer-events: none;
+  }
+
   .aurora-card {
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
   }

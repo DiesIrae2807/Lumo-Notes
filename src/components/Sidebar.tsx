@@ -7,6 +7,7 @@ const navGlyphs: Record<string, string> = {
   "All Notes": "A",
   Favorites: "F",
   Recent: "R",
+  Graph: "G",
   Trash: "T",
 };
 
@@ -14,6 +15,7 @@ const navItems: Array<{ label: string; view: SidebarView }> = [
   { label: "All Notes", view: "all" },
   { label: "Favorites", view: "favorites" },
   { label: "Recent", view: "recent" },
+  { label: "Graph", view: "graph" },
   { label: "Trash", view: "trash" },
 ];
 
@@ -58,6 +60,10 @@ export function Sidebar() {
 
     if (view === "favorites") {
       return notes.filter((note) => note.isFavorite && !note.isDeleted).length;
+    }
+
+    if (view === "graph") {
+      return notes.filter((note) => !note.isDeleted).length;
     }
 
     return notes.filter((note) => !note.isDeleted).length;
