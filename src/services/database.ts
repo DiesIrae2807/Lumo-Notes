@@ -39,6 +39,14 @@ export async function restoreNote(id: string, updatedAt: string) {
   return invoke<void>("restore_note", { id, updatedAt });
 }
 
+export async function permanentlyDeleteNote(id: string) {
+  return invoke<void>("permanently_delete_note", { id });
+}
+
+export async function permanentlyDeleteTrashedNotes() {
+  return invoke<void>("permanently_delete_trashed_notes");
+}
+
 export async function toggleFavorite(id: string, isFavorite: boolean, updatedAt: string) {
   return invoke<void>("toggle_favorite", { id, isFavorite, updatedAt });
 }

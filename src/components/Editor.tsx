@@ -31,6 +31,7 @@ export function Editor() {
     createTag,
     folders,
     moveToTrash,
+    permanentlyDeleteSelectedNote,
     removeTagFromSelectedNote,
     restoreNote,
     selectedNote,
@@ -51,6 +52,12 @@ export function Editor() {
     createTag(name);
     addTagToSelectedNote(name);
     setTagInput("");
+  };
+
+  const confirmPermanentDelete = () => {
+    if (window.confirm("Permanently delete this note? This cannot be undone.")) {
+      permanentlyDeleteSelectedNote();
+    }
   };
 
   return (
@@ -89,6 +96,14 @@ export function Editor() {
           >
             {selectedNote.isDeleted ? "Restore" : "Delete"}
           </button>
+          {selectedNote.isDeleted ? (
+            <button
+              className="rounded-lg px-3 py-1.5 text-rose-300 transition hover:bg-rose-400/10 hover:text-rose-100 active:scale-95"
+              onClick={confirmPermanentDelete}
+            >
+              Delete Permanently
+            </button>
+          ) : null}
         </div>
       </div>
 

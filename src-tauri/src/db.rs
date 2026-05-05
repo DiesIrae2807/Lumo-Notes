@@ -392,6 +392,38 @@ pub fn restore_note(
 }
 
 #[tauri::command]
+pub fn permanently_delete_note(state: tauri::State<'_, DbState>, id: String) -> Result<(), String> {
+    let connection = connect(&state.path)?;
+    connection
+        .execute(
+            "DELETE FROM note_tags WHERE note_id = ?1
+             AND EXISTS (SELECT 1 FROM notes WHERE notes.id = ?1 AND notes.is_deleted = 1)",
+            params![id],
+        )
+        .map_err(|error| error.to_string())?;
+    connection
+        .execute("DELETE FROM notes WHERE id = ?1 AND is_deleted = 1", params![id])
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn permanently_delete_trashed_notes(state: tauri::State<'_, DbState>) -> Result<(), String> {
+    let connection = connect(&state.path)?;
+    connection
+        .execute(
+            "DELETE FROM note_tags
+             WHERE note_id IN (SELECT id FROM notes WHERE is_deleted = 1)",
+            [],
+        )
+        .map_err(|error| error.to_string())?;
+    connection
+        .execute("DELETE FROM notes WHERE is_deleted = 1", [])
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
 pub fn toggle_favorite(
     state: tauri::State<'_, DbState>,
     id: String,

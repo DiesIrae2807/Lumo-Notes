@@ -51,6 +51,7 @@ export function NotesList() {
     createNote,
     filteredNotes,
     notes,
+    permanentlyDeleteTrashedNotes,
     searchQuery,
     selectNote,
     selectedNoteId,
@@ -64,6 +65,13 @@ export function NotesList() {
   const older = unpinned.filter((note) => !isToday(note.updatedAt) && !isThisWeek(note.updatedAt));
   const hasAnyNotes = notes.some((note) => (activeView === "trash" ? note.isDeleted : !note.isDeleted));
   const hasSearch = searchQuery.trim().length > 0;
+  const trashedCount = notes.filter((note) => note.isDeleted).length;
+
+  const confirmEmptyTrash = () => {
+    if (window.confirm("Permanently delete all notes in Trash? This cannot be undone.")) {
+      permanentlyDeleteTrashedNotes();
+    }
+  };
 
   return (
     <aside className="column-panel flex min-h-0 flex-col overflow-hidden">
@@ -88,6 +96,14 @@ export function NotesList() {
         >
           +
         </button>
+        {activeView === "trash" && trashedCount > 0 ? (
+          <button
+            className="h-10 rounded-xl border border-rose-400/20 bg-rose-400/[0.06] px-3 text-xs text-rose-200 transition hover:border-rose-300/40 hover:bg-rose-400/[0.1] active:scale-95"
+            onClick={confirmEmptyTrash}
+          >
+            Empty
+          </button>
+        ) : null}
       </div>
 
       <div className="scroll-area flex-1 space-y-5 overflow-y-auto p-3">

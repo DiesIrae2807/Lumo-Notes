@@ -31,6 +31,8 @@ type NotesContextValue = {
   togglePinned: (id: string) => void;
   moveToTrash: (id: string) => void;
   restoreNote: (id: string) => void;
+  permanentlyDeleteSelectedNote: () => void;
+  permanentlyDeleteTrashedNotes: () => void;
   createFolder: (name: string) => void;
   renameFolder: (id: string, name: string) => void;
   deleteFolder: (id: string) => void;
@@ -323,6 +325,42 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     [updateNoteById],
   );
 
+  const permanentlyDeleteSelectedNote = useCallback(() => {
+    if (!selectedNote?.isDeleted) {
+      return;
+    }
+
+    const deletedId = selectedNote.id;
+    const nextTrashedNote =
+      notes
+        .filter((note) => note.isDeleted && note.id !== deletedId)
+        .sort(
+          (a, b) =>
+            new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+        )[0] ?? null;
+
+    setNotes((current) => current.filter((note) => note.id !== deletedId));
+    setSelectedNoteId(nextTrashedNote?.id ?? null);
+    void database.permanentlyDeleteNote(deletedId).catch((error) => {
+      setDatabaseError(error instanceof Error ? error.message : String(error));
+    });
+  }, [notes, selectedNote]);
+
+  const permanentlyDeleteTrashedNotes = useCallback(() => {
+    const trashedIds = new Set(notes.filter((note) => note.isDeleted).map((note) => note.id));
+    if (trashedIds.size === 0) {
+      return;
+    }
+
+    setNotes((current) => current.filter((note) => !note.isDeleted));
+    if (selectedNoteId && trashedIds.has(selectedNoteId)) {
+      setSelectedNoteId(null);
+    }
+    void database.permanentlyDeleteTrashedNotes().catch((error) => {
+      setDatabaseError(error instanceof Error ? error.message : String(error));
+    });
+  }, [notes, selectedNoteId]);
+
   const createFolder = useCallback(
     (rawName: string) => {
       const name = rawName.trim();
@@ -576,6 +614,8 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       togglePinned,
       moveToTrash,
       restoreNote,
+      permanentlyDeleteSelectedNote,
+      permanentlyDeleteTrashedNotes,
       createFolder,
       renameFolder,
       deleteFolder,
@@ -605,6 +645,8 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       folders,
       isDatabaseLoading,
       moveToTrash,
+      permanentlyDeleteSelectedNote,
+      permanentlyDeleteTrashedNotes,
       removeTagFromSelectedNote,
       renameFolder,
       renameTag,
