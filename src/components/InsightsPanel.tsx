@@ -1,5 +1,6 @@
 import { SectionHeader } from "./SectionHeader";
 import { useNotes } from "../store/notesStore";
+import { excerptFromMarkdown } from "../utils/markdown";
 
 const accentMap = {
   violet: "bg-lumo-violet",
@@ -12,6 +13,10 @@ export function InsightsPanel() {
   const relatedNotes = notes
     .filter((note) => note.id !== selectedNote?.id && !note.isDeleted)
     .slice(0, 3);
+  const summaryText = selectedNote
+    ? excerptFromMarkdown(selectedNote.preview || selectedNote.content) ||
+      "This note does not have a preview yet."
+    : "Select a note to see contextual details.";
 
   return (
     <aside className="column-panel hidden min-h-0 flex-col overflow-hidden xl:flex">
@@ -33,9 +38,7 @@ export function InsightsPanel() {
         <section className="insight-card">
           <h3 className="text-sm font-semibold text-white">Summary</h3>
           <p className="mt-4 text-sm leading-6 text-slate-300">
-            {selectedNote
-              ? selectedNote.preview || "This note does not have a preview yet."
-              : "Select a note to see contextual details."}
+            {summaryText}
           </p>
         </section>
 

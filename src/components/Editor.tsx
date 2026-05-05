@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { MarkdownPreview } from "./MarkdownPreview";
 import { useNotes } from "../store/notesStore";
 
 type MarkdownAction =
@@ -11,6 +12,8 @@ type MarkdownAction =
   | "code"
   | "checkbox"
   | "link";
+
+type EditorMode = "edit" | "preview" | "split";
 
 const editorTools: Array<{ label: string; action: MarkdownAction }> = [
   { label: "B", action: "bold" },
@@ -52,10 +55,12 @@ export function Editor() {
     createTag,
     folders,
     moveToTrash,
+    notes,
     permanentlyDeleteSelectedNote,
     removeTagFromSelectedNote,
     restoreNote,
     selectedNote,
+    selectNote,
     setSelectedNoteFolder,
     forceSaveSelectedNote,
     saveStatus,
@@ -64,6 +69,7 @@ export function Editor() {
     updateSelectedNote,
   } = useNotes();
   const [tagInput, setTagInput] = useState("");
+  const [editorMode, setEditorMode] = useState<EditorMode>("edit");
   const bodyRef = useRef<HTMLTextAreaElement | null>(null);
 
   if (!selectedNote) {
@@ -93,9 +99,36 @@ export function Editor() {
       minute: "2-digit",
     }).format(new Date(date));
 
+  const openInternalLink = (title: string) => {
+    const linkedNote = notes.find(
+      (note) => !note.isDeleted && note.title.trim().toLowerCase() === title.trim().toLowerCase(),
+    );
+
+    if (linkedNote) {
+      selectNote(linkedNote.id);
+    }
+  };
+
   const insertMarkdown = (action: MarkdownAction) => {
     const textarea = bodyRef.current;
-    if (!textarea) return;
+    if (!textarea) {
+      const fallback = {
+        bold: "**bold text**",
+        italic: "*italic text*",
+        heading: "## Heading",
+        bullet: "- List item",
+        numbered: "1. List item",
+        quote: "> Quote",
+        code: "`code`",
+        checkbox: "- [ ] Task",
+        link: "[[Linked note placeholder]]",
+      } satisfies Record<MarkdownAction, string>;
+
+      const separator = selectedNote.content.trim() ? "\n\n" : "";
+      updateSelectedNote({ content: `${selectedNote.content}${separator}${fallback[action]}` });
+      setEditorMode("edit");
+      return;
+    }
 
     const start = textarea.selectionStart;
     const end = textarea.selectionEnd;
@@ -103,6 +136,7 @@ export function Editor() {
     let insertion = selected;
     let nextSelectionStart = start;
     let nextSelectionEnd = start;
+    const isAtLineStart = start === 0 || selectedNote.content[start - 1] === "\n";
 
     const linePrefix = (prefix: string) => {
       const fallback = selected || "List item";
@@ -111,6 +145,8 @@ export function Editor() {
         .map((line) => `${prefix}${line || " "}`)
         .join("\n");
     };
+
+    const normalizeBlockInsertion = (value: string) => (isAtLineStart ? value : `\n${value}`);
 
     switch (action) {
       case "bold":
@@ -129,13 +165,15 @@ export function Editor() {
         nextSelectionEnd = nextSelectionStart + (selected || "Heading").length;
         break;
       case "bullet":
-        insertion = linePrefix("- ");
+        insertion = normalizeBlockInsertion(linePrefix("- "));
         break;
       case "numbered":
-        insertion = (selected || "List item")
-          .split("\n")
-          .map((line, index) => `${index + 1}. ${line || " "}`)
-          .join("\n");
+        insertion = normalizeBlockInsertion(
+          (selected || "List item")
+            .split("\n")
+            .map((line, index) => `${index + 1}. ${line || " "}`)
+            .join("\n"),
+        );
         break;
       case "quote":
         insertion = linePrefix("> ");
@@ -146,7 +184,7 @@ export function Editor() {
           : `\`${selected || "code"}\``;
         break;
       case "checkbox":
-        insertion = linePrefix("- [ ] ");
+        insertion = normalizeBlockInsertion(linePrefix("- [ ] "));
         break;
       case "link":
         insertion = `[[${selected || "Linked note placeholder"}]]`;
@@ -342,15 +380,53 @@ export function Editor() {
             </div>
           </div>
 
-          <textarea
-            ref={bodyRef}
-            className="min-h-[360px] w-full resize-none rounded-xl border border-white/10 bg-night-950/20 p-4 text-base leading-8 text-slate-200 outline-none transition placeholder:text-slate-600 focus:border-lumo-teal/35 focus:bg-night-950/35"
-            value={selectedNote.content}
-            onChange={(event) => updateSelectedNote({ content: event.target.value })}
-            onBlur={forceSaveSelectedNote}
-            onKeyDown={handleEditorKeyDown}
-            placeholder="Start writing..."
-          />
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div className="inline-flex rounded-xl border border-white/10 bg-night-950/35 p-1 text-xs text-slate-400">
+              {(["edit", "preview", "split"] as const).map((mode) => (
+                <button
+                  key={mode}
+                  className={`rounded-lg px-3 py-1.5 capitalize transition active:scale-95 ${
+                    editorMode === mode
+                      ? "bg-lumo-violet/20 text-white shadow-[inset_0_0_0_1px_rgba(156,124,244,0.28)]"
+                      : "hover:bg-white/[0.05] hover:text-slate-200"
+                  }`}
+                  onClick={() => setEditorMode(mode)}
+                >
+                  {mode}
+                </button>
+              ))}
+            </div>
+            <span className="text-xs text-slate-500">
+              Markdown source is saved locally.
+            </span>
+          </div>
+
+          {editorMode === "preview" ? (
+            <MarkdownPreview content={selectedNote.content} onInternalLinkClick={openInternalLink} />
+          ) : editorMode === "split" ? (
+            <div className="grid gap-4 lg:grid-cols-2">
+              <textarea
+                ref={bodyRef}
+                className="min-h-[420px] w-full resize-none rounded-xl border border-white/10 bg-night-950/20 p-4 text-base leading-8 text-slate-200 outline-none transition placeholder:text-slate-600 focus:border-lumo-teal/35 focus:bg-night-950/35"
+                value={selectedNote.content}
+                onChange={(event) => updateSelectedNote({ content: event.target.value })}
+                onBlur={forceSaveSelectedNote}
+                onKeyDown={handleEditorKeyDown}
+                placeholder="Start writing..."
+              />
+              <MarkdownPreview content={selectedNote.content} onInternalLinkClick={openInternalLink} />
+            </div>
+          ) : (
+            <textarea
+              ref={bodyRef}
+              className="min-h-[420px] w-full resize-none rounded-xl border border-white/10 bg-night-950/20 p-4 text-base leading-8 text-slate-200 outline-none transition placeholder:text-slate-600 focus:border-lumo-teal/35 focus:bg-night-950/35"
+              value={selectedNote.content}
+              onChange={(event) => updateSelectedNote({ content: event.target.value })}
+              onBlur={forceSaveSelectedNote}
+              onKeyDown={handleEditorKeyDown}
+              placeholder="Start writing..."
+            />
+          )}
 
           <div className="mt-4 grid gap-2 rounded-xl border border-white/10 bg-white/[0.025] p-3 text-xs text-slate-500 md:grid-cols-2">
             <span>Created {formatDate(selectedNote.createdAt)}</span>
