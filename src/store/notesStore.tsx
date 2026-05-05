@@ -10,6 +10,7 @@ import {
 } from "react";
 import { folders as fallbackFolders } from "../data/initialNotes";
 import * as database from "../services/database";
+import type { LumoBackup, ParsedMarkdownNote } from "../services/fileTransfer";
 import type { Folder, Note, SidebarView } from "../types/note";
 import { getPlainTextPreview, markdownToPlainText } from "../utils/markdown";
 
@@ -28,6 +29,8 @@ type NotesContextValue = {
   isDatabaseLoading: boolean;
   saveStatus: "idle" | "dirty" | "saving" | "saved" | "error";
   createNote: (title?: string) => void;
+  importMarkdownNotes: (imports: ParsedMarkdownNote[]) => Promise<number>;
+  restoreBackupMerge: (backup: LumoBackup) => Promise<number>;
   selectNote: (id: string) => void;
   forceSaveSelectedNote: () => void;
   updateSelectedNote: (changes: Partial<Pick<Note, "title" | "content" | "preview">>) => void;
@@ -91,6 +94,20 @@ const nextFolderColor = (index: number) =>
     "bg-rose-400",
     "bg-amber-300",
   ][index % 7];
+
+const uniqueByLower = (values: string[]) =>
+  Array.from(new Map(values.filter(Boolean).map((value) => [value.toLowerCase(), value])).values());
+
+const noteId = () => `note-${crypto.randomUUID()}`;
+
+const folderId = (name: string) => slugify(name) || `folder-${crypto.randomUUID()}`;
+
+const uniqueFolderId = (name: string, existingFolders: Folder[]) => {
+  const preferred = folderId(name);
+  return existingFolders.some((folder) => folder.id === preferred)
+    ? `folder-${crypto.randomUUID()}`
+    : preferred;
+};
 
 export function NotesProvider({ children }: { children: ReactNode }) {
   const [notes, setNotes] = useState<Note[]>([]);
@@ -318,7 +335,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     const defaultFolder = folders[0];
     const noteTitle = title.trim() || "Untitled Note";
     const newNote: Note = {
-      id: `note-${crypto.randomUUID()}`,
+      id: noteId(),
       title: noteTitle,
       content: "",
       preview: "",
@@ -342,6 +359,166 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     setActiveTagState(null);
     setSearchQuery("");
   }, [flushNoteSave, folders, selectedNoteId]);
+
+  const importMarkdownNotes = useCallback(
+    async (imports: ParsedMarkdownNote[]) => {
+      flushNoteSave(selectedNoteId);
+
+      if (imports.length === 0) return 0;
+
+      const now = new Date().toISOString();
+      const localFolders = [...folders];
+      const foldersToCreate: Folder[] = [];
+      const tagsToCreate = uniqueByLower(imports.flatMap((item) => item.tags));
+
+      const ensureFolder = (name?: string) => {
+        const folderName = name?.trim() || "Uncategorized";
+        const existing = localFolders.find(
+          (folder) => folder.name.toLowerCase() === folderName.toLowerCase(),
+        );
+        if (existing) return existing;
+
+        const folder: Folder = {
+          id: uniqueFolderId(folderName, localFolders),
+          name: folderName,
+          colorClass: nextFolderColor(localFolders.length),
+        };
+        localFolders.push(folder);
+        foldersToCreate.push(folder);
+        return folder;
+      };
+
+      const notesToCreate = imports.map((item) => {
+        const folder = ensureFolder(item.folderName);
+        const createdAt = item.createdAt || now;
+        const updatedAt = item.updatedAt || now;
+        const content = item.content;
+
+        return {
+          id: noteId(),
+          title: item.title.trim() || "Imported Note",
+          content,
+          preview: getPlainTextPreview(content),
+          folderId: folder.id,
+          folderName: folder.name,
+          tags: uniqueByLower(item.tags),
+          isPinned: item.isPinned,
+          isFavorite: item.isFavorite,
+          isDeleted: false,
+          createdAt,
+          updatedAt,
+        } satisfies Note;
+      });
+
+      for (const folder of foldersToCreate) {
+        await database.createFolder(folder, now, now);
+      }
+
+      for (const tag of tagsToCreate) {
+        if (!availableTags.some((existing) => existing.toLowerCase() === tag.toLowerCase())) {
+          await database.createTag(tag, now, now);
+        }
+      }
+
+      for (const note of notesToCreate) {
+        await database.createNote(note);
+      }
+
+      setFolders(localFolders);
+      setDatabaseTags((current) => uniqueByLower([...current, ...tagsToCreate]).sort((a, b) => a.localeCompare(b)));
+      setNotes((current) => [...notesToCreate, ...current]);
+      setSelectedNoteId(notesToCreate[0]?.id ?? selectedNoteId);
+      setActiveViewState("all");
+      setActiveFolderIdState(null);
+      setActiveTagState(null);
+      setSearchQuery("");
+      return notesToCreate.length;
+    },
+    [availableTags, flushNoteSave, folders, selectedNoteId],
+  );
+
+  const restoreBackupMerge = useCallback(
+    async (backup: LumoBackup) => {
+      flushNoteSave(selectedNoteId);
+
+      const now = new Date().toISOString();
+      const localFolders = [...folders];
+      const foldersToCreate: Folder[] = [];
+
+      const ensureFolder = (incoming: Folder | null, fallbackName: string) => {
+        const name = incoming?.name?.trim() || fallbackName || "Uncategorized";
+        const existing = localFolders.find(
+          (folder) => folder.name.toLowerCase() === name.toLowerCase(),
+        );
+        if (existing) return existing;
+
+        const idAlreadyUsed = localFolders.some((folder) => folder.id === incoming?.id);
+        const folder: Folder = {
+          id: incoming && !idAlreadyUsed ? incoming.id : folderId(name),
+          name,
+          colorClass: incoming?.colorClass || nextFolderColor(localFolders.length),
+        };
+        localFolders.push(folder);
+        foldersToCreate.push(folder);
+        return folder;
+      };
+
+      for (const folder of backup.folders) {
+        ensureFolder(folder, folder.name);
+      }
+
+      const existingNoteIds = new Set(notes.map((note) => note.id));
+      const notesToCreate = backup.notes.map((incoming) => {
+        const backupFolder =
+          backup.folders.find((folder) => folder.id === incoming.folderId) ?? null;
+        const folder = ensureFolder(backupFolder, incoming.folderName);
+        const id = existingNoteIds.has(incoming.id) ? noteId() : incoming.id;
+        existingNoteIds.add(id);
+        const relationshipTags = backup.noteTags
+          .filter((item) => item.noteId === incoming.id)
+          .map((item) => item.tag);
+
+        return {
+          ...incoming,
+          id,
+          folderId: folder.id,
+          folderName: folder.name,
+          preview: incoming.preview || getPlainTextPreview(incoming.content),
+          tags: uniqueByLower([...incoming.tags, ...relationshipTags]),
+        } satisfies Note;
+      });
+      const tagsToCreate = uniqueByLower([
+        ...backup.tags,
+        ...backup.noteTags.map((item) => item.tag),
+        ...notesToCreate.flatMap((note) => note.tags),
+      ]);
+
+      for (const folder of foldersToCreate) {
+        await database.createFolder(folder, now, now);
+      }
+
+      for (const tag of tagsToCreate) {
+        if (!availableTags.some((existing) => existing.toLowerCase() === tag.toLowerCase())) {
+          await database.createTag(tag, now, now);
+        }
+      }
+
+      for (const note of notesToCreate) {
+        await database.createNote(note);
+      }
+
+      setFolders(localFolders);
+      setDatabaseTags((current) => uniqueByLower([...current, ...tagsToCreate]).sort((a, b) => a.localeCompare(b)));
+      setNotes((current) => [...notesToCreate, ...current]);
+      setSelectedNoteId(notesToCreate[0]?.id ?? selectedNoteId);
+      setActiveViewState("all");
+      setActiveFolderIdState(null);
+      setActiveTagState(null);
+      setSearchQuery("");
+      return notesToCreate.length;
+    },
+    [availableTags, flushNoteSave, folders, notes, selectedNoteId],
+  );
 
   const updateSelectedNote = useCallback(
     (changes: Partial<Pick<Note, "title" | "content" | "preview">>) => {
@@ -746,6 +923,8 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       isDatabaseLoading,
       saveStatus,
       createNote,
+      importMarkdownNotes,
+      restoreBackupMerge,
       selectNote,
       forceSaveSelectedNote,
       updateSelectedNote,
@@ -783,6 +962,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       filteredNotes,
       folders,
       isDatabaseLoading,
+      importMarkdownNotes,
       moveToTrash,
       permanentlyDeleteSelectedNote,
       permanentlyDeleteTrashedNotes,
@@ -791,6 +971,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       renameTag,
       notes,
       restoreNote,
+      restoreBackupMerge,
       searchQuery,
       saveStatus,
       selectedNote,

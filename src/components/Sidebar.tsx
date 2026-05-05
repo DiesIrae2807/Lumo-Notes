@@ -1,4 +1,5 @@
 import { BrandMark } from "./BrandMark";
+import { ImportExportActions } from "./ImportExportActions";
 import { SectionHeader } from "./SectionHeader";
 import { useNotes } from "../store/notesStore";
 import type { SidebarView } from "../types/note";
@@ -102,7 +103,7 @@ export function Sidebar() {
   };
 
   return (
-    <aside className="column-panel hidden min-h-0 flex-col overflow-hidden p-3 lg:flex">
+    <aside className="column-panel scroll-area hidden min-h-0 flex-col overflow-y-auto overflow-x-hidden p-3 lg:flex">
       <button
         className="mb-4 flex w-full items-center justify-between rounded-xl border border-lumo-violet/20 bg-lumo-violet/[0.08] px-3 py-2.5 text-sm text-white transition hover:border-lumo-violet/40 active:scale-[0.99]"
         onClick={() => createNote()}
@@ -235,7 +236,11 @@ export function Sidebar() {
         </button>
       </div>
 
-      <div className="mt-auto flex items-center gap-3 border-t border-white/10 pt-4">
+      <div className="mt-6">
+        <ImportExportActions />
+      </div>
+
+      <div className="mt-4 flex items-center gap-3 border-t border-white/10 pt-4">
         <div className="grid h-9 w-9 place-items-center rounded-full bg-lumo-violet text-sm font-semibold text-white">
           AS
         </div>

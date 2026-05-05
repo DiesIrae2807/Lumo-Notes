@@ -1,4 +1,5 @@
 mod db;
+mod file_io;
 
 use tauri::Manager;
 
@@ -31,7 +32,10 @@ pub fn run() {
             db::update_tag,
             db::delete_tag,
             db::add_tag_to_note,
-            db::remove_tag_from_note
+            db::remove_tag_from_note,
+            file_io::save_text_file,
+            file_io::choose_folder_and_write_files,
+            file_io::open_text_files
         ])
         .run(tauri::generate_context!())
         .expect("error while running Lumo Notes");

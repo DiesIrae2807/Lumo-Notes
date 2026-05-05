@@ -1,0 +1,294 @@
+{
+  "metadata": {
+    "appName": "Lumo Notes",
+    "backupVersion": 1,
+    "exportedAt": "2026-05-05T23:53:42.850Z"
+  },
+  "notes": [
+    {
+      "id": "note-22d6b6ab-03e2-401e-abd5-07b257338e23",
+      "title": "Project Aurora",
+      "content": "[[|Alias only]]",
+      "preview": "Alias only",
+      "folderId": "projects",
+      "folderName": "Projects",
+      "tags": [
+        "product",
+        "work"
+      ],
+      "isPinned": true,
+      "isFavorite": false,
+      "isDeleted": false,
+      "createdAt": "2026-04-25T10:00:00.000Z",
+      "updatedAt": "2026-05-05T23:24:33.182Z"
+    },
+    {
+      "id": "note-4407e13f-ea19-4f7f-9edd-a98d93e541c0",
+      "title": "Daily Notes",
+      "content": "[[Project Aurora|]]",
+      "preview": "Project Aurora",
+      "folderId": "projects",
+      "folderName": "Projects",
+      "tags": [],
+      "isPinned": false,
+      "isFavorite": false,
+      "isDeleted": false,
+      "createdAt": "2026-05-05T23:23:53.099Z",
+      "updatedAt": "2026-05-05T23:24:23.653Z"
+    },
+    {
+      "id": "note-3eb13942-0dae-4860-919f-67178f1e6ba6",
+      "title": "مذكرة قانونية",
+      "content": "[[Résumé français]]",
+      "preview": "Résumé français",
+      "folderId": "projects",
+      "folderName": "Projects",
+      "tags": [],
+      "isPinned": false,
+      "isFavorite": false,
+      "isDeleted": false,
+      "createdAt": "2026-05-05T23:22:24.299Z",
+      "updatedAt": "2026-05-05T23:23:37.877Z"
+    },
+    {
+      "id": "note-145ce9f5-1848-491a-89d4-345f1ff7dc2b",
+      "title": "Résumé français",
+      "content": "[[مذكرة قانونية]]",
+      "preview": "مذكرة قانونية",
+      "folderId": "projects",
+      "folderName": "Projects",
+      "tags": [],
+      "isPinned": false,
+      "isFavorite": false,
+      "isDeleted": false,
+      "createdAt": "2026-05-05T23:22:28.511Z",
+      "updatedAt": "2026-05-05T23:23:33.459Z"
+    },
+    {
+      "id": "note-da6e18c0-6448-4a4c-ad8d-8b75a46c5245",
+      "title": "Test note",
+      "content": "[[Project Aurora|Aurora plan]]",
+      "preview": "Aurora plan",
+      "folderId": "uncategorized",
+      "folderName": "Uncategorized",
+      "tags": [
+        "test"
+      ],
+      "isPinned": true,
+      "isFavorite": false,
+      "isDeleted": false,
+      "createdAt": "2026-05-04T22:10:28.083Z",
+      "updatedAt": "2026-05-05T23:15:02.291Z"
+    },
+    {
+      "id": "note-f6e71439-b600-478d-aa75-bb44c9dfbe6e",
+      "title": "Ceci est un test",
+      "content": "**Bold text** and *italic text*\n\n- Bullet one\n- Bullet two\n\n1. Number one\n2. Number two\n\n> Quote here\n\n`inline code`\n\n[External link](https://example.com)\n\n[[Internal Link]]",
+      "preview": "Bold text and italic text Bullet one Bullet two Number one Number two Quote here inline code...",
+      "folderId": "projects",
+      "folderName": "Projects",
+      "tags": [],
+      "isPinned": false,
+      "isFavorite": true,
+      "isDeleted": false,
+      "createdAt": "2026-05-05T11:49:34.174Z",
+      "updatedAt": "2026-05-05T23:06:41.427Z"
+    },
+    {
+      "id": "note-user-interviews",
+      "title": "User interviews",
+      "content": "People want capture to feel fast, calm, and reliable. Organization should emerge without heavy setup.",
+      "preview": "What users need, learnings, gratitude",
+      "folderId": "personal",
+      "folderName": "Personal",
+      "tags": [
+        "personal",
+        "product"
+      ],
+      "isPinned": false,
+      "isFavorite": false,
+      "isDeleted": false,
+      "createdAt": "2026-05-02T10:00:00.000Z",
+      "updatedAt": "2026-05-05T23:06:30.471Z"
+    },
+    {
+      "id": "note-850a9667-65dd-4b6f-a524-99f7e8bd3e61",
+      "title": "Untitled Note",
+      "content": "",
+      "preview": "",
+      "folderId": "projects",
+      "folderName": "Projects",
+      "tags": [],
+      "isPinned": false,
+      "isFavorite": false,
+      "isDeleted": false,
+      "createdAt": "2026-05-05T11:49:35.637Z",
+      "updatedAt": "2026-05-05T11:49:35.637Z"
+    },
+    {
+      "id": "note-713b3cb1-ecee-45d1-a6f8-32a790bf78c3",
+      "title": "test 3",
+      "content": "asdzczxb\n",
+      "preview": "asdzczxb",
+      "folderId": "uncategorized",
+      "folderName": "Uncategorized",
+      "tags": [],
+      "isPinned": false,
+      "isFavorite": false,
+      "isDeleted": false,
+      "createdAt": "2026-05-04T22:11:56.764Z",
+      "updatedAt": "2026-05-05T11:47:56.277Z"
+    },
+    {
+      "id": "note-28910f07-0bf0-4c0a-9846-00611a2a1b8c",
+      "title": "test 2",
+      "content": "mon gars tu vas marcher",
+      "preview": "mon gars tu vas marcher",
+      "folderId": "projects",
+      "folderName": "Projects",
+      "tags": [],
+      "isPinned": false,
+      "isFavorite": false,
+      "isDeleted": false,
+      "createdAt": "2026-05-04T22:11:46.740Z",
+      "updatedAt": "2026-05-04T22:12:20.612Z"
+    },
+    {
+      "id": "note-branding-ideas",
+      "title": "Branding Ideas",
+      "content": "Color, typography, style, and moodboard notes for the next Lumo identity pass.",
+      "preview": "Color, typography, style, moodboard",
+      "folderId": "personal",
+      "folderName": "Personal",
+      "tags": [
+        "design",
+        "personal"
+      ],
+      "isPinned": true,
+      "isFavorite": false,
+      "isDeleted": false,
+      "createdAt": "2026-04-29T10:00:00.000Z",
+      "updatedAt": "2026-05-04T21:00:00.000Z"
+    },
+    {
+      "id": "note-design-system",
+      "title": "Design system exploration",
+      "content": "Explore compact panels, restrained color tokens, focus states, and editor controls.",
+      "preview": "Color, typography, components",
+      "folderId": "projects",
+      "folderName": "Projects",
+      "tags": [
+        "design",
+        "product"
+      ],
+      "isPinned": false,
+      "isFavorite": false,
+      "isDeleted": false,
+      "createdAt": "2026-05-01T10:00:00.000Z",
+      "updatedAt": "2026-05-04T18:00:00.000Z"
+    },
+    {
+      "id": "note-marketing-strategy",
+      "title": "Marketing strategy",
+      "content": "Positioning, messaging, and channels for the first public Lumo Notes story.",
+      "preview": "Positioning, messaging, channels",
+      "folderId": "projects",
+      "folderName": "Projects",
+      "tags": [
+        "planning",
+        "work"
+      ],
+      "isPinned": false,
+      "isFavorite": false,
+      "isDeleted": false,
+      "createdAt": "2026-04-30T10:00:00.000Z",
+      "updatedAt": "2026-05-03T10:00:00.000Z"
+    }
+  ],
+  "folders": [
+    {
+      "id": "projects",
+      "name": "Projects",
+      "colorClass": "bg-lumo-violet"
+    },
+    {
+      "id": "personal",
+      "name": "Personal",
+      "colorClass": "bg-lumo-teal"
+    },
+    {
+      "id": "ideas",
+      "name": "Ideas",
+      "colorClass": "bg-emerald-300"
+    },
+    {
+      "id": "learning",
+      "name": "Learning",
+      "colorClass": "bg-violet-400"
+    },
+    {
+      "id": "archive",
+      "name": "Archive",
+      "colorClass": "bg-indigo-200"
+    },
+    {
+      "id": "uncategorized",
+      "name": "Uncategorized",
+      "colorClass": "bg-slate-400"
+    }
+  ],
+  "tags": [
+    "design",
+    "personal",
+    "planning",
+    "product",
+    "test",
+    "work"
+  ],
+  "noteTags": [
+    {
+      "noteId": "note-22d6b6ab-03e2-401e-abd5-07b257338e23",
+      "tag": "product"
+    },
+    {
+      "noteId": "note-22d6b6ab-03e2-401e-abd5-07b257338e23",
+      "tag": "work"
+    },
+    {
+      "noteId": "note-da6e18c0-6448-4a4c-ad8d-8b75a46c5245",
+      "tag": "test"
+    },
+    {
+      "noteId": "note-user-interviews",
+      "tag": "personal"
+    },
+    {
+      "noteId": "note-user-interviews",
+      "tag": "product"
+    },
+    {
+      "noteId": "note-branding-ideas",
+      "tag": "design"
+    },
+    {
+      "noteId": "note-branding-ideas",
+      "tag": "personal"
+    },
+    {
+      "noteId": "note-design-system",
+      "tag": "design"
+    },
+    {
+      "noteId": "note-design-system",
+      "tag": "product"
+    },
+    {
+      "noteId": "note-marketing-strategy",
+      "tag": "planning"
+    },
+    {
+      "noteId": "note-marketing-strategy",
+      "tag": "work"
+    }
+  ]
+}

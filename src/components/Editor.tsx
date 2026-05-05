@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { MarkdownPreview } from "./MarkdownPreview";
 import { useNotes } from "../store/notesStore";
+import { noteToMarkdown, sanitizeFilename, saveTextFile } from "../services/fileTransfer";
 import { formatMetadataDate } from "../utils/date";
 import { resolveInternalLink } from "../utils/links";
 
@@ -109,6 +110,15 @@ export function Editor() {
 
   const isInternalLinkResolved = (title: string) =>
     Boolean(resolveInternalLink(title, notes, activeView === "trash"));
+
+  const exportSelectedNote = async () => {
+    const filename = `${sanitizeFilename(selectedNote.title)}.md`;
+    try {
+      await saveTextFile("Export selected note", filename, noteToMarkdown(selectedNote));
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : String(error));
+    }
+  };
 
   const insertMarkdown = (action: MarkdownAction) => {
     const textarea = bodyRef.current;
@@ -268,6 +278,12 @@ export function Editor() {
             onClick={() => togglePinned(selectedNote.id)}
           >
             {selectedNote.isPinned ? "Pinned" : "Pin"}
+          </button>
+          <button
+            className="rounded-lg px-3 py-1.5 transition hover:bg-white/[0.05] hover:text-slate-300 active:scale-95"
+            onClick={exportSelectedNote}
+          >
+            Export .md
           </button>
           <button
             className="rounded-lg px-3 py-1.5 transition hover:bg-white/[0.05] hover:text-slate-300 active:scale-95"
