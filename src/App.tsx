@@ -1,4 +1,4 @@
-import type { MouseEvent } from "react";
+import { useEffect, type MouseEvent } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Editor } from "./components/Editor";
 import { InsightsPanel } from "./components/InsightsPanel";
@@ -6,6 +6,7 @@ import { NotesList } from "./components/NotesList";
 import { Sidebar } from "./components/Sidebar";
 import { BrandMark } from "./components/BrandMark";
 import { NotesProvider } from "./store/notesStore";
+import { useNotes } from "./store/notesStore";
 
 const appWindow = getCurrentWindow();
 
@@ -97,9 +98,60 @@ function WindowTitleBar() {
   );
 }
 
+function AppShortcuts() {
+  const { createNote, forceSaveSelectedNote, moveToTrash, selectedNote } = useNotes();
+
+  useEffect(() => {
+    const isTypingTarget = (target: EventTarget | null) => {
+      if (!(target instanceof HTMLElement)) {
+        return false;
+      }
+
+      return Boolean(target.closest("input, textarea, select, [contenteditable='true']"));
+    };
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!event.ctrlKey) {
+        return;
+      }
+
+      const key = event.key.toLowerCase();
+
+      if (key === "n") {
+        event.preventDefault();
+        createNote();
+        return;
+      }
+
+      if (key === "f") {
+        event.preventDefault();
+        window.dispatchEvent(new Event("lumo-focus-search"));
+        return;
+      }
+
+      if (key === "s") {
+        event.preventDefault();
+        forceSaveSelectedNote();
+        return;
+      }
+
+      if (event.key === "Delete" && !isTypingTarget(event.target) && selectedNote && !selectedNote.isDeleted) {
+        event.preventDefault();
+        moveToTrash(selectedNote.id);
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [createNote, forceSaveSelectedNote, moveToTrash, selectedNote]);
+
+  return null;
+}
+
 export default function App() {
   return (
     <NotesProvider>
+      <AppShortcuts />
       <div className="app-root min-h-[100dvh] overflow-hidden bg-night-950 text-slate-100">
         <div className="fixed inset-0 pointer-events-none">
           <div className="absolute -left-24 top-12 h-80 w-80 rounded-full bg-lumo-violet/18 blur-3xl" />

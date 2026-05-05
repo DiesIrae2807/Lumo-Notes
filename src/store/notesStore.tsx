@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -24,8 +25,10 @@ type NotesContextValue = {
   filteredNotes: Note[];
   databaseError: string | null;
   isDatabaseLoading: boolean;
+  saveStatus: "idle" | "dirty" | "saving" | "saved" | "error";
   createNote: () => void;
   selectNote: (id: string) => void;
+  forceSaveSelectedNote: () => void;
   updateSelectedNote: (changes: Partial<Pick<Note, "title" | "content" | "preview">>) => void;
   toggleFavorite: (id: string) => void;
   togglePinned: (id: string) => void;
@@ -99,8 +102,122 @@ export function NotesProvider({ children }: { children: ReactNode }) {
   const [activeTag, setActiveTagState] = useState<string | null>(null);
   const [isDatabaseLoading, setIsDatabaseLoading] = useState(true);
   const [databaseError, setDatabaseError] = useState<string | null>(null);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "dirty" | "saving" | "saved" | "error">("idle");
+  const pendingNoteSaves = useRef(new Map<string, Note>());
+  const pendingNoteVersions = useRef(new Map<string, number>());
+  const saveTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const activeSaveVersions = useRef(new Set<string>());
+  const saveVersion = useRef(0);
 
   const selectedNote = notes.find((note) => note.id === selectedNoteId) ?? null;
+
+  const settleSaveStatus = useCallback(() => {
+    if (
+      pendingNoteSaves.current.size === 0 &&
+      saveTimers.current.size === 0 &&
+      activeSaveVersions.current.size === 0
+    ) {
+      setSaveStatus("saved");
+    } else {
+      setSaveStatus("saving");
+    }
+  }, []);
+
+  const persistNoteNow = useCallback((note: Note, version: number) => {
+    const saveKey = `${note.id}:${version}`;
+    activeSaveVersions.current.add(saveKey);
+    setSaveStatus("saving");
+    return database
+      .updateNote(note)
+      .then(() => {
+        if (pendingNoteVersions.current.get(note.id) === version) {
+          pendingNoteSaves.current.delete(note.id);
+          pendingNoteVersions.current.delete(note.id);
+        }
+        activeSaveVersions.current.delete(saveKey);
+        settleSaveStatus();
+      })
+      .catch((error) => {
+        activeSaveVersions.current.delete(saveKey);
+        if (pendingNoteVersions.current.get(note.id) === version) {
+          setSaveStatus("error");
+        } else {
+          settleSaveStatus();
+        }
+        setDatabaseError(error instanceof Error ? error.message : String(error));
+      });
+  }, [settleSaveStatus]);
+
+  const flushNoteSave = useCallback(
+    (id: string | null) => {
+      if (!id) {
+        return;
+      }
+
+      const timer = saveTimers.current.get(id);
+      if (timer) {
+        clearTimeout(timer);
+        saveTimers.current.delete(id);
+      }
+
+      const pending = pendingNoteSaves.current.get(id);
+      const version = pendingNoteVersions.current.get(id);
+      if (pending && version !== undefined) {
+        void persistNoteNow(pending, version);
+      } else if (selectedNoteId === id) {
+        settleSaveStatus();
+      }
+    },
+    [persistNoteNow, selectedNoteId, settleSaveStatus],
+  );
+
+  const queueNoteSave = useCallback(
+    (note: Note) => {
+      const version = saveVersion.current + 1;
+      saveVersion.current = version;
+      pendingNoteSaves.current.set(note.id, note);
+      pendingNoteVersions.current.set(note.id, version);
+      setSaveStatus("dirty");
+
+      const existingTimer = saveTimers.current.get(note.id);
+      if (existingTimer) {
+        clearTimeout(existingTimer);
+      }
+
+      const timer = setTimeout(() => {
+        saveTimers.current.delete(note.id);
+        const pending = pendingNoteSaves.current.get(note.id);
+        const pendingVersion = pendingNoteVersions.current.get(note.id);
+        if (pending && pendingVersion !== undefined) {
+          void persistNoteNow(pending, pendingVersion);
+        } else if (selectedNoteId === note.id) {
+          settleSaveStatus();
+        }
+      }, 700);
+
+      saveTimers.current.set(note.id, timer);
+    },
+    [persistNoteNow, selectedNoteId, settleSaveStatus],
+  );
+
+  const flushAllPendingSaves = useCallback(() => {
+    for (const id of pendingNoteSaves.current.keys()) {
+      flushNoteSave(id);
+    }
+  }, [flushNoteSave]);
+
+  useEffect(() => {
+    const flushBeforeUnload = () => {
+      flushAllPendingSaves();
+    };
+
+    window.addEventListener("beforeunload", flushBeforeUnload);
+
+    return () => {
+      window.removeEventListener("beforeunload", flushBeforeUnload);
+      flushAllPendingSaves();
+    };
+  }, [flushAllPendingSaves]);
 
   useEffect(() => {
     let isMounted = true;
@@ -193,6 +310,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
   }, [activeFolderId, activeTag, activeView, notes, searchQuery]);
 
   const createNote = useCallback(() => {
+    flushNoteSave(selectedNoteId);
     const now = new Date().toISOString();
     const defaultFolder = folders[0];
     const newNote: Note = {
@@ -219,7 +337,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     setActiveFolderIdState(null);
     setActiveTagState(null);
     setSearchQuery("");
-  }, [folders]);
+  }, [flushNoteSave, folders, selectedNoteId]);
 
   const updateSelectedNote = useCallback(
     (changes: Partial<Pick<Note, "title" | "content" | "preview">>) => {
@@ -243,12 +361,22 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       setNotes((current) =>
         current.map((note) => (note.id === updatedNote.id ? updatedNote : note)),
       );
-      void database.updateNote(updatedNote).catch((error) => {
-        setDatabaseError(error instanceof Error ? error.message : String(error));
-      });
+      queueNoteSave(updatedNote);
     },
-    [selectedNote],
+    [queueNoteSave, selectedNote],
   );
+
+  const selectNote = useCallback(
+    (id: string) => {
+      flushNoteSave(selectedNoteId);
+      setSelectedNoteId(id);
+    },
+    [flushNoteSave, selectedNoteId],
+  );
+
+  const forceSaveSelectedNote = useCallback(() => {
+    flushNoteSave(selectedNoteId);
+  }, [flushNoteSave, selectedNoteId]);
 
   const updateNoteById = useCallback((id: string, updater: (note: Note) => Note) => {
     setNotes((current) => current.map((note) => (note.id === id ? updater(note) : note)));
@@ -256,6 +384,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
 
   const toggleFavorite = useCallback(
     (id: string) => {
+      flushNoteSave(id);
       const target = notes.find((note) => note.id === id);
       if (!target) return;
       const updatedAt = new Date().toISOString();
@@ -270,11 +399,12 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         setDatabaseError(error instanceof Error ? error.message : String(error));
       });
     },
-    [notes, updateNoteById],
+    [flushNoteSave, notes, updateNoteById],
   );
 
   const togglePinned = useCallback(
     (id: string) => {
+      flushNoteSave(id);
       const target = notes.find((note) => note.id === id);
       if (!target) return;
       const updatedAt = new Date().toISOString();
@@ -289,11 +419,12 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         setDatabaseError(error instanceof Error ? error.message : String(error));
       });
     },
-    [notes, updateNoteById],
+    [flushNoteSave, notes, updateNoteById],
   );
 
   const moveToTrash = useCallback(
     (id: string) => {
+      flushNoteSave(id);
       const updatedAt = new Date().toISOString();
       updateNoteById(id, (note) => ({
         ...note,
@@ -306,11 +437,12 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       });
       setActiveViewState("trash");
     },
-    [updateNoteById],
+    [flushNoteSave, updateNoteById],
   );
 
   const restoreNote = useCallback(
     (id: string) => {
+      flushNoteSave(id);
       const updatedAt = new Date().toISOString();
       updateNoteById(id, (note) => ({
         ...note,
@@ -322,7 +454,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       });
       setActiveViewState("all");
     },
-    [updateNoteById],
+    [flushNoteSave, updateNoteById],
   );
 
   const permanentlyDeleteSelectedNote = useCallback(() => {
@@ -330,6 +462,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    flushNoteSave(selectedNote.id);
     const deletedId = selectedNote.id;
     const nextTrashedNote =
       notes
@@ -344,7 +477,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     void database.permanentlyDeleteNote(deletedId).catch((error) => {
       setDatabaseError(error instanceof Error ? error.message : String(error));
     });
-  }, [notes, selectedNote]);
+  }, [flushNoteSave, notes, selectedNote]);
 
   const permanentlyDeleteTrashedNotes = useCallback(() => {
     const trashedIds = new Set(notes.filter((note) => note.isDeleted).map((note) => note.id));
@@ -607,8 +740,10 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       filteredNotes,
       databaseError,
       isDatabaseLoading,
+      saveStatus,
       createNote,
-      selectNote: setSelectedNoteId,
+      selectNote,
+      forceSaveSelectedNote,
       updateSelectedNote,
       toggleFavorite,
       togglePinned,
@@ -653,8 +788,10 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       notes,
       restoreNote,
       searchQuery,
+      saveStatus,
       selectedNote,
       selectedNoteId,
+      selectNote,
       setSelectedNoteFolder,
       setActiveFolderId,
       setActiveTag,

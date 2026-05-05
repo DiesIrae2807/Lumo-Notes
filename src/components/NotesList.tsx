@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { NoteCard } from "./NoteCard";
 import { SectionHeader } from "./SectionHeader";
 import { useNotes } from "../store/notesStore";
@@ -46,6 +47,7 @@ function renderCards(notes: Note[], selectedNoteId: string | null, selectNote: (
 }
 
 export function NotesList() {
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const {
     activeView,
     createNote,
@@ -67,6 +69,16 @@ export function NotesList() {
   const hasSearch = searchQuery.trim().length > 0;
   const trashedCount = notes.filter((note) => note.isDeleted).length;
 
+  useEffect(() => {
+    const focusSearch = () => {
+      searchInputRef.current?.focus();
+      searchInputRef.current?.select();
+    };
+
+    window.addEventListener("lumo-focus-search", focusSearch);
+    return () => window.removeEventListener("lumo-focus-search", focusSearch);
+  }, []);
+
   const confirmEmptyTrash = () => {
     if (window.confirm("Permanently delete all notes in Trash? This cannot be undone.")) {
       permanentlyDeleteTrashedNotes();
@@ -79,6 +91,7 @@ export function NotesList() {
         <div className="relative flex-1">
           <span className="pointer-events-none absolute left-3 top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-full border border-slate-500" />
           <input
+            ref={searchInputRef}
             value={searchQuery}
             onChange={(event) => setSearchQuery(event.target.value)}
             className="h-10 w-full rounded-xl border border-white/10 bg-night-950/55 pl-8 pr-16 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-lumo-teal/40 focus:bg-night-950"

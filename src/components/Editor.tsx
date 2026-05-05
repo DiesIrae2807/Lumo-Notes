@@ -1,7 +1,28 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useNotes } from "../store/notesStore";
 
-const editorTools = ["B", "I", "U", "List", "Bullets", "Link", "Code", "Image", "Grid"];
+type MarkdownAction =
+  | "bold"
+  | "italic"
+  | "heading"
+  | "bullet"
+  | "numbered"
+  | "quote"
+  | "code"
+  | "checkbox"
+  | "link";
+
+const editorTools: Array<{ label: string; action: MarkdownAction }> = [
+  { label: "B", action: "bold" },
+  { label: "I", action: "italic" },
+  { label: "H", action: "heading" },
+  { label: "Bullets", action: "bullet" },
+  { label: "Numbers", action: "numbered" },
+  { label: "Quote", action: "quote" },
+  { label: "Code", action: "code" },
+  { label: "Check", action: "checkbox" },
+  { label: "Link", action: "link" },
+];
 
 const wordCount = (content: string) =>
   content.trim() ? content.trim().split(/\s+/).length : 0;
@@ -36,11 +57,14 @@ export function Editor() {
     restoreNote,
     selectedNote,
     setSelectedNoteFolder,
+    forceSaveSelectedNote,
+    saveStatus,
     toggleFavorite,
     togglePinned,
     updateSelectedNote,
   } = useNotes();
   const [tagInput, setTagInput] = useState("");
+  const bodyRef = useRef<HTMLTextAreaElement | null>(null);
 
   if (!selectedNote) {
     return <EmptyEditor />;
@@ -60,6 +84,109 @@ export function Editor() {
     }
   };
 
+  const formatDate = (date: string) =>
+    new Intl.DateTimeFormat(undefined, {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(new Date(date));
+
+  const insertMarkdown = (action: MarkdownAction) => {
+    const textarea = bodyRef.current;
+    if (!textarea) return;
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const selected = selectedNote.content.slice(start, end);
+    let insertion = selected;
+    let nextSelectionStart = start;
+    let nextSelectionEnd = start;
+
+    const linePrefix = (prefix: string) => {
+      const fallback = selected || "List item";
+      return fallback
+        .split("\n")
+        .map((line) => `${prefix}${line || " "}`)
+        .join("\n");
+    };
+
+    switch (action) {
+      case "bold":
+        insertion = `**${selected || "bold text"}**`;
+        nextSelectionStart = start + 2;
+        nextSelectionEnd = nextSelectionStart + (selected || "bold text").length;
+        break;
+      case "italic":
+        insertion = `*${selected || "italic text"}*`;
+        nextSelectionStart = start + 1;
+        nextSelectionEnd = nextSelectionStart + (selected || "italic text").length;
+        break;
+      case "heading":
+        insertion = `## ${selected || "Heading"}`;
+        nextSelectionStart = start + 3;
+        nextSelectionEnd = nextSelectionStart + (selected || "Heading").length;
+        break;
+      case "bullet":
+        insertion = linePrefix("- ");
+        break;
+      case "numbered":
+        insertion = (selected || "List item")
+          .split("\n")
+          .map((line, index) => `${index + 1}. ${line || " "}`)
+          .join("\n");
+        break;
+      case "quote":
+        insertion = linePrefix("> ");
+        break;
+      case "code":
+        insertion = selected.includes("\n")
+          ? `\`\`\`\n${selected || "code"}\n\`\`\``
+          : `\`${selected || "code"}\``;
+        break;
+      case "checkbox":
+        insertion = linePrefix("- [ ] ");
+        break;
+      case "link":
+        insertion = `[[${selected || "Linked note placeholder"}]]`;
+        nextSelectionStart = start + 2;
+        nextSelectionEnd = nextSelectionStart + (selected || "Linked note placeholder").length;
+        break;
+    }
+
+    const nextContent =
+      selectedNote.content.slice(0, start) + insertion + selectedNote.content.slice(end);
+
+    updateSelectedNote({ content: nextContent });
+
+    window.setTimeout(() => {
+      textarea.focus();
+      if (nextSelectionStart === start && nextSelectionEnd === start) {
+        textarea.setSelectionRange(start + insertion.length, start + insertion.length);
+      } else {
+        textarea.setSelectionRange(nextSelectionStart, nextSelectionEnd);
+      }
+    }, 0);
+  };
+
+  const handleEditorKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (!event.ctrlKey) return;
+
+    const key = event.key.toLowerCase();
+
+    if (key === "b") {
+      event.preventDefault();
+      insertMarkdown("bold");
+    } else if (key === "i") {
+      event.preventDefault();
+      insertMarkdown("italic");
+    } else if (event.shiftKey && key === "k") {
+      event.preventDefault();
+      insertMarkdown("link");
+    }
+  };
+
   return (
     <main className="column-panel editor-glow flex min-h-0 flex-col overflow-hidden">
       <div className="flex items-center justify-between border-b border-white/10 px-6 py-4">
@@ -72,6 +199,21 @@ export function Editor() {
           </span>
         </div>
         <div className="flex items-center gap-1 text-xs text-slate-500">
+          <span
+            className={`mr-2 rounded-lg px-2 py-1 ${
+              saveStatus === "saving" || saveStatus === "dirty"
+                ? "text-lumo-teal"
+                : saveStatus === "error"
+                  ? "text-rose-300"
+                  : "text-slate-500"
+            }`}
+          >
+            {saveStatus === "saving" || saveStatus === "dirty"
+              ? "Saving..."
+              : saveStatus === "error"
+                ? "Save failed"
+                : "Saved"}
+          </span>
           <button
             className={`rounded-lg px-3 py-1.5 transition hover:bg-white/[0.05] hover:text-slate-300 active:scale-95 ${
               selectedNote.isFavorite ? "text-amber-300" : ""
@@ -117,12 +259,14 @@ export function Editor() {
               className="w-full border-none bg-transparent text-3xl font-semibold tracking-tight text-white outline-none placeholder:text-slate-600 md:text-4xl"
               value={selectedNote.title}
               onChange={(event) => updateSelectedNote({ title: event.target.value })}
+              onBlur={forceSaveSelectedNote}
               placeholder="Untitled Note"
             />
             <input
               className="mt-3 w-full border-none bg-transparent text-base text-slate-300 outline-none placeholder:text-slate-600"
               value={selectedNote.preview}
               onChange={(event) => updateSelectedNote({ preview: event.target.value })}
+              onBlur={forceSaveSelectedNote}
               placeholder="Short preview or subtitle"
             />
             <div className="mt-5 grid gap-3 rounded-xl border border-white/10 bg-white/[0.025] p-3 md:grid-cols-[220px_1fr]">
@@ -199,11 +343,25 @@ export function Editor() {
           </div>
 
           <textarea
+            ref={bodyRef}
             className="min-h-[360px] w-full resize-none rounded-xl border border-white/10 bg-night-950/20 p-4 text-base leading-8 text-slate-200 outline-none transition placeholder:text-slate-600 focus:border-lumo-teal/35 focus:bg-night-950/35"
             value={selectedNote.content}
             onChange={(event) => updateSelectedNote({ content: event.target.value })}
+            onBlur={forceSaveSelectedNote}
+            onKeyDown={handleEditorKeyDown}
             placeholder="Start writing..."
           />
+
+          <div className="mt-4 grid gap-2 rounded-xl border border-white/10 bg-white/[0.025] p-3 text-xs text-slate-500 md:grid-cols-2">
+            <span>Created {formatDate(selectedNote.createdAt)}</span>
+            <span>Updated {formatDate(selectedNote.updatedAt)}</span>
+            <span>Folder {selectedNote.folderName || "Uncategorized"}</span>
+            <span>
+              Tags {selectedNote.tags.length > 0 ? selectedNote.tags.join(", ") : "None"}
+            </span>
+            <span>{wordCount(selectedNote.content)} words</span>
+            <span>{selectedNote.content.length} characters</span>
+          </div>
 
         </div>
       </article>
@@ -212,14 +370,17 @@ export function Editor() {
         <div className="flex items-center gap-1">
           {editorTools.map((tool) => (
             <button
-              key={tool}
+              key={tool.action}
               className="rounded-lg px-3 py-2 text-xs transition hover:bg-white/[0.05] hover:text-white active:scale-95"
+              onClick={() => insertMarkdown(tool.action)}
             >
-              {tool}
+              {tool.label}
             </button>
           ))}
         </div>
-        <span className="text-xs text-slate-300">{wordCount(selectedNote.content)} words</span>
+        <span className="text-xs text-slate-300">
+          {wordCount(selectedNote.content)} words / {selectedNote.content.length} chars
+        </span>
       </div>
     </main>
   );
