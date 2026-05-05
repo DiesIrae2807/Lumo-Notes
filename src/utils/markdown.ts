@@ -16,12 +16,17 @@ export function markdownToPlainText(markdown: string) {
     .trim();
 }
 
-export function excerptFromMarkdown(markdown: string, maxLength = 220) {
-  const plain = markdownToPlainText(markdown);
+export function getPlainTextPreview(content: string, maxLength = 96) {
+  const plain = markdownToPlainText(content);
 
   if (plain.length <= maxLength) {
     return plain;
   }
 
-  return `${plain.slice(0, maxLength).trim()}...`;
+  const trimmed = plain.slice(0, maxLength).replace(/\s+\S*$/, "").trim();
+  return `${trimmed || plain.slice(0, maxLength).trim()}...`;
+}
+
+export function excerptFromMarkdown(markdown: string, maxLength = 220) {
+  return getPlainTextPreview(markdown, maxLength);
 }

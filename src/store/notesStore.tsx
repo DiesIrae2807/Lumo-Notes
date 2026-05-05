@@ -11,6 +11,7 @@ import {
 import { folders as fallbackFolders } from "../data/initialNotes";
 import * as database from "../services/database";
 import type { Folder, Note, SidebarView } from "../types/note";
+import { getPlainTextPreview, markdownToPlainText } from "../utils/markdown";
 
 type NotesContextValue = {
   notes: Note[];
@@ -53,19 +54,19 @@ type NotesContextValue = {
 
 const NotesContext = createContext<NotesContextValue | null>(null);
 
-const makePreview = (content: string) => {
-  const clean = content.replace(/\s+/g, " ").trim();
-  if (!clean) {
-    return "";
-  }
-
-  return clean.length > 92 ? `${clean.slice(0, 92)}...` : clean;
-};
-
 const sortByUpdated = (notes: Note[]) =>
   [...notes].sort(
     (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
   );
+
+const sortPinnedThenUpdated = (notes: Note[]) =>
+  [...notes].sort((a, b) => {
+    if (a.isPinned !== b.isPinned) {
+      return a.isPinned ? -1 : 1;
+    }
+
+    return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+  });
 
 const slugify = (value: string) =>
   value
@@ -294,7 +295,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       next = next.filter((note) => {
         const haystack = [
           note.title,
-          note.content,
+          markdownToPlainText(note.content),
           note.preview,
           note.folderName,
           ...note.tags,
@@ -306,7 +307,9 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       });
     }
 
-    return sortByUpdated(next);
+    return activeView === "recent" || activeView === "trash"
+      ? sortByUpdated(next)
+      : sortPinnedThenUpdated(next);
   }, [activeFolderId, activeTag, activeView, notes, searchQuery]);
 
   const createNote = useCallback(() => {
@@ -348,7 +351,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       const content = changes.content ?? selectedNote.content;
       const nextPreview =
         changes.content !== undefined
-          ? makePreview(content)
+          ? getPlainTextPreview(content)
           : changes.preview ?? selectedNote.preview;
       const updatedNote: Note = {
         ...selectedNote,

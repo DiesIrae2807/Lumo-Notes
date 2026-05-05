@@ -1,6 +1,7 @@
 import { SectionHeader } from "./SectionHeader";
 import { useNotes } from "../store/notesStore";
-import { excerptFromMarkdown } from "../utils/markdown";
+import { formatRelativeTime } from "../utils/date";
+import { excerptFromMarkdown, getPlainTextPreview } from "../utils/markdown";
 
 const accentMap = {
   violet: "bg-lumo-violet",
@@ -77,9 +78,9 @@ export function InsightsPanel() {
                   }`}
                 />
                 <span className="min-w-0 flex-1 truncate text-xs text-slate-300">
-                  {note.title || "Untitled Note"}
+                  {note.title || getPlainTextPreview(note.content, 42) || "Untitled Note"}
                 </span>
-                <span className="text-[11px] text-slate-500">{note.folderName}</span>
+                <span className="text-[11px] text-slate-500">{formatRelativeTime(note.updatedAt)}</span>
               </button>
             ))}
           </div>

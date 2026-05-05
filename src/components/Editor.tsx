@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { MarkdownPreview } from "./MarkdownPreview";
 import { useNotes } from "../store/notesStore";
+import { formatMetadataDate } from "../utils/date";
 
 type MarkdownAction =
   | "bold"
@@ -89,15 +90,6 @@ export function Editor() {
       permanentlyDeleteSelectedNote();
     }
   };
-
-  const formatDate = (date: string) =>
-    new Intl.DateTimeFormat(undefined, {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(new Date(date));
 
   const openInternalLink = (title: string) => {
     const linkedNote = notes.find(
@@ -429,8 +421,8 @@ export function Editor() {
           )}
 
           <div className="mt-4 grid gap-2 rounded-xl border border-white/10 bg-white/[0.025] p-3 text-xs text-slate-500 md:grid-cols-2">
-            <span>Created {formatDate(selectedNote.createdAt)}</span>
-            <span>Updated {formatDate(selectedNote.updatedAt)}</span>
+            <span>Created {formatMetadataDate(selectedNote.createdAt)}</span>
+            <span>Updated {formatMetadataDate(selectedNote.updatedAt)}</span>
             <span>Folder {selectedNote.folderName || "Uncategorized"}</span>
             <span>
               Tags {selectedNote.tags.length > 0 ? selectedNote.tags.join(", ") : "None"}

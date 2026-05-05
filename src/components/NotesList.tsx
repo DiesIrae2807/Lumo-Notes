@@ -3,6 +3,7 @@ import { NoteCard } from "./NoteCard";
 import { SectionHeader } from "./SectionHeader";
 import { useNotes } from "../store/notesStore";
 import type { Note } from "../types/note";
+import { formatRelativeTime, isSameDay, isThisWeek, isYesterday } from "../utils/date";
 
 function NoteGroup({
   title,
@@ -19,18 +20,31 @@ function NoteGroup({
   );
 }
 
-const isToday = (date: string) => new Date(date).toDateString() === new Date().toDateString();
+const isToday = (date: string) => isSameDay(new Date(date), new Date());
 
-const isThisWeek = (date: string) => {
-  const delta = Date.now() - new Date(date).getTime();
-  return delta >= 1000 * 60 * 60 * 24 && delta < 1000 * 60 * 60 * 24 * 7;
-};
-
-function EmptyState({ title, body }: { title: string; body: string }) {
+function EmptyState({
+  title,
+  body,
+  actionLabel,
+  onAction,
+}: {
+  title: string;
+  body: string;
+  actionLabel?: string;
+  onAction?: () => void;
+}) {
   return (
     <div className="rounded-xl border border-dashed border-white/10 bg-white/[0.025] px-4 py-8 text-center">
       <p className="text-sm font-medium text-white">{title}</p>
       <p className="mx-auto mt-2 max-w-48 text-xs leading-5 text-slate-500">{body}</p>
+      {actionLabel && onAction ? (
+        <button
+          className="mt-4 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-xs text-slate-300 transition hover:border-lumo-teal/30 hover:text-white active:scale-95"
+          onClick={onAction}
+        >
+          {actionLabel}
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -50,8 +64,11 @@ export function NotesList() {
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const {
     activeView,
+    activeFolderId,
+    activeTag,
     createNote,
     filteredNotes,
+    folders,
     notes,
     permanentlyDeleteTrashedNotes,
     searchQuery,
@@ -63,11 +80,19 @@ export function NotesList() {
   const pinned = filteredNotes.filter((note) => note.isPinned && !note.isDeleted);
   const unpinned = filteredNotes.filter((note) => !note.isPinned || note.isDeleted);
   const today = unpinned.filter((note) => isToday(note.updatedAt));
-  const thisWeek = unpinned.filter((note) => !isToday(note.updatedAt) && isThisWeek(note.updatedAt));
-  const older = unpinned.filter((note) => !isToday(note.updatedAt) && !isThisWeek(note.updatedAt));
+  const yesterday = unpinned.filter((note) => isYesterday(note.updatedAt));
+  const thisWeek = unpinned.filter(
+    (note) => !isToday(note.updatedAt) && !isYesterday(note.updatedAt) && isThisWeek(note.updatedAt),
+  );
+  const older = unpinned.filter(
+    (note) =>
+      !isToday(note.updatedAt) && !isYesterday(note.updatedAt) && !isThisWeek(note.updatedAt),
+  );
   const hasAnyNotes = notes.some((note) => (activeView === "trash" ? note.isDeleted : !note.isDeleted));
   const hasSearch = searchQuery.trim().length > 0;
   const trashedCount = notes.filter((note) => note.isDeleted).length;
+  const activeFolderName = folders.find((folder) => folder.id === activeFolderId)?.name;
+  const newestNote = filteredNotes[0];
 
   useEffect(() => {
     const focusSearch = () => {
@@ -85,6 +110,63 @@ export function NotesList() {
     }
   };
 
+  const emptyState = (() => {
+    if (hasSearch) {
+      return {
+        title: `No results for "${searchQuery.trim()}"`,
+        body: "Try a different title, tag, folder, or phrase.",
+        actionLabel: "Clear Search",
+        onAction: () => setSearchQuery(""),
+      };
+    }
+
+    if (activeView === "trash") {
+      return {
+        title: "Trash is empty",
+        body: "Deleted notes will appear here before permanent removal.",
+      };
+    }
+
+    if (activeView === "favorites") {
+      return {
+        title: "No favorite notes",
+        body: "Mark important notes as favorites to collect them here.",
+        actionLabel: "New Note",
+        onAction: createNote,
+      };
+    }
+
+    if (activeFolderName) {
+      return {
+        title: `${activeFolderName} is empty`,
+        body: "Create a note or move an existing note into this folder.",
+        actionLabel: "New Note",
+        onAction: createNote,
+      };
+    }
+
+    if (activeTag) {
+      return {
+        title: `No notes tagged ${activeTag}`,
+        body: "Add this tag to a note to make it appear here.",
+      };
+    }
+
+    if (hasAnyNotes) {
+      return {
+        title: "No notes here",
+        body: "Try another view, folder, or tag.",
+      };
+    }
+
+    return {
+      title: "No notes yet",
+      body: "Create a note to start writing locally.",
+      actionLabel: "New Note",
+      onAction: createNote,
+    };
+  })();
+
   return (
     <aside className="column-panel flex min-h-0 flex-col overflow-hidden">
       <div className="flex gap-2 border-b border-white/[0.08] p-3">
@@ -98,9 +180,19 @@ export function NotesList() {
             placeholder="Search notes..."
             aria-label="Search notes"
           />
-          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-500">
-            Ctrl K
-          </span>
+          {hasSearch ? (
+            <button
+              className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md px-1.5 py-0.5 text-xs text-slate-500 transition hover:bg-white/[0.06] hover:text-white"
+              onClick={() => setSearchQuery("")}
+              title="Clear search"
+            >
+              Clear
+            </button>
+          ) : (
+            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-500">
+              Ctrl K
+            </span>
+          )}
         </div>
         <button
           className="grid h-10 w-10 place-items-center rounded-xl border border-white/10 bg-white/[0.035] text-slate-400 transition hover:text-white active:scale-95"
@@ -122,22 +214,10 @@ export function NotesList() {
       <div className="scroll-area flex-1 space-y-5 overflow-y-auto p-3">
         {filteredNotes.length === 0 ? (
           <EmptyState
-            title={
-              hasSearch
-                ? "No search results"
-                : activeView === "trash"
-                  ? "Trash is empty"
-                  : hasAnyNotes
-                    ? "No notes here"
-                    : "No notes yet"
-            }
-            body={
-              hasSearch
-                ? "Try a different title, tag, folder, or phrase."
-                : activeView === "trash"
-                  ? "Deleted notes will appear here."
-                  : "Create a note to start writing locally."
-            }
+            title={emptyState.title}
+            body={emptyState.body}
+            actionLabel={emptyState.actionLabel}
+            onAction={emptyState.onAction}
           />
         ) : (
           <>
@@ -150,6 +230,12 @@ export function NotesList() {
             {today.length > 0 ? (
               <NoteGroup title="Today">
                 {renderCards(today, selectedNoteId, selectNote)}
+              </NoteGroup>
+            ) : null}
+
+            {yesterday.length > 0 ? (
+              <NoteGroup title="Yesterday">
+                {renderCards(yesterday, selectedNoteId, selectNote)}
               </NoteGroup>
             ) : null}
 
@@ -170,7 +256,7 @@ export function NotesList() {
 
       <div className="flex items-center justify-between border-t border-white/10 px-4 py-3 text-xs text-slate-400">
         <span>{filteredNotes.length} notes</span>
-        <span>Updated just now</span>
+        <span>{newestNote ? `Updated ${formatRelativeTime(newestNote.updatedAt)}` : "No updates"}</span>
       </div>
     </aside>
   );
