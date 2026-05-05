@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { MarkdownPreview } from "./MarkdownPreview";
 import { useNotes } from "../store/notesStore";
 import { formatMetadataDate } from "../utils/date";
+import { resolveInternalLink } from "../utils/links";
 
 type MarkdownAction =
   | "bold"
@@ -53,6 +54,8 @@ export function Editor() {
   const {
     addTagToSelectedNote,
     availableTags,
+    activeView,
+    createNote,
     createTag,
     folders,
     moveToTrash,
@@ -92,14 +95,20 @@ export function Editor() {
   };
 
   const openInternalLink = (title: string) => {
-    const linkedNote = notes.find(
-      (note) => !note.isDeleted && note.title.trim().toLowerCase() === title.trim().toLowerCase(),
-    );
+    const linkedNote = resolveInternalLink(title, notes, activeView === "trash");
 
     if (linkedNote) {
       selectNote(linkedNote.id);
+      return;
+    }
+
+    if (window.confirm(`Create a new note titled "${title}"?`)) {
+      createNote(title);
     }
   };
+
+  const isInternalLinkResolved = (title: string) =>
+    Boolean(resolveInternalLink(title, notes, activeView === "trash"));
 
   const insertMarkdown = (action: MarkdownAction) => {
     const textarea = bodyRef.current;
@@ -394,7 +403,11 @@ export function Editor() {
           </div>
 
           {editorMode === "preview" ? (
-            <MarkdownPreview content={selectedNote.content} onInternalLinkClick={openInternalLink} />
+            <MarkdownPreview
+              content={selectedNote.content}
+              onInternalLinkClick={openInternalLink}
+              isInternalLinkResolved={isInternalLinkResolved}
+            />
           ) : editorMode === "split" ? (
             <div className="grid gap-4 lg:grid-cols-2">
               <textarea
@@ -406,7 +419,11 @@ export function Editor() {
                 onKeyDown={handleEditorKeyDown}
                 placeholder="Start writing..."
               />
-              <MarkdownPreview content={selectedNote.content} onInternalLinkClick={openInternalLink} />
+              <MarkdownPreview
+                content={selectedNote.content}
+                onInternalLinkClick={openInternalLink}
+                isInternalLinkResolved={isInternalLinkResolved}
+              />
             </div>
           ) : (
             <textarea

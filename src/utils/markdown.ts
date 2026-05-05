@@ -1,8 +1,13 @@
+import { parseInternalLinkText } from "./links";
+
 export function markdownToPlainText(markdown: string) {
   return markdown
     .replace(/```[\s\S]*?```/g, " ")
     .replace(/`([^`]+)`/g, "$1")
-    .replace(/\[\[([^\]]+)\]\]/g, "$1")
+    .replace(/\[\[([^\]]*)\]\]/g, (raw) => {
+      const { targetTitle, alias } = parseInternalLinkText(raw);
+      return alias || targetTitle;
+    })
     .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
     .replace(/^#{1,6}\s+/gm, "")
     .replace(/^>\s?/gm, "")

@@ -27,7 +27,7 @@ type NotesContextValue = {
   databaseError: string | null;
   isDatabaseLoading: boolean;
   saveStatus: "idle" | "dirty" | "saving" | "saved" | "error";
-  createNote: () => void;
+  createNote: (title?: string) => void;
   selectNote: (id: string) => void;
   forceSaveSelectedNote: () => void;
   updateSelectedNote: (changes: Partial<Pick<Note, "title" | "content" | "preview">>) => void;
@@ -312,13 +312,14 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       : sortPinnedThenUpdated(next);
   }, [activeFolderId, activeTag, activeView, notes, searchQuery]);
 
-  const createNote = useCallback(() => {
+  const createNote = useCallback((title = "Untitled Note") => {
     flushNoteSave(selectedNoteId);
     const now = new Date().toISOString();
     const defaultFolder = folders[0];
+    const noteTitle = title.trim() || "Untitled Note";
     const newNote: Note = {
       id: `note-${crypto.randomUUID()}`,
-      title: "Untitled Note",
+      title: noteTitle,
       content: "",
       preview: "",
       folderId: defaultFolder.id,

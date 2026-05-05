@@ -196,7 +196,7 @@ export function NotesList() {
         </div>
         <button
           className="grid h-10 w-10 place-items-center rounded-xl border border-white/10 bg-white/[0.035] text-slate-400 transition hover:text-white active:scale-95"
-          onClick={createNote}
+          onClick={() => createNote()}
           title="New note"
         >
           +

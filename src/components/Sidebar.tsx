@@ -99,7 +99,7 @@ export function Sidebar() {
     <aside className="column-panel hidden min-h-0 flex-col overflow-hidden p-3 lg:flex">
       <button
         className="mb-4 flex w-full items-center justify-between rounded-xl border border-lumo-violet/20 bg-lumo-violet/[0.08] px-3 py-2.5 text-sm text-white transition hover:border-lumo-violet/40 active:scale-[0.99]"
-        onClick={createNote}
+        onClick={() => createNote()}
       >
         <span className="flex items-center gap-2">
           <BrandMark size="sm" />

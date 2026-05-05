@@ -1,8 +1,10 @@
 import type { ReactNode } from "react";
+import { parseInternalLinkText } from "../utils/links";
 
 type MarkdownPreviewProps = {
   content: string;
   onInternalLinkClick?: (title: string) => void;
+  isInternalLinkResolved?: (title: string) => boolean;
 };
 
 type ListItem = {
@@ -13,7 +15,11 @@ type ListItem = {
 const inlinePatterns =
   /(\[\[[^\]]+\]\]|\[[^\]]+\]\([^)]+\)|`[^`]+`|\*\*[^*]+\*\*|__[^_]+__|\*[^*]+\*|_[^_]+_)/g;
 
-function renderInline(text: string, onInternalLinkClick?: (title: string) => void): ReactNode[] {
+function renderInline(
+  text: string,
+  onInternalLinkClick?: (title: string) => void,
+  isInternalLinkResolved?: (title: string) => boolean,
+): ReactNode[] {
   const nodes: ReactNode[] = [];
   let lastIndex = 0;
 
@@ -26,15 +32,23 @@ function renderInline(text: string, onInternalLinkClick?: (title: string) => voi
     }
 
     if (token.startsWith("[[") && token.endsWith("]]")) {
-      const title = token.slice(2, -2).trim();
+      const { targetTitle, alias } = parseInternalLinkText(token);
+      if (!targetTitle) {
+        nodes.push(token);
+        lastIndex = index + token.length;
+        continue;
+      }
+      const isResolved = isInternalLinkResolved?.(targetTitle) ?? true;
       nodes.push(
         <button
           key={`${index}-${token}`}
-          className="markdown-internal-link"
+          className={`markdown-internal-link ${
+            isResolved ? "markdown-internal-link-resolved" : "markdown-internal-link-unresolved"
+          }`}
           type="button"
-          onClick={() => onInternalLinkClick?.(title)}
+          onClick={() => onInternalLinkClick?.(targetTitle)}
         >
-          {title}
+          {alias || targetTitle || "Untitled link"}
         </button>,
       );
     } else if (token.startsWith("[") && token.includes("](") && token.endsWith(")")) {
@@ -54,7 +68,7 @@ function renderInline(text: string, onInternalLinkClick?: (title: string) => voi
     ) {
       nodes.push(
         <strong key={`${index}-${token}`}>
-          {renderInline(token.slice(2, -2), onInternalLinkClick)}
+          {renderInline(token.slice(2, -2), onInternalLinkClick, isInternalLinkResolved)}
         </strong>,
       );
     } else if (
@@ -63,7 +77,7 @@ function renderInline(text: string, onInternalLinkClick?: (title: string) => voi
     ) {
       nodes.push(
         <em key={`${index}-${token}`}>
-          {renderInline(token.slice(1, -1), onInternalLinkClick)}
+          {renderInline(token.slice(1, -1), onInternalLinkClick, isInternalLinkResolved)}
         </em>,
       );
     } else {
@@ -84,9 +98,10 @@ function renderInlineLines(
   lines: string[],
   keyPrefix: string,
   onInternalLinkClick?: (title: string) => void,
+  isInternalLinkResolved?: (title: string) => boolean,
 ): ReactNode[] {
   return lines.flatMap((line, index) => {
-    const nodes = renderInline(line, onInternalLinkClick);
+    const nodes = renderInline(line, onInternalLinkClick, isInternalLinkResolved);
 
     if (index === lines.length - 1) {
       return nodes;
@@ -122,7 +137,11 @@ function collectList(lines: string[], startIndex: number, ordered: boolean) {
   return { items, nextIndex: index };
 }
 
-export function MarkdownPreview({ content, onInternalLinkClick }: MarkdownPreviewProps) {
+export function MarkdownPreview({
+  content,
+  onInternalLinkClick,
+  isInternalLinkResolved,
+}: MarkdownPreviewProps) {
   const lines = content.split("\n");
   const blocks: ReactNode[] = [];
   let index = 0;
@@ -159,7 +178,9 @@ export function MarkdownPreview({ content, onInternalLinkClick }: MarkdownPrevie
       const level = Math.min(heading[1].length, 3);
       const Tag = `h${level}` as "h1" | "h2" | "h3";
       blocks.push(
-        <Tag key={`heading-${index}`}>{renderInline(heading[2], onInternalLinkClick)}</Tag>,
+        <Tag key={`heading-${index}`}>
+          {renderInline(heading[2], onInternalLinkClick, isInternalLinkResolved)}
+        </Tag>,
       );
       index += 1;
       continue;
@@ -174,7 +195,7 @@ export function MarkdownPreview({ content, onInternalLinkClick }: MarkdownPrevie
               {item.checked !== undefined ? (
                 <input type="checkbox" checked={item.checked} readOnly />
               ) : null}
-              <span>{renderInline(item.text, onInternalLinkClick)}</span>
+              <span>{renderInline(item.text, onInternalLinkClick, isInternalLinkResolved)}</span>
             </li>
           ))}
         </ul>,
@@ -189,7 +210,7 @@ export function MarkdownPreview({ content, onInternalLinkClick }: MarkdownPrevie
         <ol key={`ol-${index}`}>
           {items.map((item, itemIndex) => (
             <li key={`${item.text}-${itemIndex}`}>
-              {renderInline(item.text, onInternalLinkClick)}
+              {renderInline(item.text, onInternalLinkClick, isInternalLinkResolved)}
             </li>
           ))}
         </ol>,
@@ -206,7 +227,12 @@ export function MarkdownPreview({ content, onInternalLinkClick }: MarkdownPrevie
       }
       blocks.push(
         <blockquote key={`quote-${index}`}>
-          {renderInlineLines(quoteLines, `quote-${index}`, onInternalLinkClick)}
+          {renderInlineLines(
+            quoteLines,
+            `quote-${index}`,
+            onInternalLinkClick,
+            isInternalLinkResolved,
+          )}
         </blockquote>,
       );
       continue;
@@ -230,7 +256,12 @@ export function MarkdownPreview({ content, onInternalLinkClick }: MarkdownPrevie
 
     blocks.push(
       <p key={`p-${index}`}>
-        {renderInlineLines(paragraphLines, `p-${index}`, onInternalLinkClick)}
+        {renderInlineLines(
+          paragraphLines,
+          `p-${index}`,
+          onInternalLinkClick,
+          isInternalLinkResolved,
+        )}
       </p>,
     );
   }

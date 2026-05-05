@@ -1,7 +1,13 @@
+import { useMemo, useState } from "react";
 import { SectionHeader } from "./SectionHeader";
 import { useNotes } from "../store/notesStore";
 import { formatRelativeTime } from "../utils/date";
 import { excerptFromMarkdown, getPlainTextPreview } from "../utils/markdown";
+import {
+  parseInternalLinks,
+  resolveInternalLinks,
+  uniqueResolvedNotes,
+} from "../utils/links";
 
 const accentMap = {
   violet: "bg-lumo-violet",
@@ -10,9 +16,46 @@ const accentMap = {
 } as const;
 
 export function InsightsPanel() {
-  const { notes, selectedNote, selectNote } = useNotes();
-  const relatedNotes = notes
-    .filter((note) => note.id !== selectedNote?.id && !note.isDeleted)
+  const { activeView, createNote, notes, selectedNote, selectNote } = useNotes();
+  const [activeTab, setActiveTab] = useState<"insights" | "links">("insights");
+  const includeDeletedLinks = activeView === "trash";
+  const linkDetails = useMemo(() => {
+    if (!selectedNote) {
+      return {
+        outgoingLinks: [],
+        outgoingNotes: [],
+        backlinks: [],
+        unresolvedLinks: [],
+      };
+    }
+
+    const outgoingLinks = resolveInternalLinks(
+      parseInternalLinks(selectedNote.content, selectedNote.id),
+      notes,
+      includeDeletedLinks,
+    );
+    const outgoingNotes = uniqueResolvedNotes(outgoingLinks).filter(
+      (note) => note.id !== selectedNote.id,
+    );
+    const backlinks = notes
+      .filter((note) => note.id !== selectedNote.id)
+      .filter((note) => includeDeletedLinks || !note.isDeleted)
+      .filter((note) =>
+        resolveInternalLinks(parseInternalLinks(note.content, note.id), notes, includeDeletedLinks)
+          .some((link) => link.targetNote?.id === selectedNote.id),
+      )
+      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+    const unresolvedLinks = outgoingLinks.filter((link) => !link.targetNote);
+
+    return {
+      outgoingLinks,
+      outgoingNotes,
+      backlinks,
+      unresolvedLinks,
+    };
+  }, [includeDeletedLinks, notes, selectedNote]);
+  const relatedNotes = [...linkDetails.outgoingNotes, ...linkDetails.backlinks]
+    .filter((note, index, all) => all.findIndex((item) => item.id === note.id) === index)
     .slice(0, 3);
   const summaryText = selectedNote
     ? excerptFromMarkdown(selectedNote.preview || selectedNote.content) ||
@@ -23,10 +66,24 @@ export function InsightsPanel() {
     <aside className="column-panel hidden min-h-0 flex-col overflow-hidden xl:flex">
       <div className="flex items-center justify-between border-b border-white/10 px-4 pt-4">
         <div className="flex gap-6 text-sm font-medium">
-          <button className="border-b-2 border-lumo-violet pb-3 text-white">
+          <button
+            className={`border-b-2 pb-3 transition ${
+              activeTab === "insights"
+                ? "border-lumo-violet text-white"
+                : "border-transparent text-slate-400 hover:text-white"
+            }`}
+            onClick={() => setActiveTab("insights")}
+          >
             Insights
           </button>
-          <button className="pb-3 text-slate-400 transition hover:text-white">
+          <button
+            className={`border-b-2 pb-3 transition ${
+              activeTab === "links"
+                ? "border-lumo-violet text-white"
+                : "border-transparent text-slate-400 hover:text-white"
+            }`}
+            onClick={() => setActiveTab("links")}
+          >
             Linked Notes
           </button>
         </div>
@@ -36,6 +93,16 @@ export function InsightsPanel() {
       </div>
 
       <div className="scroll-area flex-1 space-y-4 overflow-y-auto p-3">
+        {activeTab === "links" ? (
+          <LinkedNotesPanel
+            backlinks={linkDetails.backlinks}
+            outgoingNotes={linkDetails.outgoingNotes}
+            unresolvedLinks={linkDetails.unresolvedLinks}
+            onCreateNote={createNote}
+            onSelectNote={selectNote}
+          />
+        ) : (
+        <>
         <section className="insight-card">
           <h3 className="text-sm font-semibold text-white">Summary</h3>
           <p className="mt-4 text-sm leading-6 text-slate-300">
@@ -64,7 +131,9 @@ export function InsightsPanel() {
           <SectionHeader title="Related Notes" />
           <div className="mt-4 space-y-2">
             {relatedNotes.length === 0 ? (
-              <p className="text-xs leading-5 text-slate-500">No related local notes yet.</p>
+              <p className="text-xs leading-5 text-slate-500">
+                Type [[Note Title]] to connect this note to another local note.
+              </p>
             ) : null}
             {relatedNotes.map((note, index) => (
               <button
@@ -102,7 +171,110 @@ export function InsightsPanel() {
             </svg>
           </div>
         </section>
+        </>
+        )}
       </div>
     </aside>
+  );
+}
+
+function LinkedNotesPanel({
+  backlinks,
+  outgoingNotes,
+  unresolvedLinks,
+  onCreateNote,
+  onSelectNote,
+}: {
+  backlinks: ReturnType<typeof uniqueResolvedNotes>;
+  outgoingNotes: ReturnType<typeof uniqueResolvedNotes>;
+  unresolvedLinks: ReturnType<typeof resolveInternalLinks>;
+  onCreateNote: (title?: string) => void;
+  onSelectNote: (id: string) => void;
+}) {
+  const hasLinks = outgoingNotes.length > 0 || backlinks.length > 0 || unresolvedLinks.length > 0;
+
+  return (
+    <>
+      {!hasLinks ? (
+        <section className="insight-card">
+          <h3 className="text-sm font-semibold text-white">No linked notes yet</h3>
+          <p className="mt-3 text-xs leading-5 text-slate-500">
+            Type [[Note Title]] in the editor to create outgoing links and backlinks.
+          </p>
+        </section>
+      ) : null}
+
+      <LinkSection title="Outgoing Links" empty="No outgoing links from this note.">
+        {outgoingNotes.map((note) => (
+          <LinkedNoteItem key={note.id} note={note} onClick={() => onSelectNote(note.id)} />
+        ))}
+      </LinkSection>
+
+      <LinkSection title="Backlinks" empty="No notes link back here yet.">
+        {backlinks.map((note) => (
+          <LinkedNoteItem key={note.id} note={note} onClick={() => onSelectNote(note.id)} />
+        ))}
+      </LinkSection>
+
+      <LinkSection title="Unresolved Links" empty="All outgoing links resolve to notes.">
+        {unresolvedLinks.map((link) => (
+          <button
+            key={`${link.sourceNoteId}-${link.rawText}`}
+            className="w-full rounded-lg border border-dashed border-lumo-blue/25 bg-lumo-blue/[0.035] px-3 py-2 text-left transition hover:border-lumo-blue/45 hover:bg-lumo-blue/[0.06] active:scale-[0.99]"
+            onClick={() => {
+              if (window.confirm(`Create a new note titled "${link.targetTitle}"?`)) {
+                onCreateNote(link.targetTitle);
+              }
+            }}
+          >
+            <span className="block truncate text-xs font-semibold text-lumo-blue">
+              {link.alias || link.targetTitle}
+            </span>
+            <span className="mt-1 block text-[11px] text-slate-500">Create missing note</span>
+          </button>
+        ))}
+      </LinkSection>
+    </>
+  );
+}
+
+function LinkSection({
+  children,
+  empty,
+  title,
+}: {
+  children: React.ReactNode;
+  empty: string;
+  title: string;
+}) {
+  const items = Array.isArray(children) ? children.filter(Boolean) : children;
+  const isEmpty = Array.isArray(items) ? items.length === 0 : !items;
+
+  return (
+    <section className="insight-card">
+      <SectionHeader title={title} />
+      <div className="mt-4 space-y-2">
+        {isEmpty ? <p className="text-xs leading-5 text-slate-500">{empty}</p> : items}
+      </div>
+    </section>
+  );
+}
+
+function LinkedNoteItem({ note, onClick }: { note: { title: string; content: string; preview: string; folderName: string; tags: string[]; updatedAt: string }; onClick: () => void }) {
+  return (
+    <button
+      className="w-full rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-left transition hover:border-lumo-violet/25 hover:bg-white/[0.06] active:scale-[0.99]"
+      onClick={onClick}
+    >
+      <span className="block truncate text-xs font-semibold text-slate-200">
+        {note.title || getPlainTextPreview(note.content, 42) || "Untitled Note"}
+      </span>
+      <span className="mt-1 line-clamp-2 text-[11px] leading-5 text-slate-500">
+        {getPlainTextPreview(note.preview || note.content, 80) || "No content yet"}
+      </span>
+      <span className="mt-2 inline-flex max-w-full truncate rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-[11px] text-slate-400">
+        {note.tags[0] ?? note.folderName} · {formatRelativeTime(note.updatedAt)}
+      </span>
+    </button>
   );
 }
