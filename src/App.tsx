@@ -3,6 +3,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Editor } from "./components/Editor";
 import { InsightsPanel } from "./components/InsightsPanel";
 import { GraphView } from "./components/GraphView";
+import { CommandPalette } from "./components/CommandPalette";
 import { NotesList } from "./components/NotesList";
 import { Sidebar } from "./components/Sidebar";
 import { BrandMark } from "./components/BrandMark";
@@ -124,6 +125,12 @@ function AppShortcuts() {
         return;
       }
 
+      if (key === "k" && !event.shiftKey) {
+        event.preventDefault();
+        window.dispatchEvent(new Event("lumo-open-command-palette"));
+        return;
+      }
+
       if (key === "f") {
         event.preventDefault();
         window.dispatchEvent(new Event("lumo-focus-search"));
@@ -153,6 +160,7 @@ export default function App() {
   return (
     <NotesProvider>
       <AppShortcuts />
+      <CommandPalette />
       <Workspace />
     </NotesProvider>
   );

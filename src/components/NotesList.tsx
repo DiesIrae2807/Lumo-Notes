@@ -189,9 +189,13 @@ export function NotesList() {
               Clear
             </button>
           ) : (
-            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-500">
+            <button
+              className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md px-1.5 py-0.5 text-xs text-slate-500 transition hover:bg-white/[0.06] hover:text-white"
+              onClick={() => window.dispatchEvent(new Event("lumo-open-command-palette"))}
+              title="Open command palette"
+            >
               Ctrl K
-            </span>
+            </button>
           )}
         </div>
         <button

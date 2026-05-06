@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { MarkdownPreview } from "./MarkdownPreview";
 import { useNotes } from "../store/notesStore";
 import { noteToMarkdown, sanitizeFilename, saveTextFile } from "../services/fileTransfer";
@@ -76,6 +76,26 @@ export function Editor() {
   const [tagInput, setTagInput] = useState("");
   const [editorMode, setEditorMode] = useState<EditorMode>("edit");
   const bodyRef = useRef<HTMLTextAreaElement | null>(null);
+
+  useEffect(() => {
+    const focusEditor = () => {
+      setEditorMode("edit");
+      window.setTimeout(() => bodyRef.current?.focus(), 0);
+    };
+    const setMode = (event: Event) => {
+      const mode = (event as CustomEvent<EditorMode>).detail;
+      if (mode === "edit" || mode === "preview" || mode === "split") {
+        setEditorMode(mode);
+      }
+    };
+
+    window.addEventListener("lumo-focus-editor", focusEditor);
+    window.addEventListener("lumo-set-editor-mode", setMode);
+    return () => {
+      window.removeEventListener("lumo-focus-editor", focusEditor);
+      window.removeEventListener("lumo-set-editor-mode", setMode);
+    };
+  }, []);
 
   if (!selectedNote) {
     return <EmptyEditor />;
