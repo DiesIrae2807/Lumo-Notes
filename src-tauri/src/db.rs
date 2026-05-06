@@ -68,12 +68,23 @@ pub struct SettingDto {
     pub updated_at: String,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchResultDto {
+    pub note_id: String,
+    pub score: f64,
+    pub snippet: String,
+}
+
 fn connect(path: &PathBuf) -> Result<Connection, String> {
     Connection::open(path).map_err(|error| error.to_string())
 }
 
 pub fn database_path(app: &AppHandle) -> Result<PathBuf, String> {
-    let app_data_dir = app.path().app_data_dir().map_err(|error| error.to_string())?;
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?;
     fs::create_dir_all(&app_data_dir).map_err(|error| error.to_string())?;
     Ok(app_data_dir.join("lumo-notes.db"))
 }
@@ -144,6 +155,24 @@ fn create_schema(connection: &Connection) -> Result<(), String> {
         .map_err(|error| error.to_string())
 }
 
+fn create_search_schema(connection: &Connection) -> Result<(), String> {
+    connection
+        .execute_batch(
+            "
+            CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
+                note_id UNINDEXED,
+                title,
+                preview,
+                content,
+                folder_name,
+                tags,
+                attachments
+            );
+            ",
+        )
+        .map_err(|error| error.to_string())
+}
+
 fn seed_database_if_empty(connection: &mut Connection) -> Result<(), String> {
     let note_count: i64 = connection
         .query_row("SELECT COUNT(*) FROM notes", [], |row| row.get(0))
@@ -155,7 +184,9 @@ fn seed_database_if_empty(connection: &mut Connection) -> Result<(), String> {
 
     let folders = seed_folders();
     let notes = seed_notes();
-    let transaction = connection.transaction().map_err(|error| error.to_string())?;
+    let transaction = connection
+        .transaction()
+        .map_err(|error| error.to_string())?;
 
     for folder in &folders {
         transaction
@@ -342,6 +373,93 @@ fn get_tags_for_note(connection: &Connection, note_id: &str) -> rusqlite::Result
     rows.collect()
 }
 
+fn get_attachment_names_for_note(
+    connection: &Connection,
+    note_id: &str,
+) -> rusqlite::Result<Vec<String>> {
+    let mut statement = connection.prepare(
+        "
+        SELECT filename
+        FROM attachments
+        WHERE note_id = ?1
+        ORDER BY filename ASC
+        ",
+    )?;
+    let rows = statement.query_map(params![note_id], |row| row.get::<_, String>(0))?;
+    rows.collect()
+}
+
+fn upsert_search_index_note(connection: &Connection, note_id: &str) -> Result<(), String> {
+    create_search_schema(connection)?;
+    let note = connection
+        .query_row(
+            "
+            SELECT id, title, content, preview, folder_name
+            FROM notes
+            WHERE id = ?1
+            ",
+            params![note_id],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(4)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(|error| error.to_string())?;
+
+    connection
+        .execute("DELETE FROM notes_fts WHERE note_id = ?1", params![note_id])
+        .map_err(|error| error.to_string())?;
+
+    if let Some((id, title, content, preview, folder_name)) = note {
+        let tags = get_tags_for_note(connection, &id)
+            .map_err(|error| error.to_string())?
+            .join(" ");
+        let attachments = get_attachment_names_for_note(connection, &id)
+            .map_err(|error| error.to_string())?
+            .join(" ");
+        connection
+            .execute(
+                "
+                INSERT INTO notes_fts (note_id, title, preview, content, folder_name, tags, attachments)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                ",
+                params![id, title, preview, content, folder_name, tags, attachments],
+            )
+            .map_err(|error| error.to_string())?;
+    }
+
+    Ok(())
+}
+
+fn rebuild_search_index_from_connection(connection: &Connection) -> Result<(), String> {
+    create_search_schema(connection)?;
+    connection
+        .execute("DELETE FROM notes_fts", [])
+        .map_err(|error| error.to_string())?;
+    let mut statement = connection
+        .prepare("SELECT id FROM notes")
+        .map_err(|error| error.to_string())?;
+    let rows = statement
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(|error| error.to_string())?;
+    let note_ids = rows
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
+    drop(statement);
+
+    for note_id in note_ids {
+        upsert_search_index_note(connection, &note_id)?;
+    }
+
+    Ok(())
+}
+
 fn get_attachments_from_connection(connection: &Connection) -> Result<Vec<AttachmentDto>, String> {
     let mut statement = connection
         .prepare(
@@ -481,7 +599,10 @@ fn base64_encode(bytes: &[u8]) -> String {
     output
 }
 
-fn stored_attachment_paths_for_note(connection: &Connection, note_id: &str) -> Result<Vec<String>, String> {
+fn stored_attachment_paths_for_note(
+    connection: &Connection,
+    note_id: &str,
+) -> Result<Vec<String>, String> {
     let mut statement = connection
         .prepare(
             "
@@ -499,7 +620,9 @@ fn stored_attachment_paths_for_note(connection: &Connection, note_id: &str) -> R
         .map_err(|error| error.to_string())
 }
 
-fn stored_attachment_paths_for_trashed_notes(connection: &Connection) -> Result<Vec<String>, String> {
+fn stored_attachment_paths_for_trashed_notes(
+    connection: &Connection,
+) -> Result<Vec<String>, String> {
     let mut statement = connection
         .prepare(
             "
@@ -523,11 +646,39 @@ fn remove_files(paths: Vec<String>) {
     }
 }
 
+fn fts_query(value: &str) -> String {
+    value
+        .split_whitespace()
+        .map(|part| {
+            part.chars()
+                .filter(|character| character.is_alphanumeric())
+                .collect::<String>()
+        })
+        .filter(|part| !part.is_empty())
+        .map(|part| format!("{}*", part.replace('"', "")))
+        .collect::<Vec<_>>()
+        .join(" OR ")
+}
+
+fn plain_snippet(value: &str, _query: &str) -> String {
+    let source = value.split_whitespace().collect::<Vec<_>>().join(" ");
+    let characters = source.chars().collect::<Vec<_>>();
+    if characters.len() <= 150 {
+        return source;
+    }
+
+    let mut snippet = characters.iter().take(150).collect::<String>();
+    snippet = snippet.trim().to_string();
+    snippet.push_str("...");
+    snippet
+}
+
 #[tauri::command]
 pub fn initialize_database(state: tauri::State<'_, DbState>) -> Result<DatabaseSnapshot, String> {
     let mut connection = connect(&state.path)?;
     create_schema(&connection)?;
     seed_database_if_empty(&mut connection)?;
+    let _ = rebuild_search_index_from_connection(&connection);
     Ok(DatabaseSnapshot {
         notes: get_notes_from_connection(&connection)?,
         folders: get_folders_from_connection(&connection)?,
@@ -559,6 +710,95 @@ pub fn get_attachments(state: tauri::State<'_, DbState>) -> Result<Vec<Attachmen
     let connection = connect(&state.path)?;
     create_schema(&connection)?;
     get_attachments_from_connection(&connection)
+}
+
+#[tauri::command]
+pub fn rebuild_search_index(state: tauri::State<'_, DbState>) -> Result<(), String> {
+    let connection = connect(&state.path)?;
+    create_schema(&connection)?;
+    rebuild_search_index_from_connection(&connection)
+}
+
+#[tauri::command]
+pub fn search_notes(
+    state: tauri::State<'_, DbState>,
+    query: String,
+    include_deleted: bool,
+) -> Result<Vec<SearchResultDto>, String> {
+    let normalized = fts_query(&query);
+    if normalized.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let connection = connect(&state.path)?;
+    create_schema(&connection)?;
+    create_search_schema(&connection)?;
+
+    let mut statement = connection
+        .prepare(
+            "
+            SELECT
+                notes.id,
+                notes.title,
+                notes.preview,
+                notes.content,
+                notes.folder_name,
+                notes.updated_at,
+                notes.is_pinned,
+                bm25(notes_fts, -8.0, -4.0, -1.0, -3.0, -3.0, -2.0) AS rank_score
+            FROM notes_fts
+            INNER JOIN notes ON notes.id = notes_fts.note_id
+            WHERE notes_fts MATCH ?1
+              AND notes.is_deleted = ?2
+            ORDER BY rank_score ASC, notes.is_pinned DESC, notes.updated_at DESC
+            LIMIT 100
+            ",
+        )
+        .map_err(|error| error.to_string())?;
+    let rows = statement
+        .query_map(params![normalized, include_deleted as i64], |row| {
+            let note_id: String = row.get(0)?;
+            let title: String = row.get(1)?;
+            let preview: String = row.get(2)?;
+            let content: String = row.get(3)?;
+            let folder_name: String = row.get(4)?;
+            let is_pinned: i64 = row.get(6)?;
+            let rank_score: f64 = row.get(7)?;
+            let title_boost = if title.to_lowercase().contains(&query.to_lowercase()) {
+                80.0
+            } else {
+                0.0
+            };
+            let folder_boost = if folder_name.to_lowercase().contains(&query.to_lowercase()) {
+                40.0
+            } else {
+                0.0
+            };
+            let pin_boost = if is_pinned != 0 { 8.0 } else { 0.0 };
+            let score =
+                (1000.0 - rank_score.abs()).max(0.0) + title_boost + folder_boost + pin_boost;
+            let snippet_source = if !preview.trim().is_empty() {
+                preview
+            } else {
+                content
+            };
+            Ok(SearchResultDto {
+                note_id,
+                score,
+                snippet: plain_snippet(&snippet_source, &query),
+            })
+        })
+        .map_err(|error| error.to_string())?;
+
+    let mut results = rows
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
+    results.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    Ok(results)
 }
 
 #[tauri::command]
@@ -635,6 +875,7 @@ pub fn attach_file_to_note(
         )
         .map_err(|error| error.to_string())?;
 
+    let _ = upsert_search_index_note(&connection, &attachment.note_id);
     Ok(Some(attachment))
 }
 
@@ -643,10 +884,12 @@ pub fn remove_attachment(state: tauri::State<'_, DbState>, id: String) -> Result
     let connection = connect(&state.path)?;
     create_schema(&connection)?;
     if let Some(attachment) = attachment_by_id(&connection, &id)? {
+        let note_id = attachment.note_id.clone();
         connection
             .execute("DELETE FROM attachments WHERE id = ?1", params![id])
             .map_err(|error| error.to_string())?;
         let _ = fs::remove_file(attachment.stored_path);
+        let _ = upsert_search_index_note(&connection, &note_id);
     }
     Ok(())
 }
@@ -689,7 +932,10 @@ pub fn open_attachment(state: tauri::State<'_, DbState>, id: String) -> Result<(
 }
 
 #[tauri::command]
-pub fn get_attachment_data_url(state: tauri::State<'_, DbState>, id: String) -> Result<String, String> {
+pub fn get_attachment_data_url(
+    state: tauri::State<'_, DbState>,
+    id: String,
+) -> Result<String, String> {
     let connection = connect(&state.path)?;
     create_schema(&connection)?;
     let Some(attachment) = attachment_by_id(&connection, &id)? else {
@@ -752,7 +998,9 @@ pub fn set_app_setting(
 #[tauri::command]
 pub fn create_note(state: tauri::State<'_, DbState>, note: NoteDto) -> Result<(), String> {
     let connection = connect(&state.path)?;
-    insert_note(&connection, &note)
+    insert_note(&connection, &note)?;
+    let _ = upsert_search_index_note(&connection, &note.id);
+    Ok(())
 }
 
 #[tauri::command]
@@ -778,7 +1026,9 @@ pub fn update_note(state: tauri::State<'_, DbState>, note: NoteDto) -> Result<()
             ],
         )
         .map_err(|error| error.to_string())?;
-    replace_note_tags(&connection, &note)
+    replace_note_tags(&connection, &note)?;
+    let _ = upsert_search_index_note(&connection, &note.id);
+    Ok(())
 }
 
 #[tauri::command]
@@ -794,6 +1044,7 @@ pub fn soft_delete_note(
             params![id, updated_at],
         )
         .map_err(|error| error.to_string())?;
+    let _ = upsert_search_index_note(&connection, &id);
     Ok(())
 }
 
@@ -810,6 +1061,7 @@ pub fn restore_note(
             params![id, updated_at],
         )
         .map_err(|error| error.to_string())?;
+    let _ = upsert_search_index_note(&connection, &id);
     Ok(())
 }
 
@@ -832,9 +1084,13 @@ pub fn permanently_delete_note(state: tauri::State<'_, DbState>, id: String) -> 
         )
         .map_err(|error| error.to_string())?;
     connection
-        .execute("DELETE FROM notes WHERE id = ?1 AND is_deleted = 1", params![id])
+        .execute(
+            "DELETE FROM notes WHERE id = ?1 AND is_deleted = 1",
+            params![id],
+        )
         .map_err(|error| error.to_string())?;
     remove_files(attachment_paths);
+    let _ = rebuild_search_index_from_connection(&connection);
     Ok(())
 }
 
@@ -860,6 +1116,7 @@ pub fn permanently_delete_trashed_notes(state: tauri::State<'_, DbState>) -> Res
         .execute("DELETE FROM notes WHERE is_deleted = 1", [])
         .map_err(|error| error.to_string())?;
     remove_files(attachment_paths);
+    let _ = rebuild_search_index_from_connection(&connection);
     Ok(())
 }
 
@@ -877,6 +1134,7 @@ pub fn toggle_favorite(
             params![id, is_favorite as i64, updated_at],
         )
         .map_err(|error| error.to_string())?;
+    let _ = upsert_search_index_note(&connection, &id);
     Ok(())
 }
 
@@ -894,6 +1152,7 @@ pub fn toggle_pinned(
             params![id, is_pinned as i64, updated_at],
         )
         .map_err(|error| error.to_string())?;
+    let _ = upsert_search_index_note(&connection, &id);
     Ok(())
 }
 
@@ -909,9 +1168,16 @@ pub fn create_folder(
         .execute(
             "INSERT INTO folders (id, name, color, created_at, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![folder.id, folder.name, folder.color_class, created_at, updated_at],
+            params![
+                folder.id,
+                folder.name,
+                folder.color_class,
+                created_at,
+                updated_at
+            ],
         )
         .map_err(|error| error.to_string())?;
+    let _ = rebuild_search_index_from_connection(&connection);
     Ok(())
 }
 
@@ -958,6 +1224,7 @@ pub fn delete_folder(
     connection
         .execute("DELETE FROM folders WHERE id = ?1", params![id])
         .map_err(|error| error.to_string())?;
+    let _ = rebuild_search_index_from_connection(&connection);
     Ok(())
 }
 
@@ -976,6 +1243,7 @@ pub fn set_note_folder(
             params![note_id, folder_id, folder_name, updated_at],
         )
         .map_err(|error| error.to_string())?;
+    let _ = upsert_search_index_note(&connection, &note_id);
     Ok(())
 }
 
@@ -1025,6 +1293,7 @@ pub fn delete_tag(state: tauri::State<'_, DbState>, name: String) -> Result<(), 
     connection
         .execute("DELETE FROM tags WHERE id = ?1", params![tag_id])
         .map_err(|error| error.to_string())?;
+    let _ = rebuild_search_index_from_connection(&connection);
     Ok(())
 }
 
@@ -1056,6 +1325,7 @@ pub fn add_tag_to_note(
             params![note_id, updated_at],
         )
         .map_err(|error| error.to_string())?;
+    let _ = upsert_search_index_note(&connection, &note_id);
     Ok(())
 }
 
@@ -1080,6 +1350,7 @@ pub fn remove_tag_from_note(
             params![note_id, updated_at],
         )
         .map_err(|error| error.to_string())?;
+    let _ = upsert_search_index_note(&connection, &note_id);
     Ok(())
 }
 

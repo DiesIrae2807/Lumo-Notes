@@ -280,19 +280,31 @@ export function CommandPalette() {
 
     const noteItems: CommandItem[] = notes
       .filter((note) => !note.isDeleted)
-      .map((note) => ({
-        id: `note-${note.id}`,
-        title: note.title || "Untitled Note",
-        subtitle: getPlainTextPreview(note.preview || note.content, 90) || note.folderName,
-        section: "Notes",
-        keywords: [note.title, markdownToPlainText(note.content), note.preview, note.folderName, ...note.tags]
-          .join(" "),
-        run: () => {
-          forceSaveSelectedNote();
-          selectNote(note.id);
-          setActiveView("all");
-        },
-      }));
+      .map((note) => {
+        const attachmentNames = attachments
+          .filter((attachment) => attachment.noteId === note.id)
+          .map((attachment) => attachment.filename);
+
+        return {
+          id: `note-${note.id}`,
+          title: note.title || "Untitled Note",
+          subtitle: getPlainTextPreview(note.preview || note.content, 90) || note.folderName,
+          section: "Notes",
+          keywords: [
+            note.title,
+            markdownToPlainText(note.content),
+            note.preview,
+            note.folderName,
+            ...note.tags,
+            ...attachmentNames,
+          ].join(" "),
+          run: () => {
+            forceSaveSelectedNote();
+            selectNote(note.id);
+            setActiveView("all");
+          },
+        };
+      });
 
     const folderItems: CommandItem[] = folders.map((folder) => ({
       id: `folder-${folder.id}`,

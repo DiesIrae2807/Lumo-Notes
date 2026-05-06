@@ -31,6 +31,8 @@ type NotesContextValue = {
   databaseError: string | null;
   isDatabaseLoading: boolean;
   saveStatus: "idle" | "dirty" | "saving" | "saved" | "error";
+  isSearchLoading: boolean;
+  searchSnippets: Record<string, string>;
   createNote: (title?: string) => void;
   importMarkdownNotes: (imports: ParsedMarkdownNote[]) => Promise<number>;
   restoreBackupMerge: (backup: LumoBackup) => Promise<number>;
@@ -130,6 +132,12 @@ export function NotesProvider({ children }: { children: ReactNode }) {
   const [isDatabaseLoading, setIsDatabaseLoading] = useState(true);
   const [databaseError, setDatabaseError] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<"idle" | "dirty" | "saving" | "saved" | "error">("idle");
+  const [isSearchLoading, setIsSearchLoading] = useState(false);
+  const [searchResults, setSearchResults] = useState<{
+    includeDeleted: boolean;
+    query: string;
+    results: database.SearchResult[];
+  } | null>(null);
   const pendingNoteSaves = useRef(new Map<string, Note>());
   const pendingNoteVersions = useRef(new Map<string, number>());
   const saveTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
@@ -299,6 +307,63 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     [databaseTags, notes],
   );
 
+  const searchDataVersion = useMemo(
+    () =>
+      [
+        notes
+          .map((note) =>
+            [
+              note.id,
+              note.title,
+              note.preview,
+              note.content,
+              note.folderId,
+              note.folderName,
+              note.tags.join(","),
+              note.isDeleted,
+              note.updatedAt,
+            ].join(":"),
+          )
+          .join("|"),
+        attachments
+          .map((attachment) => [attachment.id, attachment.noteId, attachment.filename].join(":"))
+          .join("|"),
+      ].join("::"),
+    [attachments, notes],
+  );
+
+  useEffect(() => {
+    const query = searchQuery.trim();
+    if (!query) {
+      setSearchResults(null);
+      setIsSearchLoading(false);
+      return;
+    }
+
+    let isStale = false;
+    const includeDeleted = activeView === "trash";
+    setIsSearchLoading(true);
+    const timer = window.setTimeout(() => {
+      database
+        .searchNotes(query, includeDeleted)
+        .then((results) => {
+          if (isStale) return;
+          setSearchResults({ includeDeleted, query, results });
+          setIsSearchLoading(false);
+        })
+        .catch(() => {
+          if (isStale) return;
+          setSearchResults(null);
+          setIsSearchLoading(false);
+        });
+    }, 120);
+
+    return () => {
+      isStale = true;
+      window.clearTimeout(timer);
+    };
+  }, [activeView, searchDataVersion, searchQuery]);
+
   const filteredNotes = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
 
@@ -326,6 +391,21 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       next = next.filter((note) => note.tags.includes(activeTag));
     }
 
+    const activeSearchResults =
+      query &&
+      searchResults?.query.toLowerCase() === query &&
+      searchResults.includeDeleted === (activeView === "trash")
+        ? searchResults.results
+        : null;
+
+    if (query && activeSearchResults) {
+      const order = new Map(activeSearchResults.map((result, index) => [result.noteId, index]));
+      next = next
+        .filter((note) => order.has(note.id))
+        .sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
+      return next;
+    }
+
     if (query) {
       next = next.filter((note) => {
         const haystack = [
@@ -348,7 +428,22 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     return activeView === "recent" || activeView === "trash"
       ? sortByUpdated(next)
       : sortPinnedThenUpdated(next);
-  }, [activeFolderId, activeTag, activeView, attachments, notes, searchQuery]);
+  }, [activeFolderId, activeTag, activeView, attachments, notes, searchQuery, searchResults]);
+
+  const searchSnippets = useMemo(() => {
+    if (
+      !searchResults ||
+      searchResults.query !== searchQuery.trim() ||
+      searchResults.includeDeleted !== (activeView === "trash")
+    ) {
+      return {};
+    }
+    return Object.fromEntries(
+      searchResults.results
+        .filter((result) => result.snippet)
+        .map((result) => [result.noteId, result.snippet]),
+    );
+  }, [activeView, searchQuery, searchResults]);
 
   const createNote = useCallback((title = "Untitled Note") => {
     flushNoteSave(selectedNoteId);
@@ -1001,6 +1096,8 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       databaseError,
       isDatabaseLoading,
       saveStatus,
+      isSearchLoading,
+      searchSnippets,
       createNote,
       importMarkdownNotes,
       restoreBackupMerge,
@@ -1046,6 +1143,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       filteredNotes,
       folders,
       isDatabaseLoading,
+      isSearchLoading,
       importMarkdownNotes,
       moveToTrash,
       openAttachment,
@@ -1059,6 +1157,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       restoreNote,
       restoreBackupMerge,
       searchQuery,
+      searchSnippets,
       saveStatus,
       selectedNote,
       selectedNoteAttachments,

@@ -56,6 +56,8 @@ function renderCards(
   selectNote: (id: string) => void,
   toggleFavorite: (id: string) => void,
   togglePinned: (id: string) => void,
+  searchQuery: string,
+  searchSnippets: Record<string, string>,
 ) {
   return notes.map((note) => (
     <NoteCard
@@ -65,6 +67,8 @@ function renderCards(
       onSelect={() => selectNote(note.id)}
       onToggleFavorite={() => toggleFavorite(note.id)}
       onTogglePinned={() => togglePinned(note.id)}
+      searchQuery={searchQuery}
+      searchSnippet={searchSnippets[note.id]}
     />
   ));
 }
@@ -80,7 +84,9 @@ export function NotesList() {
     folders,
     notes,
     permanentlyDeleteTrashedNotes,
+    isSearchLoading,
     searchQuery,
+    searchSnippets,
     selectNote,
     selectedNoteId,
     setSearchQuery,
@@ -185,33 +191,41 @@ export function NotesList() {
   return (
     <aside className="column-panel flex min-h-0 flex-col overflow-hidden">
       <div className="flex gap-2 border-b border-white/[0.08] p-3">
-        <div className="relative flex-1">
-          <span className="pointer-events-none absolute left-3 top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-full border border-slate-500" />
-          <input
-            ref={searchInputRef}
-            value={searchQuery}
-            onChange={(event) => setSearchQuery(event.target.value)}
-            className="h-10 w-full rounded-xl border border-white/10 bg-night-950/55 pl-8 pr-16 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-lumo-teal/40 focus:bg-night-950"
-            placeholder="Search notes..."
-            aria-label="Search notes"
-          />
+        <div className="min-w-0 flex-1">
+          <div className="relative">
+            <span className="pointer-events-none absolute left-3 top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-full border border-slate-500" />
+            <input
+              ref={searchInputRef}
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              className="h-10 w-full rounded-xl border border-white/10 bg-night-950/55 pl-8 pr-16 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-lumo-teal/40 focus:bg-night-950"
+              placeholder="Search notes..."
+              aria-label="Search notes"
+            />
+            {hasSearch ? (
+              <button
+                className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md px-1.5 py-0.5 text-xs text-slate-500 transition hover:bg-white/[0.06] hover:text-white"
+                onClick={() => setSearchQuery("")}
+                title="Clear search"
+              >
+                Clear
+              </button>
+            ) : (
+              <button
+                className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md px-1.5 py-0.5 text-xs text-slate-500 transition hover:bg-white/[0.06] hover:text-white"
+                onClick={() => window.dispatchEvent(new Event("lumo-open-command-palette"))}
+                title="Open command palette"
+              >
+                Ctrl K
+              </button>
+            )}
+          </div>
           {hasSearch ? (
-            <button
-              className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md px-1.5 py-0.5 text-xs text-slate-500 transition hover:bg-white/[0.06] hover:text-white"
-              onClick={() => setSearchQuery("")}
-              title="Clear search"
-            >
-              Clear
-            </button>
-          ) : (
-            <button
-              className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md px-1.5 py-0.5 text-xs text-slate-500 transition hover:bg-white/[0.06] hover:text-white"
-              onClick={() => window.dispatchEvent(new Event("lumo-open-command-palette"))}
-              title="Open command palette"
-            >
-              Ctrl K
-            </button>
-          )}
+            <div className="mt-2 flex items-center justify-between px-1 text-[11px] text-slate-500">
+              <span>{isSearchLoading ? "Searching..." : `${filteredNotes.length} result${filteredNotes.length === 1 ? "" : "s"}`}</span>
+              <span className="truncate pl-3">Local SQLite search</span>
+            </div>
+          ) : null}
         </div>
         <button
           className="grid h-10 w-10 place-items-center rounded-xl border border-white/10 bg-white/[0.035] text-slate-400 transition hover:text-white active:scale-95"
@@ -242,31 +256,31 @@ export function NotesList() {
           <>
             {pinned.length > 0 ? (
               <NoteGroup title="Pinned">
-                {renderCards(pinned, selectedNoteId, selectNote, toggleFavorite, togglePinned)}
+                {renderCards(pinned, selectedNoteId, selectNote, toggleFavorite, togglePinned, searchQuery, searchSnippets)}
               </NoteGroup>
             ) : null}
 
             {today.length > 0 ? (
               <NoteGroup title="Today">
-                {renderCards(today, selectedNoteId, selectNote, toggleFavorite, togglePinned)}
+                {renderCards(today, selectedNoteId, selectNote, toggleFavorite, togglePinned, searchQuery, searchSnippets)}
               </NoteGroup>
             ) : null}
 
             {yesterday.length > 0 ? (
               <NoteGroup title="Yesterday">
-                {renderCards(yesterday, selectedNoteId, selectNote, toggleFavorite, togglePinned)}
+                {renderCards(yesterday, selectedNoteId, selectNote, toggleFavorite, togglePinned, searchQuery, searchSnippets)}
               </NoteGroup>
             ) : null}
 
             {thisWeek.length > 0 ? (
               <NoteGroup title="This Week">
-                {renderCards(thisWeek, selectedNoteId, selectNote, toggleFavorite, togglePinned)}
+                {renderCards(thisWeek, selectedNoteId, selectNote, toggleFavorite, togglePinned, searchQuery, searchSnippets)}
               </NoteGroup>
             ) : null}
 
             {older.length > 0 ? (
               <NoteGroup title="Older">
-                {renderCards(older, selectedNoteId, selectNote, toggleFavorite, togglePinned)}
+                {renderCards(older, selectedNoteId, selectNote, toggleFavorite, togglePinned, searchQuery, searchSnippets)}
               </NoteGroup>
             ) : null}
           </>
@@ -274,7 +288,7 @@ export function NotesList() {
       </div>
 
       <div className="flex items-center justify-between border-t border-white/10 px-4 py-3 text-xs text-slate-400">
-        <span>{filteredNotes.length} notes</span>
+        <span>{hasSearch ? `${filteredNotes.length} results` : `${filteredNotes.length} notes`}</span>
         <span>{newestNote ? `Updated ${formatRelativeTime(newestNote.updatedAt)}` : "No updates"}</span>
       </div>
     </aside>

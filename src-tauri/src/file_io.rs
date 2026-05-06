@@ -75,7 +75,10 @@ pub fn open_text_files(
     let paths = if multiple {
         dialog.pick_files().unwrap_or_default()
     } else {
-        dialog.pick_file().map(|path| vec![path]).unwrap_or_default()
+        dialog
+            .pick_file()
+            .map(|path| vec![path])
+            .unwrap_or_default()
     };
 
     paths

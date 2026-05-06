@@ -1,6 +1,7 @@
 import { useSettings } from "../store/settingsStore";
 import type { AppSettings } from "../types/settings";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
+import { rebuildSearchIndex } from "../services/database";
 
 const shortcuts = [
   ["Ctrl+K", "Command palette"],
@@ -100,6 +101,18 @@ function SettingToggle<K extends keyof AppSettings>({
 }
 
 export function SettingsScreen() {
+  const [searchIndexStatus, setSearchIndexStatus] = useState<"idle" | "working" | "done" | "error">("idle");
+
+  const handleRebuildSearchIndex = async () => {
+    setSearchIndexStatus("working");
+    try {
+      await rebuildSearchIndex();
+      setSearchIndexStatus("done");
+    } catch {
+      setSearchIndexStatus("error");
+    }
+  };
+
   return (
     <main className="column-panel editor-glow min-h-0 overflow-hidden">
       <div className="scroll-area h-full overflow-y-auto px-5 py-7 md:px-8">
@@ -232,6 +245,21 @@ export function SettingsScreen() {
                 <p><span className="text-slate-500">Tagline:</span> Thoughts. Organized. Illuminated.</p>
                 <p><span className="text-slate-500">Version:</span> 0.1.0</p>
                 <p className="text-slate-500">Your notes are stored locally on this device.</p>
+                <div className="flex flex-wrap items-center gap-3 pt-3">
+                  <button
+                    className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-medium text-slate-200 transition hover:bg-white/[0.07] hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+                    disabled={searchIndexStatus === "working"}
+                    onClick={handleRebuildSearchIndex}
+                  >
+                    {searchIndexStatus === "working" ? "Rebuilding..." : "Rebuild search index"}
+                  </button>
+                  {searchIndexStatus === "done" ? (
+                    <span className="text-xs text-lumo-teal">Search index rebuilt.</span>
+                  ) : null}
+                  {searchIndexStatus === "error" ? (
+                    <span className="text-xs text-rose-300">Could not rebuild search index.</span>
+                  ) : null}
+                </div>
               </div>
             </SettingsCard>
           </div>

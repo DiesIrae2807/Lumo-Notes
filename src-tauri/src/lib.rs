@@ -25,6 +25,8 @@ pub fn run() {
             db::get_folders,
             db::get_tags,
             db::get_attachments,
+            db::search_notes,
+            db::rebuild_search_index,
             db::attach_file_to_note,
             db::remove_attachment,
             db::open_attachment,

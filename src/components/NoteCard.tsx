@@ -17,20 +17,50 @@ const accentForNote = (note: Note) =>
     [...note.id].reduce((sum, char) => sum + char.charCodeAt(0), 0) % accentClasses.length
   ];
 
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+function HighlightedText({ query, text }: { query?: string; text: string }) {
+  const terms = query?.trim().split(/\s+/).filter(Boolean).slice(0, 4) ?? [];
+  if (terms.length === 0) return <>{text}</>;
+
+  const pattern = new RegExp(`(${terms.map(escapeRegExp).join("|")})`, "ig");
+  const parts = text.split(pattern);
+  return (
+    <>
+      {parts.map((part, index) =>
+        terms.some((term) => term.toLowerCase() === part.toLowerCase()) ? (
+          <mark
+            key={`${part}-${index}`}
+            className="rounded bg-lumo-teal/15 px-0.5 text-slate-100"
+          >
+            {part}
+          </mark>
+        ) : (
+          <span key={`${part}-${index}`}>{part}</span>
+        ),
+      )}
+    </>
+  );
+}
+
 export function NoteCard({
   isActive,
   note,
   onSelect,
   onToggleFavorite,
   onTogglePinned,
+  searchQuery,
+  searchSnippet,
 }: {
   isActive: boolean;
   note: Note;
   onSelect: () => void;
   onToggleFavorite: () => void;
   onTogglePinned: () => void;
+  searchQuery?: string;
+  searchSnippet?: string;
 }) {
-  const preview = getPlainTextPreview(note.preview || note.content, 110);
+  const preview = searchSnippet || getPlainTextPreview(note.preview || note.content, 110);
   const primaryChip = note.tags[0] ?? note.folderName ?? "Uncategorized";
 
   return (
@@ -59,7 +89,7 @@ export function NoteCard({
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-3">
             <h3 className="min-w-0 truncate text-sm font-semibold text-white">
-              {note.title || "Untitled Note"}
+              <HighlightedText query={searchQuery} text={note.title || "Untitled Note"} />
             </h3>
             <div className="flex shrink-0 items-center gap-1">
               <span className="text-xs text-slate-500">{formatRelativeTime(note.updatedAt)}</span>
@@ -100,7 +130,7 @@ export function NoteCard({
             </div>
           </div>
           <p className="mt-1 line-clamp-1 text-xs leading-5 text-slate-400">
-            {preview || "No content yet"}
+            <HighlightedText query={searchQuery} text={preview || "No content yet"} />
           </p>
           <div className="mt-3 flex items-center gap-2 overflow-hidden">
             <span className="inline-flex max-w-[9rem] truncate rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-[11px] text-slate-300">

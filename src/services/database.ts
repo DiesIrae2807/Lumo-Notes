@@ -8,6 +8,12 @@ export type DatabaseSnapshot = {
   attachments: Attachment[];
 };
 
+export type SearchResult = {
+  noteId: string;
+  score: number;
+  snippet: string;
+};
+
 export async function initializeDatabase() {
   return invoke<DatabaseSnapshot>("initialize_database");
 }
@@ -100,6 +106,14 @@ export async function addTagToNote(noteId: string, tagName: string, updatedAt: s
 
 export async function removeTagFromNote(noteId: string, tagName: string, updatedAt: string) {
   return invoke<void>("remove_tag_from_note", { noteId, tagName, updatedAt });
+}
+
+export async function searchNotes(query: string, includeDeleted: boolean) {
+  return invoke<SearchResult[]>("search_notes", { query, includeDeleted });
+}
+
+export async function rebuildSearchIndex() {
+  return invoke<void>("rebuild_search_index");
 }
 
 export async function attachFileToNote(noteId: string, createdAt: string) {
