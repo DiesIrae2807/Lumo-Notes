@@ -199,20 +199,20 @@
     background:
       linear-gradient(
         90deg,
-        color-mix(in srgb, var(--lumo-violet) 24%, rgba(18, 25, 45, 0.72)) 0%,
+        color-mix(in srgb, #9c7cf4 24%, rgba(18, 25, 45, 0.72)) 0%,
         rgba(18, 25, 45, 0.72) 58%,
         rgba(9, 15, 29, 0) 100%
       );
     box-shadow:
-      inset 0 0 0 1px color-mix(in srgb, var(--lumo-violet) 10%, transparent),
-      0 0 18px color-mix(in srgb, var(--lumo-violet) 8%, transparent);
+      inset 0 0 0 1px color-mix(in srgb, #9c7cf4 10%, transparent),
+      0 0 18px color-mix(in srgb, #9c7cf4 8%, transparent);
   }
 
   .sidebar-new-note:hover {
     background:
       linear-gradient(
         90deg,
-        color-mix(in srgb, var(--lumo-violet) 30%, rgba(22, 31, 54, 0.76)) 0%,
+        color-mix(in srgb, #9c7cf4 30%, rgba(22, 31, 54, 0.76)) 0%,
         rgba(22, 31, 54, 0.76) 58%,
         rgba(9, 15, 29, 0) 100%
       );
@@ -228,6 +228,12 @@
     box-shadow:
       0 0 0 2px color-mix(in srgb, var(--lumo-violet) 18%, transparent),
       0 0 18px color-mix(in srgb, var(--lumo-violet) 8%, transparent);
+  }
+
+  .sidebar-new-note:focus-visible {
+    box-shadow:
+      0 0 0 2px color-mix(in srgb, #9c7cf4 18%, transparent),
+      0 0 18px color-mix(in srgb, #9c7cf4 8%, transparent);
   }
 
   .sidebar-nav-item {
