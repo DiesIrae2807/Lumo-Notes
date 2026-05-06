@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNotes } from "../store/notesStore";
+import { useSettings } from "../store/settingsStore";
 import {
   chooseFolderAndWriteFiles,
   createBackup,
@@ -59,6 +60,7 @@ export function TopMenuBar({ onExit }: { onExit: () => void }) {
     toggleFavorite,
     togglePinned,
   } = useNotes();
+  const { settings } = useSettings();
   const [openMenu, setOpenMenu] = useState<MenuName | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [editorHistory, setEditorHistory] = useState({ canRedo: false, canUndo: false });
@@ -123,7 +125,11 @@ export function TopMenuBar({ onExit }: { onExit: () => void }) {
     runAction(async () => {
       if (!selectedNote) return;
       const filename = `${sanitizeFilename(selectedNote.title)}.md`;
-      const path = await saveTextFile("Export selected note", filename, noteToMarkdown(selectedNote));
+      const path = await saveTextFile(
+        "Export selected note",
+        filename,
+        noteToMarkdown(selectedNote, settings.markdownExportFrontmatter),
+      );
       if (path) setMessage("Selected note exported.");
     });
 
@@ -147,7 +153,7 @@ export function TopMenuBar({ onExit }: { onExit: () => void }) {
   const exportBackup = () =>
     runAction(async () => {
       const date = new Date().toISOString().slice(0, 10);
-      const backup = createBackup(notes, folders, availableTags);
+      const backup = createBackup(notes, folders, availableTags, settings.backupIncludeTrash);
       const path = await saveTextFile(
         "Export Lumo Notes backup",
         `lumo-notes-backup-${date}.json`,
@@ -213,14 +219,17 @@ export function TopMenuBar({ onExit }: { onExit: () => void }) {
       { label: "Restore Backup...", onSelect: restoreBackup },
       { separator: true },
       { label: "Open Graph", onSelect: () => setActiveView("graph") },
-      { label: "Open Settings", disabled: true },
+      { label: "Settings / Preferences", onSelect: () => setActiveView("settings") },
       { separator: true },
       {
         danger: true,
         disabled: trashCount === 0,
         label: "Empty Trash...",
         onSelect: () => {
-          if (window.confirm("Permanently delete all notes in Trash? This cannot be undone.")) {
+          if (
+            !settings.confirmPermanentDelete ||
+            window.confirm("Permanently delete all notes in Trash? This cannot be undone.")
+          ) {
             permanentlyDeleteTrashedNotes();
           }
         },
@@ -240,6 +249,9 @@ export function TopMenuBar({ onExit }: { onExit: () => void }) {
       restoreBackup,
       selectedNote,
       setActiveView,
+      settings.backupIncludeTrash,
+      settings.confirmPermanentDelete,
+      settings.markdownExportFrontmatter,
       trashCount,
     ],
   );
@@ -318,7 +330,8 @@ export function TopMenuBar({ onExit }: { onExit: () => void }) {
         onSelect: () => {
           if (
             selectedNote?.isDeleted &&
-            window.confirm("Permanently delete this note? This cannot be undone.")
+            (!settings.confirmPermanentDelete ||
+              window.confirm("Permanently delete this note? This cannot be undone."))
           ) {
             permanentlyDeleteSelectedNote();
           }
@@ -333,6 +346,7 @@ export function TopMenuBar({ onExit }: { onExit: () => void }) {
       permanentlyDeleteSelectedNote,
       restoreNote,
       selectedNote,
+      settings.confirmPermanentDelete,
       toggleFavorite,
       togglePinned,
     ],

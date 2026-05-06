@@ -10,6 +10,7 @@ const navGlyphs: Record<string, string> = {
   Favorites: "F",
   Recent: "R",
   Graph: "G",
+  Settings: "S",
   Trash: "T",
 };
 
@@ -18,6 +19,7 @@ const navItems: Array<{ label: string; view: SidebarView }> = [
   { label: "Favorites", view: "favorites" },
   { label: "Recent", view: "recent" },
   { label: "Graph", view: "graph" },
+  { label: "Settings", view: "settings" },
   { label: "Trash", view: "trash" },
 ];
 
@@ -136,6 +138,10 @@ export function Sidebar() {
 
     if (view === "graph") {
       return notes.filter((note) => !note.isDeleted).length;
+    }
+
+    if (view === "settings") {
+      return 0;
     }
 
     return notes.filter((note) => !note.isDeleted).length;

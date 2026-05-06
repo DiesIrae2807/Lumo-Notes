@@ -10,6 +10,7 @@ import {
 } from "react";
 import { folders as fallbackFolders } from "../data/initialNotes";
 import * as database from "../services/database";
+import { useSettings } from "./settingsStore";
 import type { LumoBackup, ParsedMarkdownNote } from "../services/fileTransfer";
 import type { Folder, Note, SidebarView } from "../types/note";
 import { getPlainTextPreview, markdownToPlainText } from "../utils/markdown";
@@ -99,6 +100,7 @@ const uniqueByLower = (values: string[]) =>
   Array.from(new Map(values.filter(Boolean).map((value) => [value.toLowerCase(), value])).values());
 
 const noteId = () => `note-${crypto.randomUUID()}`;
+const autosaveDelayMs = { fast: 350, normal: 700, relaxed: 1200 } as const;
 
 const folderId = (name: string) => slugify(name) || `folder-${crypto.randomUUID()}`;
 
@@ -110,6 +112,7 @@ const uniqueFolderId = (name: string, existingFolders: Folder[]) => {
 };
 
 export function NotesProvider({ children }: { children: ReactNode }) {
+  const { settings } = useSettings();
   const [notes, setNotes] = useState<Note[]>([]);
   const [folders, setFolders] = useState<Folder[]>(fallbackFolders);
   const [databaseTags, setDatabaseTags] = useState<string[]>([]);
@@ -211,11 +214,11 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         } else if (selectedNoteId === note.id) {
           settleSaveStatus();
         }
-      }, 700);
+      }, autosaveDelayMs[settings.autosaveDelay]);
 
       saveTimers.current.set(note.id, timer);
     },
-    [persistNoteNow, selectedNoteId, settleSaveStatus],
+    [persistNoteNow, selectedNoteId, settleSaveStatus, settings.autosaveDelay],
   );
 
   const flushAllPendingSaves = useCallback(() => {
@@ -251,7 +254,11 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         setNotes(snapshot.notes);
         setFolders(snapshot.folders.length > 0 ? snapshot.folders : fallbackFolders);
         setDatabaseTags(snapshot.tags);
-        setSelectedNoteId(snapshot.notes.find((note) => !note.isDeleted)?.id ?? snapshot.notes[0]?.id ?? null);
+        setSelectedNoteId(
+          settings.startupBehavior === "allNotes"
+            ? null
+            : snapshot.notes.find((note) => !note.isDeleted)?.id ?? snapshot.notes[0]?.id ?? null,
+        );
         setDatabaseError(null);
       } catch (error) {
         if (!isMounted) {
@@ -333,7 +340,14 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     flushNoteSave(selectedNoteId);
     const now = new Date().toISOString();
     const defaultFolder = folders[0];
-    const noteTitle = title.trim() || "Untitled Note";
+    const defaultTitle =
+      settings.newNoteTitleBehavior === "dateTime"
+        ? new Intl.DateTimeFormat(undefined, {
+            dateStyle: "medium",
+            timeStyle: "short",
+          }).format(new Date())
+        : "Untitled Note";
+    const noteTitle = title.trim() || defaultTitle;
     const newNote: Note = {
       id: noteId(),
       title: noteTitle,
@@ -358,7 +372,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     setActiveFolderIdState(null);
     setActiveTagState(null);
     setSearchQuery("");
-  }, [flushNoteSave, folders, selectedNoteId]);
+  }, [flushNoteSave, folders, selectedNoteId, settings.newNoteTitleBehavior]);
 
   const importMarkdownNotes = useCallback(
     async (imports: ParsedMarkdownNote[]) => {
@@ -538,13 +552,23 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         preview: nextPreview,
         updatedAt: new Date().toISOString(),
       };
+      if (
+        settings.newNoteTitleBehavior === "firstLine" &&
+        changes.content !== undefined &&
+        selectedNote.title === "Untitled Note"
+      ) {
+        const firstLine = content.split(/\r?\n/).find((line) => line.trim())?.trim();
+        if (firstLine) {
+          updatedNote.title = firstLine.slice(0, 80);
+        }
+      }
 
       setNotes((current) =>
         current.map((note) => (note.id === updatedNote.id ? updatedNote : note)),
       );
       queueNoteSave(updatedNote);
     },
-    [queueNoteSave, selectedNote],
+    [queueNoteSave, selectedNote, settings.newNoteTitleBehavior],
   );
 
   const selectNote = useCallback(

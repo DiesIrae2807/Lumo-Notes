@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNotes } from "../store/notesStore";
+import { useSettings } from "../store/settingsStore";
 import {
   createBackup,
   noteToMarkdown,
@@ -27,6 +28,7 @@ const viewCommands: Array<{ title: string; view: SidebarView; keywords: string }
   { title: "Open Recent", view: "recent", keywords: "recent updated" },
   { title: "Open Trash", view: "trash", keywords: "trash deleted" },
   { title: "Open Graph", view: "graph", keywords: "graph links backlinks map" },
+  { title: "Open Settings", view: "settings", keywords: "settings preferences appearance editor behavior" },
 ];
 
 function matches(item: CommandItem, query: string) {
@@ -51,6 +53,7 @@ export function CommandPalette() {
     toggleFavorite,
     togglePinned,
   } = useNotes();
+  const { settings } = useSettings();
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
@@ -93,13 +96,13 @@ export function CommandPalette() {
     await saveTextFile(
       "Export selected note",
       `${sanitizeFilename(selectedNote.title)}.md`,
-      noteToMarkdown(selectedNote),
+      noteToMarkdown(selectedNote, settings.markdownExportFrontmatter),
     );
   };
 
   const exportBackup = async () => {
     const date = new Date().toISOString().slice(0, 10);
-    const backup = createBackup(notes, folders, availableTags);
+    const backup = createBackup(notes, folders, availableTags, settings.backupIncludeTrash);
     await saveTextFile(
       "Export Lumo Notes backup",
       `lumo-notes-backup-${date}.json`,
@@ -317,6 +320,8 @@ export function CommandPalette() {
     setActiveFolderId,
     setActiveTag,
     setActiveView,
+    settings.backupIncludeTrash,
+    settings.markdownExportFrontmatter,
     toggleFavorite,
     togglePinned,
   ]);

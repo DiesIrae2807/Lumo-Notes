@@ -21,9 +21,9 @@ export default {
           800: "#111c31",
         },
         lumo: {
-          violet: "#9c7cf4",
-          teal: "#59d5ca",
-          blue: "#7fb2ff",
+          violet: "var(--lumo-violet)",
+          teal: "var(--lumo-teal)",
+          blue: "var(--lumo-blue)",
         },
       },
       boxShadow: {

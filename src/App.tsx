@@ -5,11 +5,13 @@ import { InsightsPanel } from "./components/InsightsPanel";
 import { GraphView } from "./components/GraphView";
 import { CommandPalette } from "./components/CommandPalette";
 import { NotesList } from "./components/NotesList";
+import { SettingsScreen } from "./components/SettingsScreen";
 import { Sidebar } from "./components/Sidebar";
 import { BrandMark } from "./components/BrandMark";
 import { InsightsIcon } from "./components/icons/InsightsIcon";
 import { TopMenuBar } from "./components/TopMenuBar";
 import { NotesProvider } from "./store/notesStore";
+import { SettingsProvider } from "./store/settingsStore";
 import { useNotes } from "./store/notesStore";
 
 const appWindow = getCurrentWindow();
@@ -169,11 +171,13 @@ function AppShortcuts() {
 
 export default function App() {
   return (
-    <NotesProvider>
-      <AppShortcuts />
-      <CommandPalette />
-      <Workspace />
-    </NotesProvider>
+    <SettingsProvider>
+      <NotesProvider>
+        <AppShortcuts />
+        <CommandPalette />
+        <Workspace />
+      </NotesProvider>
+    </SettingsProvider>
   );
 }
 
@@ -231,7 +235,9 @@ function Workspace() {
               <>
                 <Sidebar />
                 <NotesList />
-                {activeView === "graph" ? (
+                {activeView === "settings" ? (
+                  <SettingsScreen />
+                ) : activeView === "graph" ? (
                   <GraphView />
                 ) : (
                   <>

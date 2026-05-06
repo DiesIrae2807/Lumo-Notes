@@ -5,8 +5,58 @@
 @layer base {
   :root {
     color-scheme: dark;
+    --lumo-violet: #9c7cf4;
+    --lumo-teal: #59d5ca;
+    --lumo-blue: #7fb2ff;
+    --editor-font-size: 16px;
+    --editor-line-height: 2rem;
     font-family: Outfit, Geist, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     background: #070a12;
+  }
+
+  :root[data-lumo-theme="light"] {
+    color-scheme: light;
+    background: #eef3fb;
+  }
+
+  :root[data-lumo-accent="blue"] {
+    --lumo-violet: #7fb2ff;
+    --lumo-teal: #75d8ff;
+    --lumo-blue: #9cc7ff;
+  }
+
+  :root[data-lumo-accent="green"] {
+    --lumo-violet: #7ee7b0;
+    --lumo-teal: #5ee6a8;
+    --lumo-blue: #91f0c1;
+  }
+
+  :root[data-lumo-accent="rose"] {
+    --lumo-violet: #ff8aa5;
+    --lumo-teal: #ff6f91;
+    --lumo-blue: #ffadc1;
+  }
+
+  :root[data-lumo-accent="amber"] {
+    --lumo-violet: #fbbf24;
+    --lumo-teal: #fcd34d;
+    --lumo-blue: #fde68a;
+  }
+
+  :root[data-editor-size="small"] {
+    --editor-font-size: 14px;
+  }
+
+  :root[data-editor-size="large"] {
+    --editor-font-size: 18px;
+  }
+
+  :root[data-editor-line-height="compact"] {
+    --editor-line-height: 1.65rem;
+  }
+
+  :root[data-editor-line-height="spacious"] {
+    --editor-line-height: 2.35rem;
   }
 
   * {
@@ -32,6 +82,13 @@
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+  }
+
+  :root[data-lumo-theme="light"] body {
+    background:
+      radial-gradient(circle at 4% 88%, rgba(127, 178, 255, 0.32), transparent 30%),
+      radial-gradient(circle at 94% 78%, rgba(156, 124, 244, 0.28), transparent 30%),
+      #eef3fb;
   }
 
   button,
@@ -173,6 +230,7 @@
     padding: 1.2rem;
     color: rgb(203 213 225);
     line-height: 1.8;
+    font-size: var(--editor-font-size);
   }
 
   .markdown-preview-empty {

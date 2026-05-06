@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { NoteCard } from "./NoteCard";
 import { SectionHeader } from "./SectionHeader";
 import { useNotes } from "../store/notesStore";
+import { useSettings } from "../store/settingsStore";
 import type { Note } from "../types/note";
 import { formatRelativeTime, isSameDay, isThisWeek, isYesterday } from "../utils/date";
 
@@ -86,6 +87,7 @@ export function NotesList() {
     toggleFavorite,
     togglePinned,
   } = useNotes();
+  const { settings } = useSettings();
 
   const pinned = filteredNotes.filter((note) => note.isPinned && !note.isDeleted);
   const unpinned = filteredNotes.filter((note) => !note.isPinned || note.isDeleted);
@@ -115,7 +117,10 @@ export function NotesList() {
   }, []);
 
   const confirmEmptyTrash = () => {
-    if (window.confirm("Permanently delete all notes in Trash? This cannot be undone.")) {
+    if (
+      !settings.confirmPermanentDelete ||
+      window.confirm("Permanently delete all notes in Trash? This cannot be undone.")
+    ) {
       permanentlyDeleteTrashedNotes();
     }
   };

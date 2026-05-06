@@ -71,7 +71,10 @@ function uniqueFilenames(notes: Note[]) {
   });
 }
 
-export function noteToMarkdown(note: Note) {
+export function noteToMarkdown(note: Note, includeFrontmatter = true) {
+  if (!includeFrontmatter) {
+    return note.content;
+  }
   const tags = note.tags.map((tag) => `  - ${quoteFrontmatter(tag)}`).join("\n");
   return [
     "---",
@@ -96,17 +99,18 @@ export function notesToMarkdownFiles(notes: Note[]) {
   }));
 }
 
-export function createBackup(notes: Note[], folders: Folder[], tags: string[]): LumoBackup {
+export function createBackup(notes: Note[], folders: Folder[], tags: string[], includeTrash = true): LumoBackup {
+  const backupNotes = notes.filter((note) => includeTrash || !note.isDeleted);
   return {
     metadata: {
       appName: "Lumo Notes",
       backupVersion: 1,
       exportedAt: new Date().toISOString(),
     },
-    notes,
+    notes: backupNotes,
     folders,
     tags,
-    noteTags: notes.flatMap((note) => note.tags.map((tag) => ({ noteId: note.id, tag }))),
+    noteTags: backupNotes.flatMap((note) => note.tags.map((tag) => ({ noteId: note.id, tag }))),
   };
 }
 

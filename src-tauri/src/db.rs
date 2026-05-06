@@ -41,6 +41,14 @@ pub struct DatabaseSnapshot {
     pub tags: Vec<String>,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SettingDto {
+    pub key: String,
+    pub value: String,
+    pub updated_at: String,
+}
+
 fn connect(path: &PathBuf) -> Result<Connection, String> {
     Connection::open(path).map_err(|error| error.to_string())
 }
@@ -93,6 +101,12 @@ fn create_schema(connection: &Connection) -> Result<(), String> {
                 PRIMARY KEY (note_id, tag_id),
                 FOREIGN KEY(note_id) REFERENCES notes(id) ON DELETE CASCADE,
                 FOREIGN KEY(tag_id) REFERENCES tags(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS app_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at TEXT NOT NULL
             );
             ",
         )
@@ -325,6 +339,47 @@ pub fn get_folders(state: tauri::State<'_, DbState>) -> Result<Vec<FolderDto>, S
 pub fn get_tags(state: tauri::State<'_, DbState>) -> Result<Vec<String>, String> {
     let connection = connect(&state.path)?;
     get_tags_from_connection(&connection)
+}
+
+#[tauri::command]
+pub fn get_app_settings(state: tauri::State<'_, DbState>) -> Result<Vec<SettingDto>, String> {
+    let connection = connect(&state.path)?;
+    create_schema(&connection)?;
+    let mut statement = connection
+        .prepare("SELECT key, value, updated_at FROM app_settings ORDER BY key")
+        .map_err(|error| error.to_string())?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok(SettingDto {
+                key: row.get(0)?,
+                value: row.get(1)?,
+                updated_at: row.get(2)?,
+            })
+        })
+        .map_err(|error| error.to_string())?;
+
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn set_app_setting(
+    state: tauri::State<'_, DbState>,
+    key: String,
+    value: String,
+    updated_at: String,
+) -> Result<(), String> {
+    let connection = connect(&state.path)?;
+    create_schema(&connection)?;
+    connection
+        .execute(
+            "INSERT INTO app_settings (key, value, updated_at)
+             VALUES (?1, ?2, ?3)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+            params![key, value, updated_at],
+        )
+        .map_err(|error| error.to_string())?;
+    Ok(())
 }
 
 #[tauri::command]

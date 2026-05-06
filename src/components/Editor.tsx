@@ -4,6 +4,7 @@ import { FavoriteHeartIcon } from "./icons/FavoriteHeartIcon";
 import { FocusIcon } from "./icons/FocusIcon";
 import { PinIcon } from "./icons/PinIcon";
 import { useNotes } from "../store/notesStore";
+import { useSettings } from "../store/settingsStore";
 import { noteToMarkdown, sanitizeFilename, saveTextFile } from "../services/fileTransfer";
 import { formatMetadataDate } from "../utils/date";
 import { resolveInternalLink } from "../utils/links";
@@ -122,8 +123,9 @@ export function Editor({
     togglePinned,
     updateSelectedNote,
   } = useNotes();
+  const { settings } = useSettings();
   const [tagInput, setTagInput] = useState("");
-  const [editorMode, setEditorMode] = useState<EditorMode>("edit");
+  const [editorMode, setEditorMode] = useState<EditorMode>(settings.defaultEditorMode);
   const [isTypewriter, setIsTypewriter] = useState(false);
   const [wordGoal, setWordGoal] = useState("");
   const [isMetadataOpen, setIsMetadataOpen] = useState(false);
@@ -261,6 +263,10 @@ export function Editor({
   }, [ensureHistory, publishHistoryState, selectedNote, updateSelectedNote]);
 
   useEffect(() => {
+    setEditorMode(settings.defaultEditorMode);
+  }, [selectedNote?.id, settings.defaultEditorMode]);
+
+  useEffect(() => {
     const focusEditor = () => {
       setEditorMode("edit");
       window.setTimeout(() => bodyRef.current?.focus(), 0);
@@ -315,7 +321,10 @@ export function Editor({
   };
 
   const confirmPermanentDelete = () => {
-    if (window.confirm("Permanently delete this note? This cannot be undone.")) {
+    if (
+      !settings.confirmPermanentDelete ||
+      window.confirm("Permanently delete this note? This cannot be undone.")
+    ) {
       permanentlyDeleteSelectedNote();
     }
   };
@@ -339,7 +348,11 @@ export function Editor({
   const exportSelectedNote = async () => {
     const filename = `${sanitizeFilename(selectedNote.title)}.md`;
     try {
-      await saveTextFile("Export selected note", filename, noteToMarkdown(selectedNote));
+      await saveTextFile(
+        "Export selected note",
+        filename,
+        noteToMarkdown(selectedNote, settings.markdownExportFrontmatter),
+      );
     } catch (error) {
       window.alert(error instanceof Error ? error.message : String(error));
     }
@@ -802,6 +815,7 @@ export function Editor({
                 className={`min-h-[420px] w-full resize-none rounded-xl border border-white/10 bg-night-950/20 p-4 text-base leading-8 text-slate-200 outline-none transition placeholder:text-slate-600 focus:border-lumo-teal/35 focus:bg-night-950/35 ${
                   isFocusMode && isTypewriter ? "focus-typewriter-textarea" : ""
                 }`}
+                style={{ fontSize: "var(--editor-font-size)", lineHeight: "var(--editor-line-height)" }}
                 value={selectedNote.content}
                 onChange={(event) => {
                   applyEditorChange({ content: event.target.value }, "typing");
@@ -832,6 +846,7 @@ export function Editor({
               className={`min-h-[420px] w-full resize-none rounded-xl border border-white/10 bg-night-950/20 p-4 text-base leading-8 text-slate-200 outline-none transition placeholder:text-slate-600 focus:border-lumo-teal/35 focus:bg-night-950/35 ${
                 isFocusMode && isTypewriter ? "focus-typewriter-textarea" : ""
               }`}
+              style={{ fontSize: "var(--editor-font-size)", lineHeight: "var(--editor-line-height)" }}
               value={selectedNote.content}
               onChange={(event) => {
                 applyEditorChange({ content: event.target.value }, "typing");

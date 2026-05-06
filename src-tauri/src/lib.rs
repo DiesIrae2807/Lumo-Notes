@@ -24,6 +24,8 @@ pub fn run() {
             db::toggle_pinned,
             db::get_folders,
             db::get_tags,
+            db::get_app_settings,
+            db::set_app_setting,
             db::create_folder,
             db::update_folder,
             db::delete_folder,

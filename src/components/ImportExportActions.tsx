@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNotes } from "../store/notesStore";
+import { useSettings } from "../store/settingsStore";
 import {
   chooseFolderAndWriteFiles,
   createBackup,
@@ -21,6 +22,7 @@ export function ImportExportActions({ compact = false }: { compact?: boolean }) 
     restoreBackupMerge,
     selectedNote,
   } = useNotes();
+  const { settings } = useSettings();
   const [message, setMessage] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
 
@@ -41,7 +43,11 @@ export function ImportExportActions({ compact = false }: { compact?: boolean }) 
     runAction(async () => {
       if (!selectedNote) return "Select a note first.";
       const filename = `${sanitizeFilename(selectedNote.title)}.md`;
-      const path = await saveTextFile("Export selected note", filename, noteToMarkdown(selectedNote));
+      const path = await saveTextFile(
+        "Export selected note",
+        filename,
+        noteToMarkdown(selectedNote, settings.markdownExportFrontmatter),
+      );
       return path ? "Selected note exported." : null;
     });
 
@@ -62,7 +68,7 @@ export function ImportExportActions({ compact = false }: { compact?: boolean }) 
   const exportBackup = () =>
     runAction(async () => {
       const date = new Date().toISOString().slice(0, 10);
-      const backup = createBackup(notes, folders, availableTags);
+      const backup = createBackup(notes, folders, availableTags, settings.backupIncludeTrash);
       const path = await saveTextFile(
         "Export Lumo Notes backup",
         `lumo-notes-backup-${date}.json`,
