@@ -196,7 +196,7 @@ export function Sidebar() {
   return (
     <aside className="column-panel scroll-area hidden min-h-0 flex-col overflow-y-auto overflow-x-hidden p-3 lg:flex">
       <button
-        className="mb-4 flex w-full items-center justify-between rounded-xl border border-lumo-violet/20 bg-lumo-violet/[0.08] px-3 py-2.5 text-sm text-white transition hover:border-lumo-violet/40 active:scale-[0.99]"
+        className="sidebar-new-note mb-4 flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-sm text-white transition duration-150 active:scale-[0.99]"
         onClick={() => createNote()}
       >
         <span className="flex items-center gap-2">
@@ -211,10 +211,10 @@ export function Sidebar() {
           <button
             key={item.label}
             onClick={() => setActiveView(item.view)}
-            className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition active:scale-[0.99] ${
+            className={`sidebar-nav-item flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition duration-150 active:scale-[0.99] ${
               activeView === item.view && !activeFolderId && !activeTag
-                ? "border border-lumo-teal/20 bg-lumo-teal/10 text-white"
-                : "text-slate-300 hover:bg-white/[0.04] hover:text-white"
+                ? "sidebar-nav-item-active text-white"
+                : "text-slate-300"
             }`}
           >
             <IconDot
