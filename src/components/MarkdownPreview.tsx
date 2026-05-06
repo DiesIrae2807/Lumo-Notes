@@ -150,6 +150,7 @@ export function MarkdownPreview({
     const line = lines[index];
 
     if (!line.trim()) {
+      blocks.push(<div key={`blank-${index}`} className="markdown-blank-line" aria-hidden="true" />);
       index += 1;
       continue;
     }
