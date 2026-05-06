@@ -3,6 +3,7 @@ import { BrandMark } from "./BrandMark";
 import { SectionHeader } from "./SectionHeader";
 import { useNotes } from "../store/notesStore";
 import type { SidebarView } from "../types/note";
+import { notify } from "../utils/toast";
 
 const navGlyphs: Record<string, string> = {
   "All Notes": "A",
@@ -176,6 +177,7 @@ export function Sidebar() {
   const removeFolder = (folderId: string, name: string) => {
     if (window.confirm(`Delete "${name}"? Notes will move to Uncategorized.`)) {
       deleteFolder(folderId);
+      notify({ kind: "info", title: "Folder deleted", message: "Notes were moved to Uncategorized." });
     }
   };
 
@@ -192,6 +194,7 @@ export function Sidebar() {
   const removeTag = (tag: string) => {
     if (window.confirm(`Delete "${tag}"? It will be removed from notes.`)) {
       deleteTag(tag);
+      notify({ kind: "info", title: "Tag deleted", message: tag });
     }
   };
 

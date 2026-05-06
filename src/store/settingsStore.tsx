@@ -9,6 +9,7 @@ import {
 } from "react";
 import { getAppSettings, setAppSetting } from "../services/settings";
 import { defaultSettings, type AppSettings } from "../types/settings";
+import { notifyError } from "../utils/toast";
 
 type SettingsContextValue = {
   isSettingsLoading: boolean;
@@ -40,6 +41,10 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         if (!mounted) return;
         setSettings(loaded);
       })
+      .catch((error) => {
+        if (!mounted) return;
+        notifyError("Could not load settings", error);
+      })
       .finally(() => {
         if (mounted) setIsSettingsLoading(false);
       });
@@ -54,7 +59,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
 
   const updateSetting = useCallback(<K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
     setSettings((current) => ({ ...current, [key]: value }));
-    void setAppSetting(key, value);
+    void setAppSetting(key, value).catch((error) => notifyError("Could not save setting", error));
   }, []);
 
   const value = useMemo(

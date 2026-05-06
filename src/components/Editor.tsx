@@ -8,6 +8,7 @@ import { useSettings } from "../store/settingsStore";
 import { noteToMarkdown, sanitizeFilename, saveTextFile } from "../services/fileTransfer";
 import { formatMetadataDate } from "../utils/date";
 import { resolveInternalLink } from "../utils/links";
+import { notify, notifyError } from "../utils/toast";
 
 type MarkdownAction =
   | "bold"
@@ -139,6 +140,7 @@ export function Editor({
   const [tagInput, setTagInput] = useState("");
   const [editorMode, setEditorMode] = useState<EditorMode>(settings.defaultEditorMode);
   const [isTypewriter, setIsTypewriter] = useState(false);
+  const [isAttachmentBusy, setIsAttachmentBusy] = useState(false);
   const [wordGoal, setWordGoal] = useState("");
   const [isMetadataOpen, setIsMetadataOpen] = useState(false);
   const [isOverflowOpen, setIsOverflowOpen] = useState(false);
@@ -338,6 +340,14 @@ export function Editor({
       window.confirm("Permanently delete this note? This cannot be undone.")
     ) {
       permanentlyDeleteSelectedNote();
+      notify({ kind: "success", title: "Note permanently deleted" });
+    }
+  };
+
+  const confirmMoveToTrash = () => {
+    if (window.confirm("Move this note to Trash? You can restore it later from Trash.")) {
+      moveToTrash(selectedNote.id);
+      notify({ kind: "info", title: "Moved note to Trash" });
     }
   };
 
@@ -360,21 +370,26 @@ export function Editor({
   const exportSelectedNote = async () => {
     const filename = `${sanitizeFilename(selectedNote.title)}.md`;
     try {
-      await saveTextFile(
+      const path = await saveTextFile(
         "Export selected note",
         filename,
         noteToMarkdown(selectedNote, settings.markdownExportFrontmatter),
       );
+      if (path) notify({ kind: "success", title: "Selected note exported" });
     } catch (error) {
-      window.alert(error instanceof Error ? error.message : String(error));
+      notifyError("Export failed", error);
     }
   };
 
   const attachFile = async () => {
+    if (isAttachmentBusy) return;
+    setIsAttachmentBusy(true);
     try {
       await attachFileToSelectedNote();
     } catch (error) {
-      window.alert(error instanceof Error ? error.message : String(error));
+      notifyError("Attachment failed", error);
+    } finally {
+      setIsAttachmentBusy(false);
     }
   };
 
@@ -382,7 +397,7 @@ export function Editor({
     try {
       await openAttachment(id);
     } catch (error) {
-      window.alert(error instanceof Error ? error.message : String(error));
+      notifyError("Could not open attachment", error);
     }
   };
 
@@ -398,7 +413,7 @@ export function Editor({
     try {
       await removeAttachment(id);
     } catch (error) {
-      window.alert(error instanceof Error ? error.message : String(error));
+      notifyError("Could not remove attachment", error);
     }
   };
 
@@ -653,7 +668,10 @@ export function Editor({
             <>
               <button
                 className="rounded-lg px-3 py-1.5 text-slate-300 transition hover:bg-white/[0.05] hover:text-white active:scale-95"
-                onClick={() => restoreNote(selectedNote.id)}
+                onClick={() => {
+                  restoreNote(selectedNote.id);
+                  notify({ kind: "success", title: "Note restored" });
+                }}
               >
                 Restore
               </button>
@@ -688,7 +706,7 @@ export function Editor({
                     className="w-full rounded-lg px-3 py-2 text-left text-xs text-rose-300 transition hover:bg-rose-400/10 hover:text-rose-100"
                     onClick={() => {
                       setIsOverflowOpen(false);
-                      moveToTrash(selectedNote.id);
+                      confirmMoveToTrash();
                     }}
                   >
                     Move to Trash
@@ -854,10 +872,11 @@ export function Editor({
                     Attachments
                   </span>
                   <button
-                    className="rounded-lg px-2 py-1 text-xs text-slate-400 transition hover:bg-white/[0.05] hover:text-white"
+                    className="rounded-lg px-2 py-1 text-xs text-slate-400 transition hover:bg-white/[0.05] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={isAttachmentBusy}
                     onClick={attachFile}
                   >
-                    Attach
+                    {isAttachmentBusy ? "Adding..." : "Attach"}
                   </button>
                 </div>
                 <div className="grid gap-2">
@@ -986,10 +1005,11 @@ export function Editor({
             </button>
           ))}
           <button
-            className="rounded-lg px-3 py-2 text-xs transition hover:bg-white/[0.05] hover:text-white active:scale-95"
+            className="rounded-lg px-3 py-2 text-xs transition hover:bg-white/[0.05] hover:text-white active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={isAttachmentBusy}
             onClick={() => void attachFile()}
           >
-            Attach
+            {isAttachmentBusy ? "Adding..." : "Attach"}
           </button>
         </div>
         <span className="text-xs text-slate-300">

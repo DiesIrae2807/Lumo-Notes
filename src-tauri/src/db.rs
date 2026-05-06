@@ -389,6 +389,52 @@ fn get_attachment_names_for_note(
     rows.collect()
 }
 
+fn get_note_ids_for_tag_id(connection: &Connection, tag_id: &str) -> Result<Vec<String>, String> {
+    let mut statement = connection
+        .prepare(
+            "
+            SELECT note_id
+            FROM note_tags
+            WHERE tag_id = ?1
+            ",
+        )
+        .map_err(|error| error.to_string())?;
+    let rows = statement
+        .query_map(params![tag_id], |row| row.get::<_, String>(0))
+        .map_err(|error| error.to_string())?;
+
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())
+}
+
+fn get_note_ids_for_folder_id(
+    connection: &Connection,
+    folder_id: &str,
+) -> Result<Vec<String>, String> {
+    let mut statement = connection
+        .prepare(
+            "
+            SELECT id
+            FROM notes
+            WHERE folder_id = ?1
+            ",
+        )
+        .map_err(|error| error.to_string())?;
+    let rows = statement
+        .query_map(params![folder_id], |row| row.get::<_, String>(0))
+        .map_err(|error| error.to_string())?;
+
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())
+}
+
+fn upsert_search_index_notes(connection: &Connection, note_ids: &[String]) -> Result<(), String> {
+    for note_id in note_ids {
+        upsert_search_index_note(connection, note_id)?;
+    }
+    Ok(())
+}
+
 fn upsert_search_index_note(connection: &Connection, note_id: &str) -> Result<(), String> {
     create_search_schema(connection)?;
     let note = connection
@@ -1190,6 +1236,7 @@ pub fn update_folder(
     updated_at: String,
 ) -> Result<(), String> {
     let connection = connect(&state.path)?;
+    let note_ids = get_note_ids_for_folder_id(&connection, &id)?;
     connection
         .execute(
             "UPDATE folders SET name = ?2, color = ?3, updated_at = ?4 WHERE id = ?1",
@@ -1202,6 +1249,7 @@ pub fn update_folder(
             params![id, name, updated_at],
         )
         .map_err(|error| error.to_string())?;
+    let _ = upsert_search_index_notes(&connection, &note_ids);
     Ok(())
 }
 
@@ -1274,12 +1322,14 @@ pub fn update_tag(
 ) -> Result<(), String> {
     let connection = connect(&state.path)?;
     let old_id = resolve_tag_id(&connection, &old_name)?;
+    let affected_note_ids = get_note_ids_for_tag_id(&connection, &old_id)?;
     connection
         .execute(
             "UPDATE tags SET name = ?2, updated_at = ?3 WHERE id = ?1",
             params![old_id, new_name.trim(), updated_at],
         )
         .map_err(|error| error.to_string())?;
+    let _ = upsert_search_index_notes(&connection, &affected_note_ids);
     Ok(())
 }
 

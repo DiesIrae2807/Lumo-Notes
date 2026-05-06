@@ -14,6 +14,7 @@ import { useSettings } from "./settingsStore";
 import type { LumoBackup, ParsedMarkdownNote } from "../services/fileTransfer";
 import type { Attachment, Folder, Note, SidebarView } from "../types/note";
 import { getPlainTextPreview, markdownToPlainText } from "../utils/markdown";
+import { notify, notifyError } from "../utils/toast";
 
 type NotesContextValue = {
   notes: Note[];
@@ -184,6 +185,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
           settleSaveStatus();
         }
         setDatabaseError(error instanceof Error ? error.message : String(error));
+        notifyError("Note save failed", error);
       });
   }, [settleSaveStatus]);
 
@@ -285,6 +287,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         }
 
         setDatabaseError(error instanceof Error ? error.message : String(error));
+        notifyError("Could not open local database", error);
       } finally {
         if (isMounted) {
           setIsDatabaseLoading(false);
@@ -474,6 +477,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
 
     void database.createNote(newNote).catch((error) => {
       setDatabaseError(error instanceof Error ? error.message : String(error));
+      notifyError("Could not create note", error);
     });
     setNotes((current) => [newNote, ...current]);
     setSelectedNoteId(newNote.id);
@@ -555,6 +559,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       setActiveFolderIdState(null);
       setActiveTagState(null);
       setSearchQuery("");
+      notify({ kind: "success", title: `${notesToCreate.length} Markdown note${notesToCreate.length === 1 ? "" : "s"} imported` });
       return notesToCreate.length;
     },
     [availableTags, flushNoteSave, folders, selectedNoteId],
@@ -638,6 +643,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       setActiveFolderIdState(null);
       setActiveTagState(null);
       setSearchQuery("");
+      notify({ kind: "success", title: `${notesToCreate.length} backup note${notesToCreate.length === 1 ? "" : "s"} restored` });
       return notesToCreate.length;
     },
     [availableTags, flushNoteSave, folders, notes, selectedNoteId],
@@ -717,17 +723,25 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       current.map((note) => (note.id === selectedNote.id ? updatedNote : note)),
     );
     queueNoteSave(updatedNote);
+    notify({ kind: "success", title: "Attachment added", message: attachment.filename });
     return attachment;
   }, [flushNoteSave, queueNoteSave, selectedNote]);
 
   const openAttachment = useCallback(async (id: string) => {
-    await database.openAttachment(id);
+    try {
+      await database.openAttachment(id);
+    } catch (error) {
+      notifyError("Could not open attachment", error);
+      throw error;
+    }
   }, []);
 
   const removeAttachment = useCallback(async (id: string) => {
+    const target = attachments.find((attachment) => attachment.id === id);
     await database.removeAttachment(id);
     setAttachments((current) => current.filter((attachment) => attachment.id !== id));
-  }, []);
+    notify({ kind: "success", title: "Attachment removed", message: target?.filename });
+  }, [attachments]);
 
   const updateNoteById = useCallback((id: string, updater: (note: Note) => Note) => {
     setNotes((current) => current.map((note) => (note.id === id ? updater(note) : note)));

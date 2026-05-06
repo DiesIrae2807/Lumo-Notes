@@ -12,6 +12,7 @@ import {
   saveTextFile,
   validateBackup,
 } from "../services/fileTransfer";
+import { notify, notifyError } from "../utils/toast";
 
 type MenuName = "file" | "edit";
 
@@ -115,9 +116,13 @@ export function TopMenuBar({ onExit }: { onExit: () => void }) {
   const runAction = async (action: () => void | Promise<void>, success?: string) => {
     try {
       await action();
-      if (success) setMessage(success);
+      if (success) {
+        setMessage(success);
+        notify({ kind: "success", title: success });
+      }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
+      notifyError("Menu action failed", error);
     } finally {
       setOpenMenu(null);
     }
@@ -132,7 +137,10 @@ export function TopMenuBar({ onExit }: { onExit: () => void }) {
         filename,
         noteToMarkdown(selectedNote, settings.markdownExportFrontmatter),
       );
-      if (path) setMessage("Selected note exported.");
+      if (path) {
+        setMessage("Selected note exported.");
+        notify({ kind: "success", title: "Selected note exported" });
+      }
     });
 
   const exportAll = () =>
@@ -143,13 +151,18 @@ export function TopMenuBar({ onExit }: { onExit: () => void }) {
       const exportNotes = notes.filter((note) => includeTrash || !note.isDeleted);
       if (exportNotes.length === 0) {
         setMessage("No notes to export.");
+        notify({ kind: "info", title: "No notes to export" });
         return;
       }
       const path = await chooseFolderAndWriteFiles(
         "Export notes as Markdown",
         notesToMarkdownFiles(exportNotes),
       );
-      if (path) setMessage(`${exportNotes.length} Markdown files exported.`);
+      if (path) {
+        const message = `${exportNotes.length} Markdown files exported.`;
+        setMessage(message);
+        notify({ kind: "success", title: message });
+      }
     });
 
   const exportBackup = () =>
@@ -161,7 +174,10 @@ export function TopMenuBar({ onExit }: { onExit: () => void }) {
         `lumo-notes-backup-${date}.json`,
         JSON.stringify(backup, null, 2),
       );
-      if (path) setMessage("Backup exported.");
+      if (path) {
+        setMessage("Backup exported.");
+        notify({ kind: "success", title: "Backup exported" });
+      }
     });
 
   const importMarkdown = () =>
@@ -195,7 +211,9 @@ export function TopMenuBar({ onExit }: { onExit: () => void }) {
     }
 
     if (selectedNote && !selectedNote.isDeleted) {
-      moveToTrash(selectedNote.id);
+      if (window.confirm("Move this note to Trash? You can restore it later from Trash.")) {
+        moveToTrash(selectedNote.id);
+      }
     }
   };
 
@@ -330,7 +348,7 @@ export function TopMenuBar({ onExit }: { onExit: () => void }) {
           if (!selectedNote) return;
           if (selectedNote.isDeleted) {
             restoreNote(selectedNote.id);
-          } else {
+          } else if (window.confirm("Move this note to Trash? You can restore it later from Trash.")) {
             moveToTrash(selectedNote.id);
           }
         },

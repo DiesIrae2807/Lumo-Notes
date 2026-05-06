@@ -31,7 +31,7 @@ function HighlightedText({ query, text }: { query?: string; text: string }) {
         terms.some((term) => term.toLowerCase() === part.toLowerCase()) ? (
           <mark
             key={`${part}-${index}`}
-            className="rounded bg-lumo-teal/15 px-0.5 text-slate-100"
+            className="search-highlight"
           >
             {part}
           </mark>

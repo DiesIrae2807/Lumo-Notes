@@ -111,6 +111,14 @@
 }
 
 @layer components {
+  .search-highlight {
+    border-radius: 0.25rem;
+    background: rgba(114, 79, 12, 0.52);
+    color: #ffe8a3;
+    font-weight: 650;
+    padding: 0 0.125rem;
+  }
+
   .panel {
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 20px;

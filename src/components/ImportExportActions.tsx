@@ -12,6 +12,7 @@ import {
   saveTextFile,
   validateBackup,
 } from "../services/fileTransfer";
+import { notify, notifyError } from "../utils/toast";
 
 export function ImportExportActions({ compact = false }: { compact?: boolean }) {
   const {
@@ -32,9 +33,14 @@ export function ImportExportActions({ compact = false }: { compact?: boolean }) 
     setMessage(null);
     try {
       const result = await action();
-      if (result) setMessage(result);
+      if (result) {
+        setMessage(result);
+        notify({ kind: "success", title: result });
+      }
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : String(error));
+      const message = error instanceof Error ? error.message : String(error);
+      setMessage(message);
+      notifyError("Local tool failed", error);
     } finally {
       setIsBusy(false);
     }

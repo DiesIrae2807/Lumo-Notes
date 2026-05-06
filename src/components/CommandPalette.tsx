@@ -12,6 +12,7 @@ import {
 } from "../services/fileTransfer";
 import type { SidebarView } from "../types/note";
 import { getPlainTextPreview, markdownToPlainText } from "../utils/markdown";
+import { notify, notifyError } from "../utils/toast";
 
 type CommandItem = {
   id: string;
@@ -100,6 +101,7 @@ export function CommandPalette() {
       `${sanitizeFilename(selectedNote.title)}.md`,
       noteToMarkdown(selectedNote, settings.markdownExportFrontmatter),
     );
+    notify({ kind: "success", title: "Selected note exported" });
   };
 
   const exportBackup = async () => {
@@ -110,6 +112,7 @@ export function CommandPalette() {
       `lumo-notes-backup-${date}.json`,
       JSON.stringify(backup, null, 2),
     );
+    notify({ kind: "success", title: "Backup exported" });
   };
 
   const importMarkdown = async () => {
@@ -363,7 +366,11 @@ export function CommandPalette() {
   const runItem = async (item: CommandItem | undefined) => {
     if (!item) return;
     close();
-    await item.run();
+    try {
+      await item.run();
+    } catch (error) {
+      notifyError("Command failed", error);
+    }
   };
 
   if (!isOpen) {

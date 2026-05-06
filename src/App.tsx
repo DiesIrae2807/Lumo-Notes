@@ -10,6 +10,7 @@ import { Sidebar } from "./components/Sidebar";
 import { BrandMark } from "./components/BrandMark";
 import { InsightsIcon } from "./components/icons/InsightsIcon";
 import { TopMenuBar } from "./components/TopMenuBar";
+import { ToastProvider } from "./components/ToastProvider";
 import { NotesProvider } from "./store/notesStore";
 import { SettingsProvider } from "./store/settingsStore";
 import { useNotes } from "./store/notesStore";
@@ -158,7 +159,9 @@ function AppShortcuts() {
 
       if (event.key === "Delete" && !isTypingTarget(event.target) && selectedNote && !selectedNote.isDeleted) {
         event.preventDefault();
-        moveToTrash(selectedNote.id);
+        if (window.confirm("Move this note to Trash? You can restore it later from Trash.")) {
+          moveToTrash(selectedNote.id);
+        }
       }
     };
 
@@ -171,21 +174,27 @@ function AppShortcuts() {
 
 export default function App() {
   return (
-    <SettingsProvider>
-      <NotesProvider>
-        <AppShortcuts />
-        <CommandPalette />
-        <Workspace />
-      </NotesProvider>
-    </SettingsProvider>
+    <ToastProvider>
+      <SettingsProvider>
+        <NotesProvider>
+          <AppShortcuts />
+          <CommandPalette />
+          <Workspace />
+        </NotesProvider>
+      </SettingsProvider>
+    </ToastProvider>
   );
 }
 
 function Workspace() {
-  const { activeView } = useNotes();
+  const { activeView, databaseError, notes, searchQuery } = useNotes();
   const [isFocusMode, setIsFocusMode] = useState(false);
   const [isInsightsOpen, setIsInsightsOpen] = useState(false);
   const isSettingsView = activeView === "settings";
+  const showFirstRun =
+    activeView === "all" &&
+    searchQuery.trim().length === 0 &&
+    !notes.some((note) => !note.isDeleted);
 
   useEffect(() => {
     const toggleFocusMode = () => setIsFocusMode((current) => !current);
@@ -227,6 +236,11 @@ function Workspace() {
 
         <div className="window-shell relative flex min-h-[100dvh] flex-col overflow-hidden bg-night-900/62 backdrop-blur-xl">
           <WindowTitleBar />
+          {databaseError ? (
+            <div className="border-b border-rose-400/20 bg-rose-400/[0.06] px-4 py-2 text-xs text-rose-100">
+              Local storage warning: {databaseError}
+            </div>
+          ) : null}
           <div
             className={`workspace-grid grid min-h-0 flex-1 overflow-hidden ${
               isFocusMode
@@ -250,6 +264,16 @@ function Workspace() {
                     <NotesList />
                     <GraphView />
                   </>
+                ) : showFirstRun ? (
+                  <>
+                    <NotesList />
+                    <FirstRunWelcome />
+                    {isInsightsOpen ? (
+                      <InsightsPanel onCollapse={() => setIsInsightsOpen(false)} />
+                    ) : (
+                      <InsightsRail onOpen={() => setIsInsightsOpen(true)} />
+                    )}
+                  </>
                 ) : (
                   <>
                     <NotesList />
@@ -266,6 +290,41 @@ function Workspace() {
           </div>
         </div>
       </div>
+  );
+}
+
+function FirstRunWelcome() {
+  const { createNote } = useNotes();
+
+  return (
+    <main className="column-panel editor-glow grid min-h-0 place-items-center px-6">
+      <section className="max-w-lg text-center">
+        <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-lumo-violet/15 shadow-[0_0_40px_rgba(156,124,244,0.18)]">
+          <BrandMark size="md" />
+        </div>
+        <p className="text-sm font-medium text-lumo-teal">Lumo Notes</p>
+        <h2 className="mt-2 text-3xl font-semibold tracking-tight text-white">
+          Thoughts. Organized. Illuminated.
+        </h2>
+        <p className="mx-auto mt-4 max-w-md text-sm leading-6 text-slate-400">
+          A local-first note-taking workspace for writing, linking, and keeping your notes on this device.
+        </p>
+        <div className="mt-7 flex flex-wrap justify-center gap-3">
+          <button
+            className="rounded-xl bg-lumo-violet px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-lumo-violet/90 active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-lumo-violet/50"
+            onClick={() => createNote()}
+          >
+            Create your first note
+          </button>
+          <button
+            className="rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2.5 text-sm text-slate-300 transition hover:bg-white/[0.07] hover:text-white active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-lumo-violet/50"
+            onClick={() => window.dispatchEvent(new Event("lumo-open-command-palette"))}
+          >
+            Import or restore
+          </button>
+        </div>
+      </section>
+    </main>
   );
 }
 

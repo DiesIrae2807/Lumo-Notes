@@ -2,6 +2,7 @@ import { useSettings } from "../store/settingsStore";
 import type { AppSettings } from "../types/settings";
 import { useState, type ReactNode } from "react";
 import { rebuildSearchIndex } from "../services/database";
+import { notify, notifyError } from "../utils/toast";
 
 const shortcuts = [
   ["Ctrl+K", "Command palette"],
@@ -108,8 +109,10 @@ export function SettingsScreen() {
     try {
       await rebuildSearchIndex();
       setSearchIndexStatus("done");
+      notify({ kind: "success", title: "Search index rebuilt" });
     } catch {
       setSearchIndexStatus("error");
+      notifyError("Could not rebuild search index", "SQLite search index rebuild failed.");
     }
   };
 
