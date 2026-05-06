@@ -81,13 +81,17 @@ function SettingToggle<K extends keyof AppSettings>({
         {helper ? <span className="mt-1 block text-xs text-slate-500">{helper}</span> : null}
       </span>
       <span
-        className={`relative h-6 w-11 rounded-full transition ${
-          enabled ? "bg-lumo-teal/70" : "bg-slate-700"
+        className={`relative h-6 w-11 rounded-full border transition-colors duration-200 ease-out ${
+          enabled
+            ? "border-lumo-teal/70 bg-lumo-teal shadow-[0_0_16px_rgba(89,213,202,0.22)]"
+            : "border-white/10 bg-slate-700/70"
         }`}
       >
         <span
-          className={`absolute top-1 h-4 w-4 rounded-full bg-white transition ${
-            enabled ? "left-6" : "left-1"
+          className={`absolute left-1 top-1/2 h-4 w-4 -translate-y-1/2 rounded-full transition-[transform,background-color,box-shadow] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+            enabled
+              ? "translate-x-5 bg-night-950 shadow-[0_2px_8px_rgba(0,0,0,0.22)]"
+              : "translate-x-0 bg-white shadow-[0_2px_8px_rgba(0,0,0,0.18)]"
           }`}
         />
       </span>
