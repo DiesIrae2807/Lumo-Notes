@@ -189,11 +189,12 @@ export function Editor({
 
     const start = textarea.selectionStart;
     const end = textarea.selectionEnd;
-    const selected = selectedNote.content.slice(start, end);
+    const currentContent = textarea.value;
+    const selected = currentContent.slice(start, end);
     let insertion = selected;
     let nextSelectionStart = start;
     let nextSelectionEnd = start;
-    const isAtLineStart = start === 0 || selectedNote.content[start - 1] === "\n";
+    const isAtLineStart = start === 0 || currentContent[start - 1] === "\n";
 
     const linePrefix = (prefix: string) => {
       const fallback = selected || "List item";
@@ -250,10 +251,17 @@ export function Editor({
         break;
     }
 
-    const nextContent =
-      selectedNote.content.slice(0, start) + insertion + selectedNote.content.slice(end);
+    const nextContent = currentContent.slice(0, start) + insertion + currentContent.slice(end);
 
-    updateSelectedNote({ content: nextContent });
+    textarea.focus();
+    textarea.setSelectionRange(start, end);
+    const insertedWithNativeUndo = document.execCommand("insertText", false, insertion);
+
+    if (!insertedWithNativeUndo || textarea.value !== nextContent) {
+      textarea.setRangeText(insertion, start, end, "end");
+      updateSelectedNote({ content: textarea.value });
+    }
+
     keepCursorCentered(textarea);
 
     window.setTimeout(() => {
