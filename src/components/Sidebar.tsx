@@ -25,7 +25,7 @@ function IconDot({ active, label }: { active?: boolean; label: string }) {
     <span
       className={`grid h-4 w-4 place-items-center rounded-md border text-[10px] font-semibold ${
         active
-          ? "border-lumo-teal/70 bg-lumo-teal/20 text-lumo-teal"
+          ? "sidebar-nav-glyph-active"
           : "border-slate-600 bg-slate-800/60 text-slate-400"
       }`}
     >
@@ -265,8 +265,8 @@ export function Sidebar() {
                   setActiveFolderId(collection.id);
                 }
               }}
-              className={`group flex w-full cursor-pointer items-center gap-3 rounded-xl px-3 py-2 text-sm transition hover:bg-white/[0.04] hover:text-white active:scale-[0.99] focus-visible:outline focus-visible:outline-2 focus-visible:outline-lumo-violet/55 ${
-                isSelected ? "bg-white/[0.06] text-white" : "text-slate-300"
+              className={`sidebar-nav-item group flex w-full cursor-pointer items-center gap-3 rounded-xl px-3 py-2 text-sm transition active:scale-[0.99] ${
+                isSelected ? "sidebar-nav-item-active text-white" : "text-slate-300"
               }`}
             >
               <span className={`h-2.5 w-2.5 rounded ${collection.colorClass}`} />
@@ -309,10 +309,10 @@ export function Sidebar() {
           {availableTags.map((tag) => (
             <button
               key={tag}
-              className={`rounded-md px-2 py-1 text-xs leading-none transition hover:text-white active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lumo-violet/35 ${
+              className={`rounded-md px-2 py-1 text-xs leading-none transition hover:text-white active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lumo-teal/35 ${
                 activeTag === tag
-                  ? "bg-lumo-violet/15 text-white"
-                  : "bg-white/[0.04] text-slate-300 hover:bg-white/[0.07]"
+                  ? "bg-lumo-teal/15 text-white"
+                  : "bg-white/[0.04] text-slate-300 hover:bg-lumo-teal/10"
               }`}
               onClick={() => setActiveTag(tag)}
               onContextMenu={(event) => openTagMenu(event, tag)}

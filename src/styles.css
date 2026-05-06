@@ -8,6 +8,7 @@
     --lumo-violet: #9c7cf4;
     --lumo-teal: #59d5ca;
     --lumo-blue: #7fb2ff;
+    --lumo-secondary: #59d5ca;
     --editor-font-size: 16px;
     --editor-line-height: 2rem;
     font-family: Outfit, Geist, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -19,28 +20,40 @@
     background: #eef3fb;
   }
 
+  :root[data-lumo-accent="teal"] {
+    --lumo-secondary: #59d5ca;
+    --lumo-teal: #59d5ca;
+    --lumo-blue: #7fb2ff;
+  }
+
   :root[data-lumo-accent="blue"] {
-    --lumo-violet: #7fb2ff;
-    --lumo-teal: #75d8ff;
-    --lumo-blue: #9cc7ff;
+    --lumo-secondary: #7fb2ff;
+    --lumo-teal: #7fb2ff;
+    --lumo-blue: #75d8ff;
   }
 
   :root[data-lumo-accent="green"] {
-    --lumo-violet: #7ee7b0;
+    --lumo-secondary: #5ee6a8;
     --lumo-teal: #5ee6a8;
     --lumo-blue: #91f0c1;
   }
 
   :root[data-lumo-accent="rose"] {
-    --lumo-violet: #ff8aa5;
+    --lumo-secondary: #ff6f91;
     --lumo-teal: #ff6f91;
     --lumo-blue: #ffadc1;
   }
 
   :root[data-lumo-accent="amber"] {
-    --lumo-violet: #fbbf24;
-    --lumo-teal: #fcd34d;
-    --lumo-blue: #fde68a;
+    --lumo-secondary: #f6c85f;
+    --lumo-teal: #f6c85f;
+    --lumo-blue: #f6c85f;
+  }
+
+  :root[data-lumo-accent="indigo"] {
+    --lumo-secondary: #7c83ff;
+    --lumo-teal: #7c83ff;
+    --lumo-blue: #9aa2ff;
   }
 
   :root[data-editor-size="small"] {
@@ -161,7 +174,7 @@
 
   .custom-titlebar {
     background:
-      linear-gradient(90deg, color-mix(in srgb, var(--lumo-violet) 12%, transparent), color-mix(in srgb, var(--lumo-teal) 7%, transparent) 58%, rgba(8, 12, 22, 0.72)),
+      linear-gradient(90deg, color-mix(in srgb, var(--lumo-violet) 14%, transparent), color-mix(in srgb, var(--lumo-violet) 6%, transparent) 58%, rgba(8, 12, 22, 0.72)),
       rgba(8, 12, 22, 0.88);
     user-select: none;
   }
@@ -226,8 +239,8 @@
   .sidebar-new-note:focus-visible,
   .sidebar-nav-item:focus-visible {
     box-shadow:
-      0 0 0 2px color-mix(in srgb, var(--lumo-violet) 18%, transparent),
-      0 0 18px color-mix(in srgb, var(--lumo-violet) 8%, transparent);
+      0 0 0 2px color-mix(in srgb, var(--lumo-secondary) 18%, transparent),
+      0 0 18px color-mix(in srgb, var(--lumo-secondary) 8%, transparent);
   }
 
   .sidebar-new-note:focus-visible {
@@ -245,22 +258,28 @@
       linear-gradient(
         90deg,
         rgba(255, 255, 255, 0.045),
-        color-mix(in srgb, var(--lumo-teal) 5%, transparent)
+        color-mix(in srgb, var(--lumo-secondary) 5%, transparent)
       );
     color: white;
+  }
+
+  .sidebar-nav-glyph-active {
+    border-color: color-mix(in srgb, var(--lumo-secondary) 58%, transparent);
+    background: color-mix(in srgb, var(--lumo-secondary) 18%, transparent);
+    color: var(--lumo-secondary);
   }
 
   .sidebar-nav-item-active {
     background:
       linear-gradient(
         90deg,
-        color-mix(in srgb, var(--lumo-teal) 22%, rgba(18, 35, 43, 0.72)) 0%,
-        color-mix(in srgb, var(--lumo-teal) 10%, rgba(18, 25, 45, 0.48)) 54%,
+        color-mix(in srgb, var(--lumo-secondary) 22%, rgba(18, 35, 43, 0.72)) 0%,
+        color-mix(in srgb, var(--lumo-secondary) 10%, rgba(18, 25, 45, 0.48)) 54%,
         rgba(9, 15, 29, 0) 100%
       ) !important;
     box-shadow:
-      inset 0 0 0 1px color-mix(in srgb, var(--lumo-teal) 9%, transparent),
-      0 0 18px color-mix(in srgb, var(--lumo-teal) 9%, transparent);
+      inset 0 0 0 1px color-mix(in srgb, var(--lumo-secondary) 9%, transparent),
+      0 0 18px color-mix(in srgb, var(--lumo-secondary) 9%, transparent);
   }
 
   .editor-section {
@@ -629,7 +648,7 @@
 
 :root[data-lumo-theme="light"] .custom-titlebar {
   background:
-    linear-gradient(90deg, color-mix(in srgb, var(--lumo-violet) 13%, transparent), color-mix(in srgb, var(--lumo-teal) 10%, transparent) 58%, rgba(244, 248, 253, 0.92)),
+    linear-gradient(90deg, color-mix(in srgb, var(--lumo-violet) 13%, transparent), color-mix(in srgb, var(--lumo-violet) 6%, transparent) 58%, rgba(244, 248, 253, 0.92)),
     rgba(244, 248, 253, 0.94);
 }
 

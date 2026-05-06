@@ -1,5 +1,5 @@
 export type LumoTheme = "dark" | "light" | "system";
-export type LumoAccent = "violetTeal" | "blue" | "green" | "rose" | "amber";
+export type LumoAccent = "teal" | "blue" | "green" | "rose" | "amber" | "indigo";
 export type DefaultEditorMode = "edit" | "preview" | "split";
 export type EditorFontSize = "small" | "medium" | "large";
 export type EditorLineHeight = "compact" | "comfortable" | "spacious";
@@ -24,7 +24,7 @@ export type AppSettings = {
 };
 
 export const defaultSettings: AppSettings = {
-  accent: "violetTeal",
+  accent: "teal",
   autosaveDelay: "normal",
   backupIncludeTrash: true,
   confirmPermanentDelete: true,

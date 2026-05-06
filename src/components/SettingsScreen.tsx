@@ -127,11 +127,12 @@ export function SettingsScreen() {
                 label="Accent"
                 name="accent"
                 options={[
-                  { label: "Violet / Teal", value: "violetTeal" },
-                  { label: "Blue", value: "blue" },
-                  { label: "Green", value: "green" },
-                  { label: "Rose", value: "rose" },
-                  { label: "Amber", value: "amber" },
+                  { label: "Violet / Teal", value: "teal" },
+                  { label: "Violet / Blue", value: "blue" },
+                  { label: "Violet / Green", value: "green" },
+                  { label: "Violet / Rose", value: "rose" },
+                  { label: "Violet / Amber", value: "amber" },
+                  { label: "Violet / Indigo", value: "indigo" },
                 ]}
               />
             </SettingsCard>

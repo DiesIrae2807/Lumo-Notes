@@ -546,7 +546,7 @@ export function Editor({
           <span className="h-2 w-2 shrink-0 rounded-full bg-lumo-blue" />
           <span className="truncate">{selectedNote.folderName}</span>
           <span>/</span>
-          <span className="truncate font-medium text-lumo-violet">
+          <span className="truncate font-medium text-lumo-teal">
             {selectedNote.title || "Untitled Note"}
           </span>
         </div>
@@ -680,11 +680,11 @@ export function Editor({
           ) : null}
 
           <div className="mb-7">
-            <div className="mb-4 grid h-7 w-7 place-items-center text-xl text-lumo-violet">
+            <div className="mb-4 grid h-7 w-7 place-items-center text-xl text-lumo-teal">
               *
             </div>
             <input
-              className="w-full border-none bg-transparent text-3xl font-semibold tracking-tight text-white outline-none placeholder:text-slate-600 md:text-4xl"
+              className="w-full border-none bg-transparent text-3xl font-semibold tracking-tight text-lumo-teal outline-none placeholder:text-slate-600 md:text-4xl"
               value={selectedNote.title}
               onChange={(event) => applyEditorChange({ title: event.target.value }, "typing")}
               onBlur={() => {
