@@ -63,7 +63,7 @@ function WindowTitleBar() {
         <div className="flex items-center gap-3" data-tauri-drag-region onMouseDown={startDragging}>
           <BrandMark size="sm" />
           <h1 className="select-none text-sm font-semibold text-white" data-tauri-drag-region>
-            Lumo <span className="text-lumo-violet">Notes</span>
+            Lumo <span className="text-lumo-teal">Notes</span>
           </h1>
         </div>
         <TopMenuBar onExit={() => void appWindow.close()} />

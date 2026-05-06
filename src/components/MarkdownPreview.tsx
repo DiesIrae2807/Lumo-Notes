@@ -178,9 +178,14 @@ export function MarkdownPreview({
     if (heading) {
       const level = Math.min(heading[1].length, 3);
       const Tag = `h${level}` as "h1" | "h2" | "h3";
+      const accentHeading = heading[2].match(/^==(.+)==$/);
+      const headingText = accentHeading ? accentHeading[1] : heading[2];
       blocks.push(
-        <Tag key={`heading-${index}`}>
-          {renderInline(heading[2], onInternalLinkClick, isInternalLinkResolved)}
+        <Tag
+          key={`heading-${index}`}
+          className={accentHeading ? "markdown-accent-heading" : undefined}
+        >
+          {renderInline(headingText, onInternalLinkClick, isInternalLinkResolved)}
         </Tag>,
       );
       index += 1;

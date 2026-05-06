@@ -13,6 +13,7 @@ type MarkdownAction =
   | "bold"
   | "italic"
   | "heading"
+  | "accentHeading"
   | "bullet"
   | "numbered"
   | "quote"
@@ -42,6 +43,7 @@ const editorTools: Array<{ label: string; action: MarkdownAction }> = [
   { label: "B", action: "bold" },
   { label: "I", action: "italic" },
   { label: "H", action: "heading" },
+  { label: "Accent H", action: "accentHeading" },
   { label: "Bullets", action: "bullet" },
   { label: "Numbers", action: "numbered" },
   { label: "Quote", action: "quote" },
@@ -376,6 +378,7 @@ export function Editor({
         bold: "**bold text**",
         italic: "*italic text*",
         heading: "## Heading",
+        accentHeading: "## ==Heading==",
         bullet: "- List item",
         numbered: "1. List item",
         quote: "> Quote",
@@ -427,6 +430,11 @@ export function Editor({
       case "heading":
         insertion = `## ${selected || "Heading"}`;
         nextSelectionStart = start + 3;
+        nextSelectionEnd = nextSelectionStart + (selected || "Heading").length;
+        break;
+      case "accentHeading":
+        insertion = `## ==${selected || "Heading"}==`;
+        nextSelectionStart = start + 5;
         nextSelectionEnd = nextSelectionStart + (selected || "Heading").length;
         break;
       case "bullet":
@@ -546,7 +554,7 @@ export function Editor({
           <span className="h-2 w-2 shrink-0 rounded-full bg-lumo-blue" />
           <span className="truncate">{selectedNote.folderName}</span>
           <span>/</span>
-          <span className="truncate font-medium text-lumo-teal">
+          <span className="truncate font-medium text-slate-200">
             {selectedNote.title || "Untitled Note"}
           </span>
         </div>
@@ -684,7 +692,7 @@ export function Editor({
               *
             </div>
             <input
-              className="w-full border-none bg-transparent text-3xl font-semibold tracking-tight text-lumo-teal outline-none placeholder:text-slate-600 md:text-4xl"
+              className="w-full border-none bg-transparent text-3xl font-semibold tracking-tight text-white outline-none placeholder:text-slate-600 md:text-4xl"
               value={selectedNote.title}
               onChange={(event) => applyEditorChange({ title: event.target.value }, "typing")}
               onBlur={() => {

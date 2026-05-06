@@ -357,12 +357,17 @@
 
   .markdown-preview h2 {
     font-size: 1.45rem;
-    color: #b99cff;
+    color: white;
   }
 
   .markdown-preview h3 {
     font-size: 1.12rem;
-    color: #59d5ca;
+    color: white;
+  }
+
+  .markdown-preview .markdown-accent-heading {
+    color: var(--lumo-secondary);
+    text-shadow: 0 0 18px color-mix(in srgb, var(--lumo-secondary) 12%, transparent);
   }
 
   .markdown-preview p {
@@ -693,6 +698,10 @@
 :root[data-lumo-theme="light"] .graph-node-label {
   color: #172033;
   fill: #172033;
+}
+
+:root[data-lumo-theme="light"] .markdown-preview .markdown-accent-heading {
+  color: var(--lumo-secondary);
 }
 
 :root[data-lumo-theme="light"] .markdown-preview code,
