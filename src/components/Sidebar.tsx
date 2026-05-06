@@ -35,6 +35,75 @@ function IconDot({ active, label }: { active?: boolean; label: string }) {
   );
 }
 
+function PencilIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path
+        d="M3.25 11.55L3 13L4.45 12.75L11.9 5.3L10.7 4.1L3.25 11.55Z"
+        stroke="currentColor"
+        strokeWidth="1.35"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M10.7 4.1L11.75 3.05C12.08 2.72 12.62 2.72 12.95 3.05C13.28 3.38 13.28 3.92 12.95 4.25L11.9 5.3"
+        stroke="currentColor"
+        strokeWidth="1.35"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function XIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path
+        d="M4.5 4.5L11.5 11.5M11.5 4.5L4.5 11.5"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function ActionIconButton({
+  children,
+  danger = false,
+  label,
+  onClick,
+  visible = false,
+}: {
+  children: React.ReactNode;
+  danger?: boolean;
+  label: string;
+  onClick: () => void;
+  visible?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      className={`grid h-6 w-6 shrink-0 place-items-center rounded-md text-slate-500 transition duration-150 active:scale-95 focus:opacity-100 focus-visible:outline focus-visible:outline-2 ${
+        danger
+          ? "hover:bg-[#FF4D6D]/10 hover:text-[#FF4D6D] focus-visible:outline-[#FF4D6D]/55"
+          : "hover:bg-lumo-violet/10 hover:text-lumo-violet focus-visible:outline-lumo-violet/55"
+      } ${
+        visible
+          ? "opacity-100"
+          : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+      }`}
+      onClick={(event) => {
+        event.stopPropagation();
+        onClick();
+      }}
+      aria-label={label}
+      title={label}
+    >
+      {children}
+    </button>
+  );
+}
+
 export function Sidebar() {
   const [isToolsOpen, setIsToolsOpen] = useState(false);
   const {
@@ -154,38 +223,45 @@ export function Sidebar() {
           {folders.length === 0 ? (
             <p className="px-3 py-2 text-xs text-slate-500">No folders yet</p>
           ) : null}
-          {folders.map((collection) => (
-            <button
+          {folders.map((collection) => {
+            const isSelected = activeFolderId === collection.id;
+
+            return (
+            <div
               key={collection.id}
+              role="button"
+              tabIndex={0}
               onClick={() => setActiveFolderId(collection.id)}
-              className={`group flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm transition hover:bg-white/[0.04] hover:text-white active:scale-[0.99] ${
-                activeFolderId === collection.id
-                  ? "bg-white/[0.06] text-white"
-                  : "text-slate-300"
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  setActiveFolderId(collection.id);
+                }
+              }}
+              className={`group flex w-full cursor-pointer items-center gap-3 rounded-xl px-3 py-2 text-sm transition hover:bg-white/[0.04] hover:text-white active:scale-[0.99] focus-visible:outline focus-visible:outline-2 focus-visible:outline-lumo-violet/55 ${
+                isSelected ? "bg-white/[0.06] text-white" : "text-slate-300"
               }`}
             >
               <span className={`h-2.5 w-2.5 rounded ${collection.colorClass}`} />
               <span className="flex-1 text-left">{collection.name}</span>
-              <span
-                className="rounded px-1.5 py-0.5 text-[11px] text-slate-500 opacity-0 transition hover:bg-white/10 hover:text-white group-hover:opacity-100 focus:opacity-100"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  editFolder(collection.id, collection.name);
-                }}
+              <ActionIconButton
+                label="Rename"
+                onClick={() => editFolder(collection.id, collection.name)}
+                visible={isSelected}
               >
-                Edit
-              </span>
-              <span
-                className="rounded px-1.5 py-0.5 text-[11px] text-slate-500 opacity-0 transition hover:bg-rose-400/15 hover:text-rose-200 group-hover:opacity-100 focus:opacity-100"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  removeFolder(collection.id, collection.name);
-                }}
+                <PencilIcon />
+              </ActionIconButton>
+              <ActionIconButton
+                danger
+                label="Delete"
+                onClick={() => removeFolder(collection.id, collection.name)}
+                visible={isSelected}
               >
-                Del
-              </span>
-            </button>
-          ))}
+                <XIcon />
+              </ActionIconButton>
+            </div>
+          );
+          })}
         </div>
       </div>
 
@@ -214,18 +290,22 @@ export function Sidebar() {
             >
               <button onClick={() => setActiveTag(tag)}>{tag}</button>
               <button
-                className="ml-2 text-slate-500 opacity-0 transition hover:text-white group-hover:opacity-100 focus:opacity-100"
+                type="button"
+                className="ml-2 inline-grid h-6 w-6 place-items-center rounded-md text-slate-500 opacity-0 transition duration-150 hover:bg-lumo-violet/10 hover:text-lumo-violet active:scale-95 group-hover:opacity-100 group-focus-within:opacity-100 focus:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-lumo-violet/55"
                 onClick={() => editTag(tag)}
-                title="Rename tag"
+                aria-label="Rename"
+                title="Rename"
               >
-                e
+                <PencilIcon />
               </button>
               <button
-                className="ml-1 text-slate-500 opacity-0 transition hover:text-rose-200 group-hover:opacity-100 focus:opacity-100"
+                type="button"
+                className="ml-1 inline-grid h-6 w-6 place-items-center rounded-md text-slate-500 opacity-0 transition duration-150 hover:bg-[#FF4D6D]/10 hover:text-[#FF4D6D] active:scale-95 group-hover:opacity-100 group-focus-within:opacity-100 focus:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#FF4D6D]/55"
                 onClick={() => removeTag(tag)}
-                title="Delete tag"
+                aria-label="Delete"
+                title="Delete"
               >
-                x
+                <XIcon />
               </button>
             </span>
           ))}
