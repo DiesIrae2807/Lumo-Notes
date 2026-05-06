@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { MarkdownPreview } from "./MarkdownPreview";
+import { FavoriteHeartIcon } from "./icons/FavoriteHeartIcon";
+import { FocusIcon } from "./icons/FocusIcon";
+import { PinIcon } from "./icons/PinIcon";
 import { useNotes } from "../store/notesStore";
 import { noteToMarkdown, sanitizeFilename, saveTextFile } from "../services/fileTransfer";
 import { formatMetadataDate } from "../utils/date";
@@ -321,31 +324,37 @@ export function Editor({
                 : "Saved"}
           </span>
           <button
-            className={`grid h-8 w-8 place-items-center rounded-lg transition hover:bg-white/[0.05] hover:text-slate-300 active:scale-95 ${
-              selectedNote.isFavorite ? "text-amber-300" : ""
+            className={`grid h-8 w-8 place-items-center rounded-lg transition duration-150 hover:bg-white/[0.05] active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-lumo-violet/60 ${
+              selectedNote.isFavorite ? "text-[#FF4D6D]" : "text-slate-500 hover:text-[#FF8A9A]"
             }`}
             onClick={() => toggleFavorite(selectedNote.id)}
             title={selectedNote.isFavorite ? "Remove favorite" : "Favorite"}
+            aria-label={selectedNote.isFavorite ? "Remove favorite" : "Favorite note"}
+            aria-pressed={selectedNote.isFavorite}
           >
-            ★
+            <FavoriteHeartIcon active={selectedNote.isFavorite} />
           </button>
           <button
-            className={`grid h-8 w-8 place-items-center rounded-lg transition hover:bg-white/[0.05] hover:text-slate-300 active:scale-95 ${
-              selectedNote.isPinned ? "text-lumo-teal" : ""
+            className={`grid h-8 w-8 place-items-center rounded-lg transition duration-150 hover:bg-white/[0.05] active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-lumo-teal/60 ${
+              selectedNote.isPinned ? "text-lumo-teal" : "text-slate-500 hover:text-lumo-teal"
             }`}
             onClick={() => togglePinned(selectedNote.id)}
             title={selectedNote.isPinned ? "Unpin" : "Pin"}
+            aria-label={selectedNote.isPinned ? "Unpin note" : "Pin note"}
+            aria-pressed={selectedNote.isPinned}
           >
-            ◆
+            <PinIcon active={selectedNote.isPinned} />
           </button>
           <button
-            className={`grid h-8 w-8 place-items-center rounded-lg transition hover:bg-white/[0.05] hover:text-slate-300 active:scale-95 ${
-              isFocusMode ? "text-lumo-teal" : ""
+            className={`grid h-8 w-8 place-items-center rounded-lg transition duration-150 hover:bg-white/[0.05] active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-lumo-violet/60 ${
+              isFocusMode ? "text-lumo-violet" : "text-slate-500 hover:text-lumo-violet"
             }`}
             onClick={onToggleFocusMode}
             title={isFocusMode ? "Exit focus mode" : "Focus mode"}
+            aria-label={isFocusMode ? "Exit focus mode" : "Enter focus mode"}
+            aria-pressed={isFocusMode}
           >
-            {isFocusMode ? "↙" : "◱"}
+            <FocusIcon active={isFocusMode} />
           </button>
           {selectedNote.isDeleted ? (
             <>

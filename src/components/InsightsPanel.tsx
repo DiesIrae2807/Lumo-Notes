@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { SectionHeader } from "./SectionHeader";
+import { InsightsIcon } from "./icons/InsightsIcon";
 import { useNotes } from "../store/notesStore";
 import { formatMetadataDate, formatRelativeTime } from "../utils/date";
 import { excerptFromMarkdown, getPlainTextPreview } from "../utils/markdown";
@@ -68,31 +69,35 @@ export function InsightsPanel({ onCollapse }: { onCollapse?: () => void }) {
   return (
     <aside className="column-panel hidden min-h-0 flex-col overflow-hidden xl:flex">
       <div className="flex items-center justify-between border-b border-white/10 px-4 pt-4">
-        <div className="flex gap-6 text-sm font-medium">
-          <button
-            className={`border-b-2 pb-3 transition ${
-              activeTab === "insights"
-                ? "border-lumo-violet text-white"
-                : "border-transparent text-slate-400 hover:text-white"
-            }`}
-            onClick={() => setActiveTab("insights")}
-          >
-            Insights
-          </button>
-          <button
-            className={`border-b-2 pb-3 transition ${
-              activeTab === "links"
-                ? "border-lumo-violet text-white"
-                : "border-transparent text-slate-400 hover:text-white"
-            }`}
-            onClick={() => setActiveTab("links")}
-          >
-            Linked Notes
-          </button>
+        <div className="flex items-center gap-3">
+          <InsightsIcon active={activeTab === "insights"} className="shrink-0" />
+          <div className="flex gap-5 text-sm font-medium">
+            <button
+              className={`border-b-2 pb-3 transition ${
+                activeTab === "insights"
+                  ? "border-lumo-violet text-white"
+                  : "border-transparent text-slate-400 hover:text-white"
+              }`}
+              onClick={() => setActiveTab("insights")}
+            >
+              Insights
+            </button>
+            <button
+              className={`border-b-2 pb-3 transition ${
+                activeTab === "links"
+                  ? "border-lumo-violet text-white"
+                  : "border-transparent text-slate-400 hover:text-white"
+              }`}
+              onClick={() => setActiveTab("links")}
+            >
+              Linked Notes
+            </button>
+          </div>
         </div>
         <button
-          className="grid h-8 w-8 place-items-center rounded-lg text-slate-500 transition hover:bg-white/[0.05] hover:text-white active:scale-95"
+          className="grid h-8 w-8 place-items-center rounded-lg text-slate-500 transition hover:bg-white/[0.05] hover:text-white active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-lumo-violet/60"
           onClick={onCollapse}
+          aria-label="Collapse insights"
           title="Collapse insights"
         >
           x
@@ -283,7 +288,7 @@ function LinkedNoteItem({ note, onClick }: { note: { title: string; content: str
         {getPlainTextPreview(note.preview || note.content, 80) || "No content yet"}
       </span>
       <span className="mt-2 inline-flex max-w-full truncate rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-[11px] text-slate-400">
-        {note.tags[0] ?? note.folderName} · {formatRelativeTime(note.updatedAt)}
+        {note.tags[0] ?? note.folderName} - {formatRelativeTime(note.updatedAt)}
       </span>
     </button>
   );

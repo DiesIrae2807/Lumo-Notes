@@ -49,13 +49,21 @@ function EmptyState({
   );
 }
 
-function renderCards(notes: Note[], selectedNoteId: string | null, selectNote: (id: string) => void) {
+function renderCards(
+  notes: Note[],
+  selectedNoteId: string | null,
+  selectNote: (id: string) => void,
+  toggleFavorite: (id: string) => void,
+  togglePinned: (id: string) => void,
+) {
   return notes.map((note) => (
     <NoteCard
       key={note.id}
       isActive={note.id === selectedNoteId}
       note={note}
       onSelect={() => selectNote(note.id)}
+      onToggleFavorite={() => toggleFavorite(note.id)}
+      onTogglePinned={() => togglePinned(note.id)}
     />
   ));
 }
@@ -75,6 +83,8 @@ export function NotesList() {
     selectNote,
     selectedNoteId,
     setSearchQuery,
+    toggleFavorite,
+    togglePinned,
   } = useNotes();
 
   const pinned = filteredNotes.filter((note) => note.isPinned && !note.isDeleted);
@@ -227,31 +237,31 @@ export function NotesList() {
           <>
             {pinned.length > 0 ? (
               <NoteGroup title="Pinned">
-                {renderCards(pinned, selectedNoteId, selectNote)}
+                {renderCards(pinned, selectedNoteId, selectNote, toggleFavorite, togglePinned)}
               </NoteGroup>
             ) : null}
 
             {today.length > 0 ? (
               <NoteGroup title="Today">
-                {renderCards(today, selectedNoteId, selectNote)}
+                {renderCards(today, selectedNoteId, selectNote, toggleFavorite, togglePinned)}
               </NoteGroup>
             ) : null}
 
             {yesterday.length > 0 ? (
               <NoteGroup title="Yesterday">
-                {renderCards(yesterday, selectedNoteId, selectNote)}
+                {renderCards(yesterday, selectedNoteId, selectNote, toggleFavorite, togglePinned)}
               </NoteGroup>
             ) : null}
 
             {thisWeek.length > 0 ? (
               <NoteGroup title="This Week">
-                {renderCards(thisWeek, selectedNoteId, selectNote)}
+                {renderCards(thisWeek, selectedNoteId, selectNote, toggleFavorite, togglePinned)}
               </NoteGroup>
             ) : null}
 
             {older.length > 0 ? (
               <NoteGroup title="Older">
-                {renderCards(older, selectedNoteId, selectNote)}
+                {renderCards(older, selectedNoteId, selectNote, toggleFavorite, togglePinned)}
               </NoteGroup>
             ) : null}
           </>

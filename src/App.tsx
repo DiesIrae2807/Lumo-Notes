@@ -7,6 +7,7 @@ import { CommandPalette } from "./components/CommandPalette";
 import { NotesList } from "./components/NotesList";
 import { Sidebar } from "./components/Sidebar";
 import { BrandMark } from "./components/BrandMark";
+import { InsightsIcon } from "./components/icons/InsightsIcon";
 import { NotesProvider } from "./store/notesStore";
 import { useNotes } from "./store/notesStore";
 
@@ -250,11 +251,12 @@ function InsightsRail({ onOpen }: { onOpen: () => void }) {
   return (
     <aside className="column-panel hidden min-h-0 items-center border-l border-white/[0.06] px-2 py-4 lg:flex">
       <button
-        className="grid h-10 w-10 place-items-center rounded-xl bg-white/[0.035] text-sm font-semibold text-slate-400 transition hover:bg-lumo-violet/15 hover:text-white active:scale-95"
+        className="grid h-10 w-10 place-items-center rounded-xl bg-white/[0.035] text-slate-400 transition duration-150 hover:bg-lumo-violet/15 hover:text-white active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-lumo-violet/60"
         onClick={onOpen}
+        aria-label="Open Insights"
         title="Open Insights"
       >
-        i
+        <InsightsIcon />
       </button>
     </aside>
   );
