@@ -19,4 +19,15 @@ export type Folder = {
   colorClass: string;
 };
 
+export type Attachment = {
+  id: string;
+  noteId: string;
+  filename: string;
+  originalPath?: string | null;
+  storedPath: string;
+  mimeType: string;
+  fileSize: number;
+  createdAt: string;
+};
+
 export type SidebarView = "all" | "favorites" | "recent" | "trash" | "graph" | "settings";

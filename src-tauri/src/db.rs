@@ -1,6 +1,11 @@
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
-use std::{fs, path::PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    process::Command,
+    time::{SystemTime, UNIX_EPOCH},
+};
 use tauri::{AppHandle, Manager};
 
 #[derive(Clone)]
@@ -33,12 +38,26 @@ pub struct NoteDto {
     pub updated_at: String,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AttachmentDto {
+    pub id: String,
+    pub note_id: String,
+    pub filename: String,
+    pub original_path: Option<String>,
+    pub stored_path: String,
+    pub mime_type: String,
+    pub file_size: i64,
+    pub created_at: String,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DatabaseSnapshot {
     pub notes: Vec<NoteDto>,
     pub folders: Vec<FolderDto>,
     pub tags: Vec<String>,
+    pub attachments: Vec<AttachmentDto>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -107,6 +126,18 @@ fn create_schema(connection: &Connection) -> Result<(), String> {
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL,
                 updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS attachments (
+                id TEXT PRIMARY KEY,
+                note_id TEXT NOT NULL,
+                filename TEXT NOT NULL,
+                original_path TEXT,
+                stored_path TEXT NOT NULL,
+                mime_type TEXT NOT NULL,
+                file_size INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(note_id) REFERENCES notes(id) ON DELETE CASCADE
             );
             ",
         )
@@ -311,6 +342,187 @@ fn get_tags_for_note(connection: &Connection, note_id: &str) -> rusqlite::Result
     rows.collect()
 }
 
+fn get_attachments_from_connection(connection: &Connection) -> Result<Vec<AttachmentDto>, String> {
+    let mut statement = connection
+        .prepare(
+            "
+            SELECT id, note_id, filename, original_path, stored_path, mime_type, file_size, created_at
+            FROM attachments
+            ORDER BY created_at DESC
+            ",
+        )
+        .map_err(|error| error.to_string())?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok(AttachmentDto {
+                id: row.get(0)?,
+                note_id: row.get(1)?,
+                filename: row.get(2)?,
+                original_path: row.get(3)?,
+                stored_path: row.get(4)?,
+                mime_type: row.get(5)?,
+                file_size: row.get(6)?,
+                created_at: row.get(7)?,
+            })
+        })
+        .map_err(|error| error.to_string())?;
+
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())
+}
+
+fn attachment_by_id(connection: &Connection, id: &str) -> Result<Option<AttachmentDto>, String> {
+    connection
+        .query_row(
+            "
+            SELECT id, note_id, filename, original_path, stored_path, mime_type, file_size, created_at
+            FROM attachments
+            WHERE id = ?1
+            ",
+            params![id],
+            |row| {
+                Ok(AttachmentDto {
+                    id: row.get(0)?,
+                    note_id: row.get(1)?,
+                    filename: row.get(2)?,
+                    original_path: row.get(3)?,
+                    stored_path: row.get(4)?,
+                    mime_type: row.get(5)?,
+                    file_size: row.get(6)?,
+                    created_at: row.get(7)?,
+                })
+            },
+        )
+        .optional()
+        .map_err(|error| error.to_string())
+}
+
+fn unix_millis() -> Result<u128, String> {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .map_err(|error| error.to_string())
+}
+
+fn attachment_id() -> Result<String, String> {
+    Ok(format!("attachment-{}", unix_millis()?))
+}
+
+fn sanitize_file_name(value: &str) -> String {
+    let clean = value
+        .chars()
+        .map(|character| match character {
+            '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*' => ' ',
+            value if value.is_control() => ' ',
+            value => value,
+        })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    if clean.is_empty() {
+        "attachment".to_string()
+    } else {
+        clean.chars().take(90).collect()
+    }
+}
+
+fn mime_type_for(path: &Path) -> String {
+    match path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default()
+        .to_lowercase()
+        .as_str()
+    {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "webp" => "image/webp",
+        "gif" => "image/gif",
+        "pdf" => "application/pdf",
+        "txt" => "text/plain",
+        "md" | "markdown" => "text/markdown",
+        _ => "application/octet-stream",
+    }
+    .to_string()
+}
+
+fn attachments_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    let directory = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?
+        .join("attachments");
+    fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
+    Ok(directory)
+}
+
+fn base64_encode(bytes: &[u8]) -> String {
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut output = String::with_capacity(((bytes.len() + 2) / 3) * 4);
+    for chunk in bytes.chunks(3) {
+        let b0 = chunk[0];
+        let b1 = *chunk.get(1).unwrap_or(&0);
+        let b2 = *chunk.get(2).unwrap_or(&0);
+        output.push(TABLE[(b0 >> 2) as usize] as char);
+        output.push(TABLE[(((b0 & 0b0000_0011) << 4) | (b1 >> 4)) as usize] as char);
+        if chunk.len() > 1 {
+            output.push(TABLE[(((b1 & 0b0000_1111) << 2) | (b2 >> 6)) as usize] as char);
+        } else {
+            output.push('=');
+        }
+        if chunk.len() > 2 {
+            output.push(TABLE[(b2 & 0b0011_1111) as usize] as char);
+        } else {
+            output.push('=');
+        }
+    }
+    output
+}
+
+fn stored_attachment_paths_for_note(connection: &Connection, note_id: &str) -> Result<Vec<String>, String> {
+    let mut statement = connection
+        .prepare(
+            "
+            SELECT attachments.stored_path
+            FROM attachments
+            INNER JOIN notes ON notes.id = attachments.note_id
+            WHERE attachments.note_id = ?1 AND notes.is_deleted = 1
+            ",
+        )
+        .map_err(|error| error.to_string())?;
+    let rows = statement
+        .query_map(params![note_id], |row| row.get::<_, String>(0))
+        .map_err(|error| error.to_string())?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())
+}
+
+fn stored_attachment_paths_for_trashed_notes(connection: &Connection) -> Result<Vec<String>, String> {
+    let mut statement = connection
+        .prepare(
+            "
+            SELECT attachments.stored_path
+            FROM attachments
+            INNER JOIN notes ON notes.id = attachments.note_id
+            WHERE notes.is_deleted = 1
+            ",
+        )
+        .map_err(|error| error.to_string())?;
+    let rows = statement
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(|error| error.to_string())?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())
+}
+
+fn remove_files(paths: Vec<String>) {
+    for path in paths {
+        let _ = fs::remove_file(path);
+    }
+}
+
 #[tauri::command]
 pub fn initialize_database(state: tauri::State<'_, DbState>) -> Result<DatabaseSnapshot, String> {
     let mut connection = connect(&state.path)?;
@@ -320,6 +532,7 @@ pub fn initialize_database(state: tauri::State<'_, DbState>) -> Result<DatabaseS
         notes: get_notes_from_connection(&connection)?,
         folders: get_folders_from_connection(&connection)?,
         tags: get_tags_from_connection(&connection)?,
+        attachments: get_attachments_from_connection(&connection)?,
     })
 }
 
@@ -339,6 +552,160 @@ pub fn get_folders(state: tauri::State<'_, DbState>) -> Result<Vec<FolderDto>, S
 pub fn get_tags(state: tauri::State<'_, DbState>) -> Result<Vec<String>, String> {
     let connection = connect(&state.path)?;
     get_tags_from_connection(&connection)
+}
+
+#[tauri::command]
+pub fn get_attachments(state: tauri::State<'_, DbState>) -> Result<Vec<AttachmentDto>, String> {
+    let connection = connect(&state.path)?;
+    create_schema(&connection)?;
+    get_attachments_from_connection(&connection)
+}
+
+#[tauri::command]
+pub fn attach_file_to_note(
+    app: AppHandle,
+    state: tauri::State<'_, DbState>,
+    note_id: String,
+    created_at: String,
+) -> Result<Option<AttachmentDto>, String> {
+    let connection = connect(&state.path)?;
+    create_schema(&connection)?;
+    let note_exists: bool = connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM notes WHERE id = ?1 AND is_deleted = 0)",
+            params![note_id],
+            |row| row.get::<_, i64>(0),
+        )
+        .map_err(|error| error.to_string())?
+        != 0;
+
+    if !note_exists {
+        return Err("Select an active note before attaching a file.".to_string());
+    }
+
+    let Some(source_path) = rfd::FileDialog::new()
+        .set_title("Attach file")
+        .add_filter(
+            "Supported files",
+            &["png", "jpg", "jpeg", "webp", "gif", "pdf", "txt", "md"],
+        )
+        .pick_file()
+    else {
+        return Ok(None);
+    };
+
+    let metadata = fs::metadata(&source_path).map_err(|error| error.to_string())?;
+    let original_filename = source_path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("attachment");
+    let filename = sanitize_file_name(original_filename);
+    let id = attachment_id()?;
+    let stored_filename = format!("{}-{}", id, filename);
+    let stored_path = attachments_dir(&app)?.join(stored_filename);
+    fs::copy(&source_path, &stored_path).map_err(|error| error.to_string())?;
+
+    let attachment = AttachmentDto {
+        id,
+        note_id,
+        filename,
+        original_path: Some(source_path.to_string_lossy().to_string()),
+        stored_path: stored_path.to_string_lossy().to_string(),
+        mime_type: mime_type_for(&source_path),
+        file_size: metadata.len() as i64,
+        created_at,
+    };
+
+    connection
+        .execute(
+            "INSERT INTO attachments (
+                id, note_id, filename, original_path, stored_path, mime_type, file_size, created_at
+             )
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                &attachment.id,
+                &attachment.note_id,
+                &attachment.filename,
+                attachment.original_path.as_deref(),
+                &attachment.stored_path,
+                &attachment.mime_type,
+                attachment.file_size,
+                &attachment.created_at
+            ],
+        )
+        .map_err(|error| error.to_string())?;
+
+    Ok(Some(attachment))
+}
+
+#[tauri::command]
+pub fn remove_attachment(state: tauri::State<'_, DbState>, id: String) -> Result<(), String> {
+    let connection = connect(&state.path)?;
+    create_schema(&connection)?;
+    if let Some(attachment) = attachment_by_id(&connection, &id)? {
+        connection
+            .execute("DELETE FROM attachments WHERE id = ?1", params![id])
+            .map_err(|error| error.to_string())?;
+        let _ = fs::remove_file(attachment.stored_path);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn open_attachment(state: tauri::State<'_, DbState>, id: String) -> Result<(), String> {
+    let connection = connect(&state.path)?;
+    create_schema(&connection)?;
+    let Some(attachment) = attachment_by_id(&connection, &id)? else {
+        return Err("Attachment not found.".to_string());
+    };
+
+    if !Path::new(&attachment.stored_path).exists() {
+        return Err("Attachment file is missing from local storage.".to_string());
+    }
+
+    #[cfg(target_os = "windows")]
+    let status = Command::new("cmd")
+        .args(["/C", "start", "", &attachment.stored_path])
+        .status()
+        .map_err(|error| error.to_string())?;
+
+    #[cfg(target_os = "macos")]
+    let status = Command::new("open")
+        .arg(&attachment.stored_path)
+        .status()
+        .map_err(|error| error.to_string())?;
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let status = Command::new("xdg-open")
+        .arg(&attachment.stored_path)
+        .status()
+        .map_err(|error| error.to_string())?;
+
+    if status.success() {
+        Ok(())
+    } else {
+        Err("Could not open attachment with the default app.".to_string())
+    }
+}
+
+#[tauri::command]
+pub fn get_attachment_data_url(state: tauri::State<'_, DbState>, id: String) -> Result<String, String> {
+    let connection = connect(&state.path)?;
+    create_schema(&connection)?;
+    let Some(attachment) = attachment_by_id(&connection, &id)? else {
+        return Err("Attachment not found.".to_string());
+    };
+
+    if !attachment.mime_type.starts_with("image/") {
+        return Err("Attachment is not an image.".to_string());
+    }
+
+    let bytes = fs::read(&attachment.stored_path).map_err(|error| error.to_string())?;
+    Ok(format!(
+        "data:{};base64,{}",
+        attachment.mime_type,
+        base64_encode(&bytes)
+    ))
 }
 
 #[tauri::command]
@@ -449,6 +816,7 @@ pub fn restore_note(
 #[tauri::command]
 pub fn permanently_delete_note(state: tauri::State<'_, DbState>, id: String) -> Result<(), String> {
     let connection = connect(&state.path)?;
+    let attachment_paths = stored_attachment_paths_for_note(&connection, &id)?;
     connection
         .execute(
             "DELETE FROM note_tags WHERE note_id = ?1
@@ -457,14 +825,23 @@ pub fn permanently_delete_note(state: tauri::State<'_, DbState>, id: String) -> 
         )
         .map_err(|error| error.to_string())?;
     connection
+        .execute(
+            "DELETE FROM attachments WHERE note_id = ?1
+             AND NOT EXISTS (SELECT 1 FROM notes WHERE notes.id = ?1 AND notes.is_deleted = 0)",
+            params![id],
+        )
+        .map_err(|error| error.to_string())?;
+    connection
         .execute("DELETE FROM notes WHERE id = ?1 AND is_deleted = 1", params![id])
         .map_err(|error| error.to_string())?;
+    remove_files(attachment_paths);
     Ok(())
 }
 
 #[tauri::command]
 pub fn permanently_delete_trashed_notes(state: tauri::State<'_, DbState>) -> Result<(), String> {
     let connection = connect(&state.path)?;
+    let attachment_paths = stored_attachment_paths_for_trashed_notes(&connection)?;
     connection
         .execute(
             "DELETE FROM note_tags
@@ -473,8 +850,16 @@ pub fn permanently_delete_trashed_notes(state: tauri::State<'_, DbState>) -> Res
         )
         .map_err(|error| error.to_string())?;
     connection
+        .execute(
+            "DELETE FROM attachments
+             WHERE note_id IN (SELECT id FROM notes WHERE is_deleted = 1)",
+            [],
+        )
+        .map_err(|error| error.to_string())?;
+    connection
         .execute("DELETE FROM notes WHERE is_deleted = 1", [])
         .map_err(|error| error.to_string())?;
+    remove_files(attachment_paths);
     Ok(())
 }
 

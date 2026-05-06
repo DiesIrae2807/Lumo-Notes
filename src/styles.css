@@ -395,6 +395,48 @@
     text-underline-offset: 3px;
   }
 
+  .markdown-attachment-image {
+    display: block;
+    max-width: 100%;
+    max-height: 520px;
+    margin: 1rem 0;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 14px;
+    background: rgba(4, 9, 18, 0.7);
+    object-fit: contain;
+    box-shadow: 0 18px 56px -44px color-mix(in srgb, var(--lumo-secondary) 38%, transparent);
+  }
+
+  .markdown-attachment-chip,
+  .markdown-attachment-missing {
+    display: inline-flex;
+    max-width: 100%;
+    align-items: center;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--lumo-secondary) 22%, transparent);
+    background: color-mix(in srgb, var(--lumo-secondary) 8%, rgba(255, 255, 255, 0.03));
+    padding: 0.2rem 0.55rem;
+    color: rgb(226 232 240);
+    font-size: 0.85em;
+    line-height: 1.5;
+    vertical-align: baseline;
+  }
+
+  .markdown-attachment-chip {
+    cursor: pointer;
+    transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
+  }
+
+  .markdown-attachment-chip:hover {
+    border-color: color-mix(in srgb, var(--lumo-secondary) 46%, transparent);
+    background: color-mix(in srgb, var(--lumo-secondary) 13%, rgba(255, 255, 255, 0.04));
+    color: white;
+  }
+
+  .markdown-attachment-missing {
+    color: rgb(148 163 184);
+  }
+
   .markdown-preview ul,
   .markdown-preview ol {
     margin: 0.85rem 0;

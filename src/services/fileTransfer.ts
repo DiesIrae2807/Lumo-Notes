@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Folder, Note } from "../types/note";
+import type { Attachment, Folder, Note } from "../types/note";
 import { getPlainTextPreview } from "../utils/markdown";
 
 export type ExportFile = {
@@ -23,6 +23,7 @@ export type LumoBackup = {
   folders: Folder[];
   tags: string[];
   noteTags: Array<{ noteId: string; tag: string }>;
+  attachments?: Attachment[];
 };
 
 export type ParsedMarkdownNote = {
@@ -99,8 +100,15 @@ export function notesToMarkdownFiles(notes: Note[]) {
   }));
 }
 
-export function createBackup(notes: Note[], folders: Folder[], tags: string[], includeTrash = true): LumoBackup {
+export function createBackup(
+  notes: Note[],
+  folders: Folder[],
+  tags: string[],
+  includeTrash = true,
+  attachments: Attachment[] = [],
+): LumoBackup {
   const backupNotes = notes.filter((note) => includeTrash || !note.isDeleted);
+  const backupNoteIds = new Set(backupNotes.map((note) => note.id));
   return {
     metadata: {
       appName: "Lumo Notes",
@@ -111,6 +119,7 @@ export function createBackup(notes: Note[], folders: Folder[], tags: string[], i
     folders,
     tags,
     noteTags: backupNotes.flatMap((note) => note.tags.map((tag) => ({ noteId: note.id, tag }))),
+    attachments: attachments.filter((attachment) => backupNoteIds.has(attachment.noteId)),
   };
 }
 

@@ -45,6 +45,8 @@ function execEditCommand(command: string) {
 export function TopMenuBar({ onExit }: { onExit: () => void }) {
   const {
     availableTags,
+    attachments,
+    attachFileToSelectedNote,
     createNote,
     folders,
     forceSaveSelectedNote,
@@ -153,7 +155,7 @@ export function TopMenuBar({ onExit }: { onExit: () => void }) {
   const exportBackup = () =>
     runAction(async () => {
       const date = new Date().toISOString().slice(0, 10);
-      const backup = createBackup(notes, folders, availableTags, settings.backupIncludeTrash);
+      const backup = createBackup(notes, folders, availableTags, settings.backupIncludeTrash, attachments);
       const path = await saveTextFile(
         "Export Lumo Notes backup",
         `lumo-notes-backup-${date}.json`,
@@ -208,6 +210,14 @@ export function TopMenuBar({ onExit }: { onExit: () => void }) {
       },
       { separator: true },
       {
+        label: "Attach File...",
+        disabled: !selectedNote || selectedNote.isDeleted,
+        onSelect: async () => {
+          await attachFileToSelectedNote();
+        },
+      },
+      { separator: true },
+      {
         label: "Export Selected Note...",
         disabled: !selectedNote,
         onSelect: exportSelected,
@@ -239,6 +249,8 @@ export function TopMenuBar({ onExit }: { onExit: () => void }) {
     ],
     [
       createNote,
+      attachFileToSelectedNote,
+      attachments,
       exportAll,
       exportBackup,
       exportSelected,

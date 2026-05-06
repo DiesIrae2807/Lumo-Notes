@@ -12,7 +12,7 @@ import { folders as fallbackFolders } from "../data/initialNotes";
 import * as database from "../services/database";
 import { useSettings } from "./settingsStore";
 import type { LumoBackup, ParsedMarkdownNote } from "../services/fileTransfer";
-import type { Folder, Note, SidebarView } from "../types/note";
+import type { Attachment, Folder, Note, SidebarView } from "../types/note";
 import { getPlainTextPreview, markdownToPlainText } from "../utils/markdown";
 
 type NotesContextValue = {
@@ -25,6 +25,8 @@ type NotesContextValue = {
   activeView: SidebarView;
   folders: Folder[];
   availableTags: string[];
+  attachments: Attachment[];
+  selectedNoteAttachments: Attachment[];
   filteredNotes: Note[];
   databaseError: string | null;
   isDatabaseLoading: boolean;
@@ -32,6 +34,9 @@ type NotesContextValue = {
   createNote: (title?: string) => void;
   importMarkdownNotes: (imports: ParsedMarkdownNote[]) => Promise<number>;
   restoreBackupMerge: (backup: LumoBackup) => Promise<number>;
+  attachFileToSelectedNote: () => Promise<Attachment | null>;
+  openAttachment: (id: string) => Promise<void>;
+  removeAttachment: (id: string) => Promise<void>;
   selectNote: (id: string) => void;
   forceSaveSelectedNote: () => void;
   updateSelectedNote: (changes: Partial<Pick<Note, "title" | "content" | "preview">>) => void;
@@ -115,6 +120,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
   const { settings } = useSettings();
   const [notes, setNotes] = useState<Note[]>([]);
   const [folders, setFolders] = useState<Folder[]>(fallbackFolders);
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [databaseTags, setDatabaseTags] = useState<string[]>([]);
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -131,6 +137,10 @@ export function NotesProvider({ children }: { children: ReactNode }) {
   const saveVersion = useRef(0);
 
   const selectedNote = notes.find((note) => note.id === selectedNoteId) ?? null;
+  const selectedNoteAttachments = useMemo(
+    () => attachments.filter((attachment) => attachment.noteId === selectedNoteId),
+    [attachments, selectedNoteId],
+  );
 
   const settleSaveStatus = useCallback(() => {
     if (
@@ -253,6 +263,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
 
         setNotes(snapshot.notes);
         setFolders(snapshot.folders.length > 0 ? snapshot.folders : fallbackFolders);
+        setAttachments(snapshot.attachments);
         setDatabaseTags(snapshot.tags);
         setSelectedNoteId(
           settings.startupBehavior === "allNotes"
@@ -322,6 +333,9 @@ export function NotesProvider({ children }: { children: ReactNode }) {
           markdownToPlainText(note.content),
           note.preview,
           note.folderName,
+          ...attachments
+            .filter((attachment) => attachment.noteId === note.id)
+            .map((attachment) => attachment.filename),
           ...note.tags,
         ]
           .join(" ")
@@ -334,7 +348,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     return activeView === "recent" || activeView === "trash"
       ? sortByUpdated(next)
       : sortPinnedThenUpdated(next);
-  }, [activeFolderId, activeTag, activeView, notes, searchQuery]);
+  }, [activeFolderId, activeTag, activeView, attachments, notes, searchQuery]);
 
   const createNote = useCallback((title = "Untitled Note") => {
     flushNoteSave(selectedNoteId);
@@ -583,6 +597,43 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     flushNoteSave(selectedNoteId);
   }, [flushNoteSave, selectedNoteId]);
 
+  const attachFileToSelectedNote = useCallback(async () => {
+    if (!selectedNote) return null;
+    flushNoteSave(selectedNote.id);
+
+    const createdAt = new Date().toISOString();
+    const attachment = await database.attachFileToNote(selectedNote.id, createdAt);
+    if (!attachment) return null;
+
+    const markdownReference = attachment.mimeType.startsWith("image/")
+      ? `![${attachment.filename}](attachment://${attachment.id})`
+      : `[${attachment.filename}](attachment://${attachment.id})`;
+    const separator = selectedNote.content.trim() ? "\n\n" : "";
+    const nextContent = `${selectedNote.content}${separator}${markdownReference}`;
+    const updatedNote: Note = {
+      ...selectedNote,
+      content: nextContent,
+      preview: getPlainTextPreview(nextContent),
+      updatedAt: new Date().toISOString(),
+    };
+
+    setAttachments((current) => [attachment, ...current]);
+    setNotes((current) =>
+      current.map((note) => (note.id === selectedNote.id ? updatedNote : note)),
+    );
+    queueNoteSave(updatedNote);
+    return attachment;
+  }, [flushNoteSave, queueNoteSave, selectedNote]);
+
+  const openAttachment = useCallback(async (id: string) => {
+    await database.openAttachment(id);
+  }, []);
+
+  const removeAttachment = useCallback(async (id: string) => {
+    await database.removeAttachment(id);
+    setAttachments((current) => current.filter((attachment) => attachment.id !== id));
+  }, []);
+
   const updateNoteById = useCallback((id: string, updater: (note: Note) => Note) => {
     setNotes((current) => current.map((note) => (note.id === id ? updater(note) : note)));
   }, []);
@@ -678,6 +729,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         )[0] ?? null;
 
     setNotes((current) => current.filter((note) => note.id !== deletedId));
+    setAttachments((current) => current.filter((attachment) => attachment.noteId !== deletedId));
     setSelectedNoteId(nextTrashedNote?.id ?? null);
     void database.permanentlyDeleteNote(deletedId).catch((error) => {
       setDatabaseError(error instanceof Error ? error.message : String(error));
@@ -691,6 +743,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     }
 
     setNotes((current) => current.filter((note) => !note.isDeleted));
+    setAttachments((current) => current.filter((attachment) => !trashedIds.has(attachment.noteId)));
     if (selectedNoteId && trashedIds.has(selectedNoteId)) {
       setSelectedNoteId(null);
     }
@@ -942,6 +995,8 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       activeView,
       folders,
       availableTags,
+      attachments,
+      selectedNoteAttachments,
       filteredNotes,
       databaseError,
       isDatabaseLoading,
@@ -949,6 +1004,9 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       createNote,
       importMarkdownNotes,
       restoreBackupMerge,
+      attachFileToSelectedNote,
+      openAttachment,
+      removeAttachment,
       selectNote,
       forceSaveSelectedNote,
       updateSelectedNote,
@@ -976,7 +1034,9 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       activeFolderId,
       activeTag,
       activeView,
+      attachments,
       availableTags,
+      attachFileToSelectedNote,
       createNote,
       createFolder,
       createTag,
@@ -988,8 +1048,10 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       isDatabaseLoading,
       importMarkdownNotes,
       moveToTrash,
+      openAttachment,
       permanentlyDeleteSelectedNote,
       permanentlyDeleteTrashedNotes,
+      removeAttachment,
       removeTagFromSelectedNote,
       renameFolder,
       renameTag,
@@ -999,6 +1061,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       searchQuery,
       saveStatus,
       selectedNote,
+      selectedNoteAttachments,
       selectedNoteId,
       selectNote,
       setSelectedNoteFolder,

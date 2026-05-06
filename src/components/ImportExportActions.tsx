@@ -16,6 +16,7 @@ import {
 export function ImportExportActions({ compact = false }: { compact?: boolean }) {
   const {
     availableTags,
+    attachments,
     folders,
     importMarkdownNotes,
     notes,
@@ -68,7 +69,7 @@ export function ImportExportActions({ compact = false }: { compact?: boolean }) 
   const exportBackup = () =>
     runAction(async () => {
       const date = new Date().toISOString().slice(0, 10);
-      const backup = createBackup(notes, folders, availableTags, settings.backupIncludeTrash);
+      const backup = createBackup(notes, folders, availableTags, settings.backupIncludeTrash, attachments);
       const path = await saveTextFile(
         "Export Lumo Notes backup",
         `lumo-notes-backup-${date}.json`,

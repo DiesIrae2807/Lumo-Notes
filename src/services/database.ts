@@ -1,10 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Folder, Note } from "../types/note";
+import type { Attachment, Folder, Note } from "../types/note";
 
 export type DatabaseSnapshot = {
   notes: Note[];
   folders: Folder[];
   tags: string[];
+  attachments: Attachment[];
 };
 
 export async function initializeDatabase() {
@@ -99,4 +100,24 @@ export async function addTagToNote(noteId: string, tagName: string, updatedAt: s
 
 export async function removeTagFromNote(noteId: string, tagName: string, updatedAt: string) {
   return invoke<void>("remove_tag_from_note", { noteId, tagName, updatedAt });
+}
+
+export async function attachFileToNote(noteId: string, createdAt: string) {
+  return invoke<Attachment | null>("attach_file_to_note", { noteId, createdAt });
+}
+
+export async function getAttachments() {
+  return invoke<Attachment[]>("get_attachments");
+}
+
+export async function removeAttachment(id: string) {
+  return invoke<void>("remove_attachment", { id });
+}
+
+export async function openAttachment(id: string) {
+  return invoke<void>("open_attachment", { id });
+}
+
+export async function getAttachmentDataUrl(id: string) {
+  return invoke<string>("get_attachment_data_url", { id });
 }

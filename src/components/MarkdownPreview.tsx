@@ -1,10 +1,14 @@
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { getAttachmentDataUrl } from "../services/database";
+import type { Attachment } from "../types/note";
 import { parseInternalLinkText } from "../utils/links";
 
 type MarkdownPreviewProps = {
   content: string;
+  attachments?: Attachment[];
   onInternalLinkClick?: (title: string) => void;
   isInternalLinkResolved?: (title: string) => boolean;
+  onAttachmentClick?: (id: string) => void;
 };
 
 type ListItem = {
@@ -13,12 +17,45 @@ type ListItem = {
 };
 
 const inlinePatterns =
-  /(\[\[[^\]]+\]\]|\[[^\]]+\]\([^)]+\)|`[^`]+`|\*\*[^*]+\*\*|__[^_]+__|\*[^*]+\*|_[^_]+_)/g;
+  /(!\[[^\]]*\]\(attachment:\/\/[^)]+\)|\[\[[^\]]+\]\]|\[[^\]]+\]\([^)]+\)|`[^`]+`|\*\*[^*]+\*\*|__[^_]+__|\*[^*]+\*|_[^_]+_)/g;
+
+function AttachmentImage({ attachment }: { attachment: Attachment }) {
+  const [src, setSrc] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    setFailed(false);
+    setSrc(null);
+    getAttachmentDataUrl(attachment.id)
+      .then((dataUrl) => {
+        if (isMounted) setSrc(dataUrl);
+      })
+      .catch(() => {
+        if (isMounted) setFailed(true);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, [attachment.id]);
+
+  if (failed) {
+    return <span className="markdown-attachment-missing">Image unavailable: {attachment.filename}</span>;
+  }
+
+  if (!src) {
+    return <span className="markdown-attachment-missing">Loading image...</span>;
+  }
+
+  return <img className="markdown-attachment-image" src={src} alt={attachment.filename} />;
+}
 
 function renderInline(
   text: string,
+  attachments: Attachment[] = [],
   onInternalLinkClick?: (title: string) => void,
   isInternalLinkResolved?: (title: string) => boolean,
+  onAttachmentClick?: (id: string) => void,
 ): ReactNode[] {
   const nodes: ReactNode[] = [];
   let lastIndex = 0;
@@ -31,7 +68,20 @@ function renderInline(
       nodes.push(text.slice(lastIndex, index));
     }
 
-    if (token.startsWith("[[") && token.endsWith("]]")) {
+    if (token.startsWith("![") && token.includes("](attachment://")) {
+      const labelEnd = token.indexOf("](");
+      const attachmentId = token.slice(labelEnd + 15, -1);
+      const attachment = attachments.find((item) => item.id === attachmentId);
+      if (attachment?.mimeType.startsWith("image/")) {
+        nodes.push(<AttachmentImage key={`${index}-${token}`} attachment={attachment} />);
+      } else {
+        nodes.push(
+          <span key={`${index}-${token}`} className="markdown-attachment-missing">
+            Image unavailable
+          </span>,
+        );
+      }
+    } else if (token.startsWith("[[") && token.endsWith("]]")) {
       const { targetTitle, alias } = parseInternalLinkText(token);
       if (!targetTitle) {
         nodes.push(token);
@@ -55,11 +105,26 @@ function renderInline(
       const labelEnd = token.indexOf("](");
       const label = token.slice(1, labelEnd);
       const href = token.slice(labelEnd + 2, -1);
-      nodes.push(
-        <a key={`${index}-${token}`} href={href} onClick={(event) => event.preventDefault()}>
-          {label}
-        </a>,
-      );
+      if (href.startsWith("attachment://")) {
+        const attachmentId = href.replace("attachment://", "");
+        const attachment = attachments.find((item) => item.id === attachmentId);
+        nodes.push(
+          <button
+            key={`${index}-${token}`}
+            className="markdown-attachment-chip"
+            type="button"
+            onClick={() => onAttachmentClick?.(attachmentId)}
+          >
+            {attachment?.filename || label || "Attachment"}
+          </button>,
+        );
+      } else {
+        nodes.push(
+          <a key={`${index}-${token}`} href={href} onClick={(event) => event.preventDefault()}>
+            {label}
+          </a>,
+        );
+      }
     } else if (token.startsWith("`") && token.endsWith("`")) {
       nodes.push(<code key={`${index}-${token}`}>{token.slice(1, -1)}</code>);
     } else if (
@@ -68,7 +133,7 @@ function renderInline(
     ) {
       nodes.push(
         <strong key={`${index}-${token}`}>
-          {renderInline(token.slice(2, -2), onInternalLinkClick, isInternalLinkResolved)}
+          {renderInline(token.slice(2, -2), attachments, onInternalLinkClick, isInternalLinkResolved, onAttachmentClick)}
         </strong>,
       );
     } else if (
@@ -77,7 +142,7 @@ function renderInline(
     ) {
       nodes.push(
         <em key={`${index}-${token}`}>
-          {renderInline(token.slice(1, -1), onInternalLinkClick, isInternalLinkResolved)}
+          {renderInline(token.slice(1, -1), attachments, onInternalLinkClick, isInternalLinkResolved, onAttachmentClick)}
         </em>,
       );
     } else {
@@ -97,11 +162,13 @@ function renderInline(
 function renderInlineLines(
   lines: string[],
   keyPrefix: string,
+  attachments: Attachment[] = [],
   onInternalLinkClick?: (title: string) => void,
   isInternalLinkResolved?: (title: string) => boolean,
+  onAttachmentClick?: (id: string) => void,
 ): ReactNode[] {
   return lines.flatMap((line, index) => {
-    const nodes = renderInline(line, onInternalLinkClick, isInternalLinkResolved);
+    const nodes = renderInline(line, attachments, onInternalLinkClick, isInternalLinkResolved, onAttachmentClick);
 
     if (index === lines.length - 1) {
       return nodes;
@@ -139,8 +206,10 @@ function collectList(lines: string[], startIndex: number, ordered: boolean) {
 
 export function MarkdownPreview({
   content,
+  attachments = [],
   onInternalLinkClick,
   isInternalLinkResolved,
+  onAttachmentClick,
 }: MarkdownPreviewProps) {
   const lines = content.split("\n");
   const blocks: ReactNode[] = [];
@@ -185,7 +254,7 @@ export function MarkdownPreview({
           key={`heading-${index}`}
           className={accentHeading ? "markdown-accent-heading" : undefined}
         >
-          {renderInline(headingText, onInternalLinkClick, isInternalLinkResolved)}
+          {renderInline(headingText, attachments, onInternalLinkClick, isInternalLinkResolved, onAttachmentClick)}
         </Tag>,
       );
       index += 1;
@@ -201,7 +270,7 @@ export function MarkdownPreview({
               {item.checked !== undefined ? (
                 <input type="checkbox" checked={item.checked} readOnly />
               ) : null}
-              <span>{renderInline(item.text, onInternalLinkClick, isInternalLinkResolved)}</span>
+              <span>{renderInline(item.text, attachments, onInternalLinkClick, isInternalLinkResolved, onAttachmentClick)}</span>
             </li>
           ))}
         </ul>,
@@ -216,7 +285,7 @@ export function MarkdownPreview({
         <ol key={`ol-${index}`}>
           {items.map((item, itemIndex) => (
             <li key={`${item.text}-${itemIndex}`}>
-              {renderInline(item.text, onInternalLinkClick, isInternalLinkResolved)}
+              {renderInline(item.text, attachments, onInternalLinkClick, isInternalLinkResolved, onAttachmentClick)}
             </li>
           ))}
         </ol>,
@@ -236,8 +305,10 @@ export function MarkdownPreview({
           {renderInlineLines(
             quoteLines,
             `quote-${index}`,
+            attachments,
             onInternalLinkClick,
             isInternalLinkResolved,
+            onAttachmentClick,
           )}
         </blockquote>,
       );
@@ -265,8 +336,10 @@ export function MarkdownPreview({
         {renderInlineLines(
           paragraphLines,
           `p-${index}`,
+          attachments,
           onInternalLinkClick,
           isInternalLinkResolved,
+          onAttachmentClick,
         )}
       </p>,
     );

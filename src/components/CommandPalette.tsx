@@ -39,6 +39,8 @@ function matches(item: CommandItem, query: string) {
 export function CommandPalette() {
   const {
     availableTags,
+    attachments,
+    attachFileToSelectedNote,
     createNote,
     folders,
     forceSaveSelectedNote,
@@ -102,7 +104,7 @@ export function CommandPalette() {
 
   const exportBackup = async () => {
     const date = new Date().toISOString().slice(0, 10);
-    const backup = createBackup(notes, folders, availableTags, settings.backupIncludeTrash);
+    const backup = createBackup(notes, folders, availableTags, settings.backupIncludeTrash, attachments);
     await saveTextFile(
       "Export Lumo Notes backup",
       `lumo-notes-backup-${date}.json`,
@@ -240,6 +242,16 @@ export function CommandPalette() {
         7,
         0,
         {
+          id: "command-attach-file",
+          title: "Attach File",
+          subtitle: "Attach a local file to this note",
+          section: "Commands",
+          keywords: "attach file image pdf current note",
+          run: async () => {
+            await attachFileToSelectedNote();
+          },
+        },
+        {
           id: "command-toggle-favorite",
           title: "Toggle Favorite",
           subtitle: selectedNote.isFavorite ? "Remove from Favorites" : "Add to Favorites",
@@ -309,6 +321,8 @@ export function CommandPalette() {
     return [...commands, ...noteItems, ...folderItems, ...tagItems];
   }, [
     availableTags,
+    attachments,
+    attachFileToSelectedNote,
     createNote,
     folders,
     forceSaveSelectedNote,
