@@ -42,9 +42,9 @@ function EmptyEditor() {
         <div className="text-sm text-slate-500">No note selected</div>
       </div>
       <div className="grid flex-1 place-items-center px-8 text-center">
-        <div className="max-w-sm rounded-2xl border border-dashed border-white/10 bg-white/[0.025] p-8">
-          <p className="text-base font-medium text-white">Select or create a note</p>
-          <p className="mt-3 text-sm leading-6 text-slate-500">
+        <div className="max-w-sm">
+          <p className="text-base font-medium text-slate-200">Select or create a note</p>
+          <p className="mt-3 text-sm leading-6 text-slate-600">
             Choose a note from the list, or create a new one to start editing locally.
           </p>
         </div>
@@ -85,6 +85,8 @@ export function Editor({
   const [editorMode, setEditorMode] = useState<EditorMode>("edit");
   const [isTypewriter, setIsTypewriter] = useState(false);
   const [wordGoal, setWordGoal] = useState("");
+  const [isMetadataOpen, setIsMetadataOpen] = useState(false);
+  const [isOverflowOpen, setIsOverflowOpen] = useState(false);
   const bodyRef = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
@@ -284,6 +286,8 @@ export function Editor({
     Number.isFinite(numericWordGoal) && numericWordGoal > 0
       ? Math.min(100, Math.round((currentWordCount / numericWordGoal) * 100))
       : null;
+  const compactTags = selectedNote.tags.length > 0 ? selectedNote.tags.join(" · ") : "No tags";
+  const updatedLabel = formatMetadataDate(selectedNote.updatedAt);
 
   return (
     <main
@@ -317,51 +321,80 @@ export function Editor({
                 : "Saved"}
           </span>
           <button
-            className={`rounded-lg px-3 py-1.5 transition hover:bg-white/[0.05] hover:text-slate-300 active:scale-95 ${
+            className={`grid h-8 w-8 place-items-center rounded-lg transition hover:bg-white/[0.05] hover:text-slate-300 active:scale-95 ${
               selectedNote.isFavorite ? "text-amber-300" : ""
             }`}
             onClick={() => toggleFavorite(selectedNote.id)}
+            title={selectedNote.isFavorite ? "Remove favorite" : "Favorite"}
           >
-            {selectedNote.isFavorite ? "Favorited" : "Favorite"}
+            ★
           </button>
           <button
-            className={`rounded-lg px-3 py-1.5 transition hover:bg-white/[0.05] hover:text-slate-300 active:scale-95 ${
+            className={`grid h-8 w-8 place-items-center rounded-lg transition hover:bg-white/[0.05] hover:text-slate-300 active:scale-95 ${
               selectedNote.isPinned ? "text-lumo-teal" : ""
             }`}
             onClick={() => togglePinned(selectedNote.id)}
+            title={selectedNote.isPinned ? "Unpin" : "Pin"}
           >
-            {selectedNote.isPinned ? "Pinned" : "Pin"}
+            ◆
           </button>
           <button
-            className="rounded-lg px-3 py-1.5 transition hover:bg-white/[0.05] hover:text-slate-300 active:scale-95"
-            onClick={exportSelectedNote}
-          >
-            Export .md
-          </button>
-          <button
-            className={`rounded-lg px-3 py-1.5 transition hover:bg-white/[0.05] hover:text-slate-300 active:scale-95 ${
+            className={`grid h-8 w-8 place-items-center rounded-lg transition hover:bg-white/[0.05] hover:text-slate-300 active:scale-95 ${
               isFocusMode ? "text-lumo-teal" : ""
             }`}
             onClick={onToggleFocusMode}
+            title={isFocusMode ? "Exit focus mode" : "Focus mode"}
           >
-            {isFocusMode ? "Exit Focus" : "Focus"}
-          </button>
-          <button
-            className="rounded-lg px-3 py-1.5 transition hover:bg-white/[0.05] hover:text-slate-300 active:scale-95"
-            onClick={() =>
-              selectedNote.isDeleted ? restoreNote(selectedNote.id) : moveToTrash(selectedNote.id)
-            }
-          >
-            {selectedNote.isDeleted ? "Restore" : "Delete"}
+            {isFocusMode ? "↙" : "◱"}
           </button>
           {selectedNote.isDeleted ? (
-            <button
-              className="rounded-lg px-3 py-1.5 text-rose-300 transition hover:bg-rose-400/10 hover:text-rose-100 active:scale-95"
-              onClick={confirmPermanentDelete}
-            >
-              Delete Permanently
-            </button>
-          ) : null}
+            <>
+              <button
+                className="rounded-lg px-3 py-1.5 text-slate-300 transition hover:bg-white/[0.05] hover:text-white active:scale-95"
+                onClick={() => restoreNote(selectedNote.id)}
+              >
+                Restore
+              </button>
+              <button
+                className="rounded-lg px-3 py-1.5 text-rose-300 transition hover:bg-rose-400/10 hover:text-rose-100 active:scale-95"
+                onClick={confirmPermanentDelete}
+              >
+                Delete Permanently
+              </button>
+            </>
+          ) : (
+            <div className="relative">
+              <button
+                className="grid h-8 w-8 place-items-center rounded-lg transition hover:bg-white/[0.05] hover:text-slate-300 active:scale-95"
+                onClick={() => setIsOverflowOpen((current) => !current)}
+                title="More actions"
+              >
+                ...
+              </button>
+              {isOverflowOpen ? (
+                <div className="absolute right-0 top-9 z-20 w-44 rounded-xl border border-white/10 bg-night-900/95 p-1.5 shadow-[0_16px_50px_rgba(0,0,0,0.35)]">
+                  <button
+                    className="w-full rounded-lg px-3 py-2 text-left text-xs text-slate-300 transition hover:bg-white/[0.06] hover:text-white"
+                    onClick={() => {
+                      setIsOverflowOpen(false);
+                      void exportSelectedNote();
+                    }}
+                  >
+                    Export Markdown
+                  </button>
+                  <button
+                    className="w-full rounded-lg px-3 py-2 text-left text-xs text-rose-300 transition hover:bg-rose-400/10 hover:text-rose-100"
+                    onClick={() => {
+                      setIsOverflowOpen(false);
+                      moveToTrash(selectedNote.id);
+                    }}
+                  >
+                    Move to Trash
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          )}
         </div>
       </div>
 
@@ -412,98 +445,89 @@ export function Editor({
               onBlur={forceSaveSelectedNote}
               placeholder="Short preview or subtitle"
             />
-            <div className="mt-5 grid gap-3 rounded-xl border border-white/10 bg-white/[0.025] p-3 md:grid-cols-[220px_1fr]">
-              <label className="space-y-2">
-                <span className="text-xs font-medium uppercase tracking-[0.16em] text-slate-500">
-                  Folder
-                </span>
-                <select
-                  className="h-10 w-full rounded-lg border border-white/10 bg-night-950/70 px-3 text-sm text-slate-200 outline-none focus:border-lumo-teal/40"
-                  value={selectedNote.folderId}
-                  onChange={(event) => setSelectedNoteFolder(event.target.value)}
-                >
-                  {folders.map((folder) => (
-                    <option key={folder.id} value={folder.id}>
-                      {folder.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
+            <button
+              className="mt-4 inline-flex max-w-full items-center gap-2 rounded-lg px-1 py-1 text-left text-xs text-slate-500 transition hover:text-slate-300"
+              onClick={() => setIsMetadataOpen((current) => !current)}
+            >
+              <span className="truncate">
+                {selectedNote.folderName || "Uncategorized"} · {compactTags}
+              </span>
+              <span>{isMetadataOpen ? "Hide" : "Edit"}</span>
+            </button>
 
-              <div className="space-y-2">
-                <span className="text-xs font-medium uppercase tracking-[0.16em] text-slate-500">
-                  Tags
-                </span>
-                <div className="flex flex-wrap gap-2">
-                  {selectedNote.tags.length === 0 ? (
-                    <span className="rounded-lg border border-dashed border-white/10 px-2.5 py-1.5 text-xs text-slate-500">
-                      No tags
-                    </span>
-                  ) : null}
-                  {selectedNote.tags.map((tag) => (
-                    <span
-                      key={tag}
-                      className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-xs text-slate-300"
-                    >
-                      {tag}
-                      <button
-                        className="text-slate-500 transition hover:text-rose-200"
-                        onClick={() => removeTagFromSelectedNote(tag)}
-                      >
-                        x
-                      </button>
-                    </span>
-                  ))}
-                </div>
-                <div className="flex gap-2">
-                  <input
-                    className="h-9 flex-1 rounded-lg border border-white/10 bg-night-950/70 px-3 text-sm text-slate-200 outline-none placeholder:text-slate-600 focus:border-lumo-teal/40"
-                    value={tagInput}
-                    onChange={(event) => setTagInput(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") {
-                        event.preventDefault();
-                        submitTag();
-                      }
-                    }}
-                    list="lumo-note-tags"
-                    placeholder="Add tag"
-                  />
-                  <datalist id="lumo-note-tags">
-                    {availableTags.map((tag) => (
-                      <option key={tag} value={tag} />
-                    ))}
-                  </datalist>
-                  <button
-                    className="rounded-lg border border-white/10 px-3 text-sm text-slate-300 transition hover:border-lumo-teal/30 hover:text-white"
-                    onClick={submitTag}
+            {isMetadataOpen ? (
+              <div className="mt-3 grid gap-3 rounded-xl bg-white/[0.025] p-3 md:grid-cols-[220px_1fr]">
+                <label className="space-y-2">
+                  <span className="text-xs font-medium uppercase tracking-[0.16em] text-slate-500">
+                    Folder
+                  </span>
+                  <select
+                    className="h-10 w-full rounded-lg border border-white/10 bg-night-950/70 px-3 text-sm text-slate-200 outline-none focus:border-lumo-teal/40"
+                    value={selectedNote.folderId}
+                    onChange={(event) => setSelectedNoteFolder(event.target.value)}
                   >
-                    Add
-                  </button>
+                    {folders.map((folder) => (
+                      <option key={folder.id} value={folder.id}>
+                        {folder.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <div className="space-y-2">
+                  <span className="text-xs font-medium uppercase tracking-[0.16em] text-slate-500">
+                    Tags
+                  </span>
+                  <div className="flex flex-wrap gap-2">
+                    {selectedNote.tags.length === 0 ? (
+                      <span className="rounded-lg border border-dashed border-white/10 px-2.5 py-1.5 text-xs text-slate-500">
+                        No tags
+                      </span>
+                    ) : null}
+                    {selectedNote.tags.map((tag) => (
+                      <span
+                        key={tag}
+                        className="inline-flex items-center gap-2 rounded-lg bg-white/[0.04] px-2.5 py-1.5 text-xs text-slate-300"
+                      >
+                        {tag}
+                        <button
+                          className="text-slate-500 transition hover:text-rose-200"
+                          onClick={() => removeTagFromSelectedNote(tag)}
+                        >
+                          x
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                  <div className="flex gap-2">
+                    <input
+                      className="h-9 flex-1 rounded-lg border border-white/10 bg-night-950/70 px-3 text-sm text-slate-200 outline-none placeholder:text-slate-600 focus:border-lumo-teal/40"
+                      value={tagInput}
+                      onChange={(event) => setTagInput(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          submitTag();
+                        }
+                      }}
+                      list="lumo-note-tags"
+                      placeholder="Add tag"
+                    />
+                    <datalist id="lumo-note-tags">
+                      {availableTags.map((tag) => (
+                        <option key={tag} value={tag} />
+                      ))}
+                    </datalist>
+                    <button
+                      className="rounded-lg border border-white/10 px-3 text-sm text-slate-300 transition hover:border-lumo-teal/30 hover:text-white"
+                      onClick={submitTag}
+                    >
+                      Add
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
-          </div>
-
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <div className="inline-flex rounded-xl border border-white/10 bg-night-950/35 p-1 text-xs text-slate-400">
-              {(["edit", "preview", "split"] as const).map((mode) => (
-                <button
-                  key={mode}
-                  className={`rounded-lg px-3 py-1.5 capitalize transition active:scale-95 ${
-                    editorMode === mode
-                      ? "bg-lumo-violet/20 text-white shadow-[inset_0_0_0_1px_rgba(156,124,244,0.28)]"
-                      : "hover:bg-white/[0.05] hover:text-slate-200"
-                  }`}
-                  onClick={() => setEditorMode(mode)}
-                >
-                  {mode}
-                </button>
-              ))}
-            </div>
-            <span className="text-xs text-slate-500">
-              Markdown source is saved locally.
-            </span>
+            ) : null}
           </div>
 
           {editorMode === "preview" ? (
@@ -551,22 +575,26 @@ export function Editor({
             />
           )}
 
-          <div className="mt-4 grid gap-2 rounded-xl border border-white/10 bg-white/[0.025] p-3 text-xs text-slate-500 md:grid-cols-2">
-            <span>Created {formatMetadataDate(selectedNote.createdAt)}</span>
-            <span>Updated {formatMetadataDate(selectedNote.updatedAt)}</span>
-            <span>Folder {selectedNote.folderName || "Uncategorized"}</span>
-            <span>
-              Tags {selectedNote.tags.length > 0 ? selectedNote.tags.join(", ") : "None"}
-            </span>
-            <span>{wordCount(selectedNote.content)} words</span>
-            <span>{selectedNote.content.length} characters</span>
-          </div>
-
         </div>
       </article>
 
       <div className="flex items-center justify-between border-t border-white/10 px-6 py-3 text-slate-400">
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-3">
+          <div className="inline-flex rounded-xl bg-night-950/35 p-1 text-xs text-slate-400">
+            {(["edit", "preview", "split"] as const).map((mode) => (
+              <button
+                key={mode}
+                className={`rounded-lg px-2.5 py-1.5 capitalize transition active:scale-95 ${
+                  editorMode === mode
+                    ? "bg-lumo-violet/20 text-white"
+                    : "hover:bg-white/[0.05] hover:text-slate-200"
+                }`}
+                onClick={() => setEditorMode(mode)}
+              >
+                {mode}
+              </button>
+            ))}
+          </div>
           {editorTools.map((tool) => (
             <button
               key={tool.action}
@@ -578,7 +606,7 @@ export function Editor({
           ))}
         </div>
         <span className="text-xs text-slate-300">
-          {wordCount(selectedNote.content)} words / {selectedNote.content.length} chars
+          Updated {updatedLabel} · {currentWordCount} words
         </span>
       </div>
     </main>

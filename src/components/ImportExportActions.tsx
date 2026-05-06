@@ -12,7 +12,7 @@ import {
   validateBackup,
 } from "../services/fileTransfer";
 
-export function ImportExportActions() {
+export function ImportExportActions({ compact = false }: { compact?: boolean }) {
   const {
     availableTags,
     folders,
@@ -97,7 +97,7 @@ export function ImportExportActions() {
     });
 
   return (
-    <div className="space-y-2 border-t border-white/10 pt-4">
+    <div className={`space-y-2 ${compact ? "" : "border-t border-white/10 pt-4"}`}>
       <div className="flex items-center justify-between">
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
           Local Tools

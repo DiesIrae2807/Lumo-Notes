@@ -175,6 +175,7 @@ export default function App() {
 function Workspace() {
   const { activeView } = useNotes();
   const [isFocusMode, setIsFocusMode] = useState(false);
+  const [isInsightsOpen, setIsInsightsOpen] = useState(false);
 
   useEffect(() => {
     const toggleFocusMode = () => setIsFocusMode((current) => !current);
@@ -214,7 +215,9 @@ function Workspace() {
             className={`workspace-grid grid min-h-0 flex-1 overflow-hidden ${
               isFocusMode
                 ? "grid-cols-1"
-                : "grid-cols-1 lg:grid-cols-[235px_330px_minmax(460px,1fr)] xl:grid-cols-[235px_330px_minmax(520px,1fr)_280px]"
+                : isInsightsOpen
+                  ? "grid-cols-1 lg:grid-cols-[235px_330px_minmax(460px,1fr)] xl:grid-cols-[235px_330px_minmax(520px,1fr)_280px]"
+                  : "grid-cols-1 lg:grid-cols-[235px_330px_minmax(460px,1fr)_48px]"
             }`}
           >
             {isFocusMode ? (
@@ -228,7 +231,11 @@ function Workspace() {
                 ) : (
                   <>
                     <Editor onToggleFocusMode={() => setIsFocusMode(true)} />
-                    <InsightsPanel />
+                    {isInsightsOpen ? (
+                      <InsightsPanel onCollapse={() => setIsInsightsOpen(false)} />
+                    ) : (
+                      <InsightsRail onOpen={() => setIsInsightsOpen(true)} />
+                    )}
                   </>
                 )}
               </>
@@ -236,5 +243,19 @@ function Workspace() {
           </div>
         </div>
       </div>
+  );
+}
+
+function InsightsRail({ onOpen }: { onOpen: () => void }) {
+  return (
+    <aside className="column-panel hidden min-h-0 items-center border-l border-white/[0.06] px-2 py-4 lg:flex">
+      <button
+        className="grid h-10 w-10 place-items-center rounded-xl bg-white/[0.035] text-sm font-semibold text-slate-400 transition hover:bg-lumo-violet/15 hover:text-white active:scale-95"
+        onClick={onOpen}
+        title="Open Insights"
+      >
+        i
+      </button>
+    </aside>
   );
 }

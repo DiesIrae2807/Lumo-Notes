@@ -34,12 +34,12 @@ function EmptyState({
   onAction?: () => void;
 }) {
   return (
-    <div className="rounded-xl border border-dashed border-white/10 bg-white/[0.025] px-4 py-8 text-center">
-      <p className="text-sm font-medium text-white">{title}</p>
-      <p className="mx-auto mt-2 max-w-48 text-xs leading-5 text-slate-500">{body}</p>
+    <div className="px-4 py-6 text-center">
+      <p className="text-sm font-medium text-slate-300">{title}</p>
+      <p className="mx-auto mt-2 max-w-48 text-xs leading-5 text-slate-600">{body}</p>
       {actionLabel && onAction ? (
         <button
-          className="mt-4 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-xs text-slate-300 transition hover:border-lumo-teal/30 hover:text-white active:scale-95"
+          className="mt-4 rounded-lg bg-white/[0.04] px-3 py-2 text-xs text-slate-300 transition hover:bg-white/[0.07] hover:text-white active:scale-95"
           onClick={onAction}
         >
           {actionLabel}

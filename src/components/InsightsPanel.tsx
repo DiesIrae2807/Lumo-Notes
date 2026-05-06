@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { SectionHeader } from "./SectionHeader";
 import { useNotes } from "../store/notesStore";
-import { formatRelativeTime } from "../utils/date";
+import { formatMetadataDate, formatRelativeTime } from "../utils/date";
 import { excerptFromMarkdown, getPlainTextPreview } from "../utils/markdown";
 import {
   parseInternalLinks,
@@ -15,7 +15,10 @@ const accentMap = {
   rose: "bg-rose-400",
 } as const;
 
-export function InsightsPanel() {
+const wordCount = (content: string) =>
+  content.trim() ? content.trim().split(/\s+/).length : 0;
+
+export function InsightsPanel({ onCollapse }: { onCollapse?: () => void }) {
   const { activeView, createNote, notes, selectedNote, selectNote } = useNotes();
   const [activeTab, setActiveTab] = useState<"insights" | "links">("insights");
   const includeDeletedLinks = activeView === "trash";
@@ -87,8 +90,12 @@ export function InsightsPanel() {
             Linked Notes
           </button>
         </div>
-        <button className="grid h-8 w-8 place-items-center rounded-lg text-slate-500 transition hover:bg-white/[0.05] hover:text-white active:scale-95">
-          +
+        <button
+          className="grid h-8 w-8 place-items-center rounded-lg text-slate-500 transition hover:bg-white/[0.05] hover:text-white active:scale-95"
+          onClick={onCollapse}
+          title="Collapse insights"
+        >
+          x
         </button>
       </div>
 
@@ -118,6 +125,9 @@ export function InsightsPanel() {
               `Tags: ${selectedNote?.tags.join(", ") || "None"}`,
               `Status: ${selectedNote?.isDeleted ? "In Trash" : "Active"}`,
               `Pinned: ${selectedNote?.isPinned ? "Yes" : "No"}`,
+              `Created: ${selectedNote ? formatMetadataDate(selectedNote.createdAt) : "None"}`,
+              `Updated: ${selectedNote ? formatMetadataDate(selectedNote.updatedAt) : "None"}`,
+              `Length: ${selectedNote ? `${wordCount(selectedNote.content)} words, ${selectedNote.content.length} chars` : "None"}`,
             ].map((point) => (
               <p key={point} className="flex gap-2">
                 <span className="mt-2 h-1.5 w-1.5 rounded-full bg-lumo-teal" />

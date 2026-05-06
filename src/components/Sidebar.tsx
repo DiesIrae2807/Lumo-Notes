@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { BrandMark } from "./BrandMark";
 import { ImportExportActions } from "./ImportExportActions";
 import { SectionHeader } from "./SectionHeader";
@@ -35,6 +36,7 @@ function IconDot({ active, label }: { active?: boolean; label: string }) {
 }
 
 export function Sidebar() {
+  const [isToolsOpen, setIsToolsOpen] = useState(false);
   const {
     activeFolderId,
     activeTag,
@@ -156,7 +158,7 @@ export function Sidebar() {
             <button
               key={collection.id}
               onClick={() => setActiveFolderId(collection.id)}
-              className={`flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm transition hover:bg-white/[0.04] hover:text-white active:scale-[0.99] ${
+              className={`group flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm transition hover:bg-white/[0.04] hover:text-white active:scale-[0.99] ${
                 activeFolderId === collection.id
                   ? "bg-white/[0.06] text-white"
                   : "text-slate-300"
@@ -165,7 +167,7 @@ export function Sidebar() {
               <span className={`h-2.5 w-2.5 rounded ${collection.colorClass}`} />
               <span className="flex-1 text-left">{collection.name}</span>
               <span
-                className="rounded px-1.5 py-0.5 text-[11px] text-slate-500 hover:bg-white/10 hover:text-white"
+                className="rounded px-1.5 py-0.5 text-[11px] text-slate-500 opacity-0 transition hover:bg-white/10 hover:text-white group-hover:opacity-100 focus:opacity-100"
                 onClick={(event) => {
                   event.stopPropagation();
                   editFolder(collection.id, collection.name);
@@ -174,7 +176,7 @@ export function Sidebar() {
                 Edit
               </span>
               <span
-                className="rounded px-1.5 py-0.5 text-[11px] text-slate-500 hover:bg-rose-400/15 hover:text-rose-200"
+                className="rounded px-1.5 py-0.5 text-[11px] text-slate-500 opacity-0 transition hover:bg-rose-400/15 hover:text-rose-200 group-hover:opacity-100 focus:opacity-100"
                 onClick={(event) => {
                   event.stopPropagation();
                   removeFolder(collection.id, collection.name);
@@ -204,7 +206,7 @@ export function Sidebar() {
           {availableTags.map((tag) => (
             <span
               key={tag}
-              className={`rounded-lg border px-2.5 py-1.5 text-xs transition hover:border-lumo-violet/40 hover:text-white active:scale-95 ${
+              className={`group rounded-lg border px-2.5 py-1.5 text-xs transition hover:border-lumo-violet/40 hover:text-white active:scale-95 ${
                 activeTag === tag
                   ? "border-lumo-violet/40 bg-lumo-violet/15 text-white"
                   : "border-white/10 bg-white/[0.04] text-slate-300"
@@ -212,14 +214,14 @@ export function Sidebar() {
             >
               <button onClick={() => setActiveTag(tag)}>{tag}</button>
               <button
-                className="ml-2 text-slate-500 hover:text-white"
+                className="ml-2 text-slate-500 opacity-0 transition hover:text-white group-hover:opacity-100 focus:opacity-100"
                 onClick={() => editTag(tag)}
                 title="Rename tag"
               >
                 e
               </button>
               <button
-                className="ml-1 text-slate-500 hover:text-rose-200"
+                className="ml-1 text-slate-500 opacity-0 transition hover:text-rose-200 group-hover:opacity-100 focus:opacity-100"
                 onClick={() => removeTag(tag)}
                 title="Delete tag"
               >
@@ -236,10 +238,6 @@ export function Sidebar() {
         </button>
       </div>
 
-      <div className="mt-6">
-        <ImportExportActions />
-      </div>
-
       <div className="mt-4 flex items-center gap-3 border-t border-white/10 pt-4">
         <div className="grid h-9 w-9 place-items-center rounded-full bg-lumo-violet text-sm font-semibold text-white">
           AS
@@ -248,9 +246,20 @@ export function Sidebar() {
           <p className="truncate text-sm font-medium text-white">Alex Smith</p>
           <p className="truncate text-xs text-slate-500">alex@lumonotes.app</p>
         </div>
-        <button className="grid h-8 w-8 place-items-center rounded-lg border border-white/10 text-slate-400 transition hover:text-white">
-          +
-        </button>
+        <div className="relative">
+          <button
+            className="grid h-8 w-8 place-items-center rounded-lg border border-white/10 text-slate-400 transition hover:text-white"
+            onClick={() => setIsToolsOpen((current) => !current)}
+            title="Tools"
+          >
+            ...
+          </button>
+          {isToolsOpen ? (
+            <div className="absolute bottom-10 right-0 z-20 w-64 rounded-2xl border border-white/10 bg-night-900/95 p-3 shadow-[0_18px_60px_rgba(0,0,0,0.35)]">
+              <ImportExportActions compact />
+            </div>
+          ) : null}
+        </div>
       </div>
     </aside>
   );
