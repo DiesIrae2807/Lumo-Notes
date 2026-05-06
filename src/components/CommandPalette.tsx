@@ -68,6 +68,20 @@ export function CommandPalette() {
     return () => window.removeEventListener("lumo-open-command-palette", open);
   }, []);
 
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        close();
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isOpen]);
+
   const close = () => {
     setIsOpen(false);
     setQuery("");
@@ -318,8 +332,14 @@ export function CommandPalette() {
   }
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-night-950/60 px-4 py-8 backdrop-blur-sm">
-      <div className="w-full max-w-2xl overflow-hidden rounded-2xl border border-white/10 bg-night-900/95 shadow-[0_24px_90px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.08)]">
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-night-950/60 px-4 py-8 backdrop-blur-sm"
+      onMouseDown={close}
+    >
+      <div
+        className="w-full max-w-2xl overflow-hidden rounded-2xl border border-white/10 bg-night-900/95 shadow-[0_24px_90px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.08)]"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
         <input
           ref={inputRef}
           className="h-14 w-full border-b border-white/10 bg-transparent px-5 text-base text-white outline-none placeholder:text-slate-500"
