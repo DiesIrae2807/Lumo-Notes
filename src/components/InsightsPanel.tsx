@@ -68,8 +68,8 @@ export function InsightsPanel({ onCollapse }: { onCollapse?: () => void }) {
 
   return (
     <aside className="column-panel hidden min-h-0 flex-col overflow-hidden xl:flex">
-      <div className="flex items-center justify-between border-b border-white/10 px-4 pt-4">
-        <div className="flex items-center gap-3">
+      <div className="flex items-start justify-between border-b border-white/10 px-4 pt-4">
+        <div className="flex items-start gap-3">
           <InsightsIcon active={activeTab === "insights"} className="shrink-0" />
           <div className="flex gap-5 text-sm font-medium">
             <button
@@ -95,12 +95,19 @@ export function InsightsPanel({ onCollapse }: { onCollapse?: () => void }) {
           </div>
         </div>
         <button
-          className="grid h-8 w-8 place-items-center rounded-lg text-slate-500 transition hover:bg-white/[0.05] hover:text-white active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-lumo-violet/60"
+          className="-mt-2 grid h-8 w-8 place-items-center rounded-lg text-slate-500 transition hover:bg-white/[0.05] hover:text-white active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-lumo-violet/60"
           onClick={onCollapse}
           aria-label="Collapse insights"
           title="Collapse insights"
         >
-          x
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path
+              d="M4.5 4.5L11.5 11.5M11.5 4.5L4.5 11.5"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+            />
+          </svg>
         </button>
       </div>
 
