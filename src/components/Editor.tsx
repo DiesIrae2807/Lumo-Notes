@@ -687,12 +687,9 @@ export function Editor({
             </div>
           ) : null}
 
-          <div className="mb-7">
-            <div className="mb-4 grid h-7 w-7 place-items-center text-xl text-lumo-teal">
-              *
-            </div>
+          <div className="mb-7 pt-1">
             <input
-              className="w-full border-none bg-transparent text-3xl font-semibold tracking-tight text-white outline-none placeholder:text-slate-600 md:text-4xl"
+              className="w-full border-none bg-transparent pb-1 text-3xl font-semibold leading-[1.18] tracking-tight text-white outline-none placeholder:text-slate-600 md:text-4xl"
               value={selectedNote.title}
               onChange={(event) => applyEditorChange({ title: event.target.value }, "typing")}
               onBlur={() => {
