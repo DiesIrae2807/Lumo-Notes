@@ -101,9 +101,9 @@ function SettingToggle<K extends keyof AppSettings>({
 
 export function SettingsScreen() {
   return (
-    <main className="column-panel editor-glow col-span-1 min-h-0 overflow-hidden xl:col-span-2">
-      <div className="scroll-area h-full overflow-y-auto px-8 py-7">
-        <div className="mx-auto max-w-4xl">
+    <main className="column-panel editor-glow min-h-0 overflow-hidden">
+      <div className="scroll-area h-full overflow-y-auto px-5 py-7 md:px-8">
+        <div className="mx-auto max-w-5xl">
           <div className="mb-7">
             <p className="text-sm font-medium text-lumo-teal">Preferences</p>
             <h1 className="mt-2 text-3xl font-semibold tracking-tight text-white">Settings</h1>

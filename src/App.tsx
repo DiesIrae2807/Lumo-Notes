@@ -185,6 +185,7 @@ function Workspace() {
   const { activeView } = useNotes();
   const [isFocusMode, setIsFocusMode] = useState(false);
   const [isInsightsOpen, setIsInsightsOpen] = useState(false);
+  const isSettingsView = activeView === "settings";
 
   useEffect(() => {
     const toggleFocusMode = () => setIsFocusMode((current) => !current);
@@ -210,6 +211,12 @@ function Workspace() {
     };
   }, [isFocusMode]);
 
+  useEffect(() => {
+    if (isSettingsView) {
+      setIsFocusMode(false);
+    }
+  }, [isSettingsView]);
+
   return (
       <div className="app-root min-h-[100dvh] overflow-hidden bg-night-950 text-slate-100">
         <div className="fixed inset-0 pointer-events-none">
@@ -224,6 +231,8 @@ function Workspace() {
             className={`workspace-grid grid min-h-0 flex-1 overflow-hidden ${
               isFocusMode
                 ? "grid-cols-1"
+                : isSettingsView
+                  ? "grid-cols-1 lg:grid-cols-[235px_minmax(0,1fr)]"
                 : isInsightsOpen
                   ? "grid-cols-1 lg:grid-cols-[235px_330px_minmax(460px,1fr)] xl:grid-cols-[235px_330px_minmax(520px,1fr)_280px]"
                   : "grid-cols-1 lg:grid-cols-[235px_330px_minmax(460px,1fr)_48px]"
@@ -234,13 +243,16 @@ function Workspace() {
             ) : (
               <>
                 <Sidebar />
-                <NotesList />
-                {activeView === "settings" ? (
+                {isSettingsView ? (
                   <SettingsScreen />
                 ) : activeView === "graph" ? (
-                  <GraphView />
+                  <>
+                    <NotesList />
+                    <GraphView />
+                  </>
                 ) : (
                   <>
+                    <NotesList />
                     <Editor onToggleFocusMode={() => setIsFocusMode(true)} />
                     {isInsightsOpen ? (
                       <InsightsPanel onCollapse={() => setIsInsightsOpen(false)} />
