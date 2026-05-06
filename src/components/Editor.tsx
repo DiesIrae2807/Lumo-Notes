@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { MarkdownPreview } from "./MarkdownPreview";
 import { FavoriteHeartIcon } from "./icons/FavoriteHeartIcon";
 import { FocusIcon } from "./icons/FocusIcon";
@@ -21,6 +21,22 @@ type MarkdownAction =
 
 type EditorMode = "edit" | "preview" | "split";
 
+type EditorSnapshot = {
+  content: string;
+  preview: string;
+  reason: "typing" | "paste" | "format" | "undo" | "redo" | "manual";
+  timestamp: number;
+  title: string;
+};
+
+type EditorHistory = {
+  future: EditorSnapshot[];
+  lastEditAt: number;
+  lastReason: EditorSnapshot["reason"] | null;
+  past: EditorSnapshot[];
+  present: EditorSnapshot;
+};
+
 const editorTools: Array<{ label: string; action: MarkdownAction }> = [
   { label: "B", action: "bold" },
   { label: "I", action: "italic" },
@@ -37,6 +53,28 @@ const wordCount = (content: string) =>
   content.trim() ? content.trim().split(/\s+/).length : 0;
 
 const readingMinutes = (content: string) => Math.max(1, Math.ceil(wordCount(content) / 220));
+const TYPING_GROUP_MS = 950;
+const HISTORY_LIMIT = 80;
+
+const snapshotFromNote = (
+  note: { title: string; preview: string; content: string },
+  reason: EditorSnapshot["reason"] = "manual",
+): EditorSnapshot => ({
+  content: note.content,
+  preview: note.preview,
+  reason,
+  timestamp: Date.now(),
+  title: note.title,
+});
+
+const sameSnapshot = (a: EditorSnapshot, b: EditorSnapshot) =>
+  a.title === b.title && a.preview === b.preview && a.content === b.content;
+
+const appendHistory = (past: EditorSnapshot[], snapshot: EditorSnapshot) => {
+  const last = past[past.length - 1];
+  if (last && sameSnapshot(last, snapshot)) return past;
+  return [...past, snapshot].slice(-HISTORY_LIMIT);
+};
 
 function EmptyEditor() {
   return (
@@ -91,6 +129,136 @@ export function Editor({
   const [isMetadataOpen, setIsMetadataOpen] = useState(false);
   const [isOverflowOpen, setIsOverflowOpen] = useState(false);
   const bodyRef = useRef<HTMLTextAreaElement | null>(null);
+  const historiesRef = useRef(new Map<string, EditorHistory>());
+  const forceHistoryCheckpointRef = useRef(false);
+
+  const publishHistoryState = useCallback((history: EditorHistory | null) => {
+    window.dispatchEvent(
+      new CustomEvent("lumo-editor-history-state", {
+        detail: {
+          canRedo: Boolean(history?.future.length),
+          canUndo: Boolean(history?.past.length),
+        },
+      }),
+    );
+  }, []);
+
+  const ensureHistory = useCallback(
+    (note: NonNullable<typeof selectedNote>) => {
+      const snapshot = snapshotFromNote(note);
+      const existing = historiesRef.current.get(note.id);
+
+      if (!existing) {
+        const history: EditorHistory = {
+          future: [],
+          lastEditAt: 0,
+          lastReason: null,
+          past: [],
+          present: snapshot,
+        };
+        historiesRef.current.set(note.id, history);
+        publishHistoryState(history);
+        return history;
+      }
+
+      if (!sameSnapshot(existing.present, snapshot)) {
+        existing.present = snapshot;
+      }
+
+      publishHistoryState(existing);
+      return existing;
+    },
+    [publishHistoryState, selectedNote],
+  );
+
+  const finishHistoryChunk = useCallback(() => {
+    if (!selectedNote) return;
+    const history = ensureHistory(selectedNote);
+    history.lastEditAt = 0;
+    history.lastReason = null;
+    publishHistoryState(history);
+  }, [ensureHistory, publishHistoryState, selectedNote]);
+
+  const applyEditorChange = useCallback(
+    (
+      changes: Partial<Pick<EditorSnapshot, "title" | "preview" | "content">>,
+      reason: EditorSnapshot["reason"] = "typing",
+      options: { forceCheckpoint?: boolean } = {},
+    ) => {
+      if (!selectedNote) return;
+
+      const history = ensureHistory(selectedNote);
+      const now = Date.now();
+      const nextSnapshot: EditorSnapshot = {
+        ...history.present,
+        ...changes,
+        reason,
+        timestamp: now,
+      };
+
+      if (sameSnapshot(history.present, nextSnapshot)) {
+        return;
+      }
+
+      const shouldCheckpoint =
+        options.forceCheckpoint ||
+        forceHistoryCheckpointRef.current ||
+        reason !== "typing" ||
+        history.lastReason !== "typing" ||
+        now - history.lastEditAt > TYPING_GROUP_MS;
+
+      if (shouldCheckpoint) {
+        history.past = appendHistory(history.past, history.present);
+        history.future = [];
+      }
+
+      history.present = nextSnapshot;
+      history.lastEditAt = now;
+      history.lastReason = reason;
+      forceHistoryCheckpointRef.current = false;
+      publishHistoryState(history);
+      updateSelectedNote(changes);
+    },
+    [ensureHistory, publishHistoryState, selectedNote, updateSelectedNote],
+  );
+
+  const undoEditor = useCallback(() => {
+    if (!selectedNote) return;
+    const history = ensureHistory(selectedNote);
+    const previous = history.past[history.past.length - 1];
+    if (!previous) return;
+
+    history.past = history.past.slice(0, -1);
+    history.future = [history.present, ...history.future].slice(0, HISTORY_LIMIT);
+    history.present = { ...previous, reason: "undo", timestamp: Date.now() };
+    history.lastEditAt = 0;
+    history.lastReason = null;
+    publishHistoryState(history);
+    updateSelectedNote({
+      content: previous.content,
+      preview: previous.preview,
+      title: previous.title,
+    });
+  }, [ensureHistory, publishHistoryState, selectedNote, updateSelectedNote]);
+
+  const redoEditor = useCallback(() => {
+    if (!selectedNote) return;
+    const history = ensureHistory(selectedNote);
+    const next = history.future[0];
+    if (!next) return;
+
+    history.future = history.future.slice(1);
+    history.past = appendHistory(history.past, history.present);
+    history.present = { ...next, reason: "redo", timestamp: Date.now() };
+    history.lastEditAt = 0;
+    history.lastReason = null;
+    publishHistoryState(history);
+    updateSelectedNote({
+      content: next.content,
+      preview: next.preview,
+      title: next.title,
+    });
+  }, [ensureHistory, publishHistoryState, selectedNote, updateSelectedNote]);
 
   useEffect(() => {
     const focusEditor = () => {
@@ -111,6 +279,28 @@ export function Editor({
       window.removeEventListener("lumo-set-editor-mode", setMode);
     };
   }, []);
+
+  useEffect(() => {
+    if (selectedNote) {
+      ensureHistory(selectedNote);
+    } else {
+      publishHistoryState(null);
+    }
+  }, [ensureHistory, publishHistoryState, selectedNote]);
+
+  useEffect(() => {
+    const undo = () => undoEditor();
+    const redo = () => redoEditor();
+    const state = historiesRef.current.get(selectedNote?.id ?? "") ?? null;
+    publishHistoryState(state);
+
+    window.addEventListener("lumo-editor-undo", undo);
+    window.addEventListener("lumo-editor-redo", redo);
+    return () => {
+      window.removeEventListener("lumo-editor-undo", undo);
+      window.removeEventListener("lumo-editor-redo", redo);
+    };
+  }, [publishHistoryState, redoEditor, selectedNote?.id, undoEditor]);
 
   if (!selectedNote) {
     return <EmptyEditor />;
@@ -182,7 +372,11 @@ export function Editor({
       } satisfies Record<MarkdownAction, string>;
 
       const separator = selectedNote.content.trim() ? "\n\n" : "";
-      updateSelectedNote({ content: `${selectedNote.content}${separator}${fallback[action]}` });
+      applyEditorChange(
+        { content: `${selectedNote.content}${separator}${fallback[action]}` },
+        "format",
+        { forceCheckpoint: true },
+      );
       setEditorMode("edit");
       return;
     }
@@ -254,13 +448,8 @@ export function Editor({
     const nextContent = currentContent.slice(0, start) + insertion + currentContent.slice(end);
 
     textarea.focus();
-    textarea.setSelectionRange(start, end);
-    const insertedWithNativeUndo = document.execCommand("insertText", false, insertion);
-
-    if (!insertedWithNativeUndo || textarea.value !== nextContent) {
-      textarea.setRangeText(insertion, start, end, "end");
-      updateSelectedNote({ content: textarea.value });
-    }
+    textarea.setRangeText(insertion, start, end, "end");
+    applyEditorChange({ content: nextContent }, "format", { forceCheckpoint: true });
 
     keepCursorCentered(textarea);
 
@@ -274,8 +463,41 @@ export function Editor({
     }, 0);
   };
 
+  const handleHistoryKeyDown = (
+    event: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>,
+  ) => {
+    const key = event.key.toLowerCase();
+
+    if (event.ctrlKey && key === "z" && !event.shiftKey) {
+      event.preventDefault();
+      undoEditor();
+      return true;
+    }
+
+    if (event.ctrlKey && (key === "y" || (event.shiftKey && key === "z"))) {
+      event.preventDefault();
+      redoEditor();
+      return true;
+    }
+
+    if (key === "enter") {
+      forceHistoryCheckpointRef.current = true;
+    }
+
+    if (key === "backspace" || key === "delete") {
+      const target = event.currentTarget;
+      const selectionStart = target.selectionStart ?? 0;
+      const selectionEnd = target.selectionEnd ?? selectionStart;
+      if (Math.abs(selectionEnd - selectionStart) > 1) {
+        forceHistoryCheckpointRef.current = true;
+      }
+    }
+
+    return false;
+  };
+
   const handleEditorKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (!event.ctrlKey) return;
+    if (handleHistoryKeyDown(event) || !event.ctrlKey) return;
 
     const key = event.key.toLowerCase();
 
@@ -451,15 +673,35 @@ export function Editor({
             <input
               className="w-full border-none bg-transparent text-3xl font-semibold tracking-tight text-white outline-none placeholder:text-slate-600 md:text-4xl"
               value={selectedNote.title}
-              onChange={(event) => updateSelectedNote({ title: event.target.value })}
-              onBlur={forceSaveSelectedNote}
+              onChange={(event) => applyEditorChange({ title: event.target.value }, "typing")}
+              onBlur={() => {
+                finishHistoryChunk();
+                forceSaveSelectedNote();
+              }}
+              onCut={() => {
+                forceHistoryCheckpointRef.current = true;
+              }}
+              onKeyDown={handleHistoryKeyDown}
+              onPaste={() => {
+                forceHistoryCheckpointRef.current = true;
+              }}
               placeholder="Untitled Note"
             />
             <input
               className="mt-3 w-full border-none bg-transparent text-base text-slate-300 outline-none placeholder:text-slate-600"
               value={selectedNote.preview}
-              onChange={(event) => updateSelectedNote({ preview: event.target.value })}
-              onBlur={forceSaveSelectedNote}
+              onChange={(event) => applyEditorChange({ preview: event.target.value }, "typing")}
+              onBlur={() => {
+                finishHistoryChunk();
+                forceSaveSelectedNote();
+              }}
+              onCut={() => {
+                forceHistoryCheckpointRef.current = true;
+              }}
+              onKeyDown={handleHistoryKeyDown}
+              onPaste={() => {
+                forceHistoryCheckpointRef.current = true;
+              }}
               placeholder="Short preview or subtitle"
             />
             <button
@@ -562,11 +804,20 @@ export function Editor({
                 }`}
                 value={selectedNote.content}
                 onChange={(event) => {
-                  updateSelectedNote({ content: event.target.value });
+                  applyEditorChange({ content: event.target.value }, "typing");
                   keepCursorCentered(event.target);
                 }}
-                onBlur={forceSaveSelectedNote}
+                onBlur={() => {
+                  finishHistoryChunk();
+                  forceSaveSelectedNote();
+                }}
+                onCut={() => {
+                  forceHistoryCheckpointRef.current = true;
+                }}
                 onKeyDown={handleEditorKeyDown}
+                onPaste={() => {
+                  forceHistoryCheckpointRef.current = true;
+                }}
                 placeholder="Start writing..."
               />
               <MarkdownPreview
@@ -583,11 +834,20 @@ export function Editor({
               }`}
               value={selectedNote.content}
               onChange={(event) => {
-                updateSelectedNote({ content: event.target.value });
+                applyEditorChange({ content: event.target.value }, "typing");
                 keepCursorCentered(event.target);
               }}
-              onBlur={forceSaveSelectedNote}
+              onBlur={() => {
+                finishHistoryChunk();
+                forceSaveSelectedNote();
+              }}
+              onCut={() => {
+                forceHistoryCheckpointRef.current = true;
+              }}
               onKeyDown={handleEditorKeyDown}
+              onPaste={() => {
+                forceHistoryCheckpointRef.current = true;
+              }}
               placeholder="Start writing..."
             />
           )}

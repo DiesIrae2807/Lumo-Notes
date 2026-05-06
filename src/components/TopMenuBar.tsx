@@ -61,6 +61,7 @@ export function TopMenuBar({ onExit }: { onExit: () => void }) {
   } = useNotes();
   const [openMenu, setOpenMenu] = useState<MenuName | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [editorHistory, setEditorHistory] = useState({ canRedo: false, canUndo: false });
   const rootRef = useRef<HTMLDivElement | null>(null);
   const trashCount = notes.filter((note) => note.isDeleted).length;
 
@@ -93,6 +94,19 @@ export function TopMenuBar({ onExit }: { onExit: () => void }) {
     const timer = window.setTimeout(() => setMessage(null), 2200);
     return () => window.clearTimeout(timer);
   }, [message]);
+
+  useEffect(() => {
+    const updateHistoryState = (event: Event) => {
+      const detail = (event as CustomEvent<{ canRedo: boolean; canUndo: boolean }>).detail;
+      setEditorHistory({
+        canRedo: Boolean(detail?.canRedo),
+        canUndo: Boolean(detail?.canUndo),
+      });
+    };
+
+    window.addEventListener("lumo-editor-history-state", updateHistoryState);
+    return () => window.removeEventListener("lumo-editor-history-state", updateHistoryState);
+  }, []);
 
   const runAction = async (action: () => void | Promise<void>, success?: string) => {
     try {
@@ -232,8 +246,22 @@ export function TopMenuBar({ onExit }: { onExit: () => void }) {
 
   const editEntries = useMemo<MenuEntry[]>(
     () => [
-      { label: "Undo", shortcut: "Ctrl+Z", onSelect: () => execEditCommand("undo") },
-      { label: "Redo", shortcut: "Ctrl+Y", onSelect: () => execEditCommand("redo") },
+      {
+        disabled: !editorHistory.canUndo,
+        label: "Undo",
+        shortcut: "Ctrl+Z",
+        onSelect: () => {
+          window.dispatchEvent(new Event("lumo-editor-undo"));
+        },
+      },
+      {
+        disabled: !editorHistory.canRedo,
+        label: "Redo",
+        shortcut: "Ctrl+Y",
+        onSelect: () => {
+          window.dispatchEvent(new Event("lumo-editor-redo"));
+        },
+      },
       { separator: true },
       { label: "Cut", shortcut: "Ctrl+X", onSelect: () => execEditCommand("cut") },
       { label: "Copy", shortcut: "Ctrl+C", onSelect: () => execEditCommand("copy") },
@@ -299,6 +327,8 @@ export function TopMenuBar({ onExit }: { onExit: () => void }) {
     ],
     [
       deleteFromEditMenu,
+      editorHistory.canRedo,
+      editorHistory.canUndo,
       moveToTrash,
       permanentlyDeleteSelectedNote,
       restoreNote,
