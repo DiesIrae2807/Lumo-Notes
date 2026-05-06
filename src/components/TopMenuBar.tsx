@@ -1,0 +1,410 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useNotes } from "../store/notesStore";
+import {
+  chooseFolderAndWriteFiles,
+  createBackup,
+  noteToMarkdown,
+  notesToMarkdownFiles,
+  openTextFiles,
+  parseMarkdownImport,
+  sanitizeFilename,
+  saveTextFile,
+  validateBackup,
+} from "../services/fileTransfer";
+
+type MenuName = "file" | "edit";
+
+type MenuAction = {
+  danger?: boolean;
+  disabled?: boolean;
+  label: string;
+  onSelect?: () => void | Promise<void>;
+  shortcut?: string;
+};
+
+type MenuEntry = MenuAction | { separator: true };
+
+const isSeparator = (entry: MenuEntry): entry is { separator: true } => "separator" in entry;
+
+function editableTarget() {
+  const target = document.activeElement;
+  return target instanceof HTMLElement
+    ? target.closest("input, textarea, select, [contenteditable='true']")
+    : null;
+}
+
+function execEditCommand(command: string) {
+  try {
+    document.execCommand(command);
+  } catch {
+    // WebView security can block some commands, especially paste.
+  }
+}
+
+export function TopMenuBar({ onExit }: { onExit: () => void }) {
+  const {
+    availableTags,
+    createNote,
+    folders,
+    forceSaveSelectedNote,
+    importMarkdownNotes,
+    moveToTrash,
+    notes,
+    permanentlyDeleteSelectedNote,
+    permanentlyDeleteTrashedNotes,
+    restoreBackupMerge,
+    restoreNote,
+    selectedNote,
+    setActiveView,
+    toggleFavorite,
+    togglePinned,
+  } = useNotes();
+  const [openMenu, setOpenMenu] = useState<MenuName | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const trashCount = notes.filter((note) => note.isDeleted).length;
+
+  useEffect(() => {
+    if (!openMenu) return;
+
+    const closeOnPointer = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) {
+        setOpenMenu(null);
+      }
+    };
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setOpenMenu(null);
+      }
+    };
+
+    window.addEventListener("pointerdown", closeOnPointer);
+    window.addEventListener("keydown", closeOnEscape, true);
+    return () => {
+      window.removeEventListener("pointerdown", closeOnPointer);
+      window.removeEventListener("keydown", closeOnEscape, true);
+    };
+  }, [openMenu]);
+
+  useEffect(() => {
+    if (!message) return;
+    const timer = window.setTimeout(() => setMessage(null), 2200);
+    return () => window.clearTimeout(timer);
+  }, [message]);
+
+  const runAction = async (action: () => void | Promise<void>, success?: string) => {
+    try {
+      await action();
+      if (success) setMessage(success);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setOpenMenu(null);
+    }
+  };
+
+  const exportSelected = () =>
+    runAction(async () => {
+      if (!selectedNote) return;
+      const filename = `${sanitizeFilename(selectedNote.title)}.md`;
+      const path = await saveTextFile("Export selected note", filename, noteToMarkdown(selectedNote));
+      if (path) setMessage("Selected note exported.");
+    });
+
+  const exportAll = () =>
+    runAction(async () => {
+      const includeTrash = window.confirm(
+        "Include notes in Trash in this Markdown export? OK includes Trash; Cancel exports active notes only.",
+      );
+      const exportNotes = notes.filter((note) => includeTrash || !note.isDeleted);
+      if (exportNotes.length === 0) {
+        setMessage("No notes to export.");
+        return;
+      }
+      const path = await chooseFolderAndWriteFiles(
+        "Export notes as Markdown",
+        notesToMarkdownFiles(exportNotes),
+      );
+      if (path) setMessage(`${exportNotes.length} Markdown files exported.`);
+    });
+
+  const exportBackup = () =>
+    runAction(async () => {
+      const date = new Date().toISOString().slice(0, 10);
+      const backup = createBackup(notes, folders, availableTags);
+      const path = await saveTextFile(
+        "Export Lumo Notes backup",
+        `lumo-notes-backup-${date}.json`,
+        JSON.stringify(backup, null, 2),
+      );
+      if (path) setMessage("Backup exported.");
+    });
+
+  const importMarkdown = () =>
+    runAction(async () => {
+      const files = await openTextFiles("Import Markdown notes", ["md", "markdown"], true);
+      if (files.length === 0) return;
+      const count = await importMarkdownNotes(files.map(parseMarkdownImport));
+      setMessage(`${count} Markdown note${count === 1 ? "" : "s"} imported.`);
+    });
+
+  const restoreBackup = () =>
+    runAction(async () => {
+      const files = await openTextFiles("Restore Lumo Notes backup", ["json"], false);
+      if (files.length === 0) return;
+      const backup = validateBackup(JSON.parse(files[0].content));
+      if (
+        !window.confirm(
+          `Merge ${backup.notes.length} notes from this backup into the current database? Existing notes will not be deleted.`,
+        )
+      ) {
+        return;
+      }
+      const count = await restoreBackupMerge(backup);
+      setMessage(`${count} backup note${count === 1 ? "" : "s"} restored.`);
+    });
+
+  const deleteFromEditMenu = () => {
+    if (editableTarget()) {
+      execEditCommand("delete");
+      return;
+    }
+
+    if (selectedNote && !selectedNote.isDeleted) {
+      moveToTrash(selectedNote.id);
+    }
+  };
+
+  const fileEntries = useMemo<MenuEntry[]>(
+    () => [
+      { label: "New Note", shortcut: "Ctrl+N", onSelect: () => createNote() },
+      {
+        label: "Save",
+        shortcut: "Ctrl+S",
+        disabled: !selectedNote,
+        onSelect: forceSaveSelectedNote,
+      },
+      { separator: true },
+      {
+        label: "Export Selected Note...",
+        disabled: !selectedNote,
+        onSelect: exportSelected,
+      },
+      { label: "Export All Notes...", onSelect: exportAll },
+      { separator: true },
+      { label: "Export Backup...", onSelect: exportBackup },
+      { label: "Import Markdown...", onSelect: importMarkdown },
+      { label: "Restore Backup...", onSelect: restoreBackup },
+      { separator: true },
+      { label: "Open Graph", onSelect: () => setActiveView("graph") },
+      { label: "Open Settings", disabled: true },
+      { separator: true },
+      {
+        danger: true,
+        disabled: trashCount === 0,
+        label: "Empty Trash...",
+        onSelect: () => {
+          if (window.confirm("Permanently delete all notes in Trash? This cannot be undone.")) {
+            permanentlyDeleteTrashedNotes();
+          }
+        },
+      },
+      { separator: true },
+      { label: "Exit", onSelect: onExit },
+    ],
+    [
+      createNote,
+      exportAll,
+      exportBackup,
+      exportSelected,
+      forceSaveSelectedNote,
+      importMarkdown,
+      onExit,
+      permanentlyDeleteTrashedNotes,
+      restoreBackup,
+      selectedNote,
+      setActiveView,
+      trashCount,
+    ],
+  );
+
+  const editEntries = useMemo<MenuEntry[]>(
+    () => [
+      { label: "Undo", shortcut: "Ctrl+Z", onSelect: () => execEditCommand("undo") },
+      { label: "Redo", shortcut: "Ctrl+Y", onSelect: () => execEditCommand("redo") },
+      { separator: true },
+      { label: "Cut", shortcut: "Ctrl+X", onSelect: () => execEditCommand("cut") },
+      { label: "Copy", shortcut: "Ctrl+C", onSelect: () => execEditCommand("copy") },
+      { label: "Paste", shortcut: "Ctrl+V", onSelect: () => execEditCommand("paste") },
+      { label: "Delete", onSelect: deleteFromEditMenu },
+      { label: "Select All", shortcut: "Ctrl+A", onSelect: () => execEditCommand("selectAll") },
+      { separator: true },
+      {
+        label: "Find/Search",
+        shortcut: "Ctrl+F",
+        onSelect: () => {
+          window.dispatchEvent(new Event("lumo-focus-search"));
+        },
+      },
+      {
+        label: "Command Palette",
+        shortcut: "Ctrl+K",
+        onSelect: () => {
+          window.dispatchEvent(new Event("lumo-open-command-palette"));
+        },
+      },
+      { separator: true },
+      {
+        disabled: !selectedNote,
+        label: selectedNote?.isFavorite ? "Remove Favorite" : "Toggle Favorite",
+        onSelect: () => {
+          if (selectedNote) toggleFavorite(selectedNote.id);
+        },
+      },
+      {
+        disabled: !selectedNote,
+        label: selectedNote?.isPinned ? "Unpin Note" : "Toggle Pin",
+        onSelect: () => {
+          if (selectedNote) togglePinned(selectedNote.id);
+        },
+      },
+      {
+        disabled: !selectedNote,
+        danger: !selectedNote?.isDeleted,
+        label: selectedNote?.isDeleted ? "Restore" : "Move to Trash",
+        onSelect: () => {
+          if (!selectedNote) return;
+          if (selectedNote.isDeleted) {
+            restoreNote(selectedNote.id);
+          } else {
+            moveToTrash(selectedNote.id);
+          }
+        },
+      },
+      {
+        danger: true,
+        disabled: !selectedNote?.isDeleted,
+        label: "Delete Permanently...",
+        onSelect: () => {
+          if (
+            selectedNote?.isDeleted &&
+            window.confirm("Permanently delete this note? This cannot be undone.")
+          ) {
+            permanentlyDeleteSelectedNote();
+          }
+        },
+      },
+    ],
+    [
+      deleteFromEditMenu,
+      moveToTrash,
+      permanentlyDeleteSelectedNote,
+      restoreNote,
+      selectedNote,
+      toggleFavorite,
+      togglePinned,
+    ],
+  );
+
+  return (
+    <div
+      ref={rootRef}
+      className="relative flex items-center gap-1"
+      data-menu-root="true"
+      onDoubleClick={(event) => event.stopPropagation()}
+      onMouseDown={(event) => event.stopPropagation()}
+    >
+      <TopMenuItem
+        active={openMenu === "file"}
+        label="File"
+        onClick={() => setOpenMenu((current) => (current === "file" ? null : "file"))}
+      />
+      <TopMenuItem
+        active={openMenu === "edit"}
+        label="Edit"
+        onClick={() => setOpenMenu((current) => (current === "edit" ? null : "edit"))}
+      />
+      {openMenu ? (
+        <MenuDropdown entries={openMenu === "file" ? fileEntries : editEntries} onRun={runAction} />
+      ) : null}
+      {message ? (
+        <span className="pointer-events-none absolute left-full ml-3 whitespace-nowrap text-[11px] text-lumo-teal">
+          {message}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+function TopMenuItem({
+  active,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className={`rounded-md px-2.5 py-1 text-xs font-medium transition active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-lumo-violet/55 ${
+        active ? "bg-white/[0.08] text-white" : "text-slate-400 hover:bg-white/[0.05] hover:text-white"
+      }`}
+      onClick={onClick}
+    >
+      {label}
+    </button>
+  );
+}
+
+function MenuDropdown({
+  entries,
+  onRun,
+}: {
+  entries: MenuEntry[];
+  onRun: (action: () => void | Promise<void>) => Promise<void>;
+}) {
+  return (
+    <div className="absolute left-0 top-8 z-50 w-64 rounded-xl border border-white/10 bg-night-900/95 p-1.5 shadow-[0_18px_60px_rgba(0,0,0,0.45)] backdrop-blur-xl">
+      {entries.map((entry, index) =>
+        isSeparator(entry) ? (
+          <div key={`separator-${index}`} className="my-1 h-px bg-white/10" />
+        ) : (
+          <MenuActionItem key={entry.label} entry={entry} onRun={onRun} />
+        ),
+      )}
+    </div>
+  );
+}
+
+function MenuActionItem({
+  entry,
+  onRun,
+}: {
+  entry: MenuAction;
+  onRun: (action: () => void | Promise<void>) => Promise<void>;
+}) {
+  return (
+    <button
+      type="button"
+      className={`flex h-8 w-full items-center justify-between gap-4 rounded-lg px-3 text-left text-xs transition active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40 ${
+        entry.danger
+          ? "text-rose-200 hover:bg-[#FF4D6D]/10 hover:text-[#FF4D6D]"
+          : "text-slate-300 hover:bg-white/[0.06] hover:text-white"
+      }`}
+      disabled={entry.disabled}
+      onClick={() => {
+        if (!entry.onSelect) return;
+        void onRun(entry.onSelect);
+      }}
+    >
+      <span className="truncate">{entry.label}</span>
+      {entry.shortcut ? (
+        <span className="shrink-0 text-[11px] text-slate-500">{entry.shortcut}</span>
+      ) : null}
+    </button>
+  );
+}

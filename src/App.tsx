@@ -8,6 +8,7 @@ import { NotesList } from "./components/NotesList";
 import { Sidebar } from "./components/Sidebar";
 import { BrandMark } from "./components/BrandMark";
 import { InsightsIcon } from "./components/icons/InsightsIcon";
+import { TopMenuBar } from "./components/TopMenuBar";
 import { NotesProvider } from "./store/notesStore";
 import { useNotes } from "./store/notesStore";
 
@@ -19,7 +20,7 @@ function WindowTitleBar() {
       return;
     }
 
-    if ((event.target as HTMLElement).closest("button")) {
+    if ((event.target as HTMLElement).closest("button, [data-menu-root='true']")) {
       return;
     }
 
@@ -56,11 +57,14 @@ function WindowTitleBar() {
       onMouseDown={startDragging}
       onDoubleClick={toggleMaximize}
     >
-      <div className="flex items-center gap-3" data-tauri-drag-region onMouseDown={startDragging}>
-        <BrandMark size="sm" />
-        <h1 className="select-none text-sm font-semibold text-white" data-tauri-drag-region>
-          Lumo <span className="text-lumo-violet">Notes</span>
-        </h1>
+      <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3" data-tauri-drag-region onMouseDown={startDragging}>
+          <BrandMark size="sm" />
+          <h1 className="select-none text-sm font-semibold text-white" data-tauri-drag-region>
+            Lumo <span className="text-lumo-violet">Notes</span>
+          </h1>
+        </div>
+        <TopMenuBar onExit={() => void appWindow.close()} />
       </div>
       <div className="flex items-center text-slate-300">
         <button
