@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { BrandMark } from "./BrandMark";
 import { SectionHeader } from "./SectionHeader";
 import { useNotes } from "../store/notesStore";
@@ -122,6 +123,7 @@ function ActionIconButton({
 }
 
 export function Sidebar() {
+  const [tagMenu, setTagMenu] = useState<{ tag: string; x: number; y: number } | null>(null);
   const {
     activeFolderId,
     activeTag,
@@ -191,6 +193,11 @@ export function Sidebar() {
     if (window.confirm(`Delete "${tag}"? It will be removed from notes.`)) {
       deleteTag(tag);
     }
+  };
+
+  const openTagMenu = (event: React.MouseEvent, tag: string) => {
+    event.preventDefault();
+    setTagMenu({ tag, x: event.clientX, y: event.clientY });
   };
 
   return (
@@ -295,39 +302,24 @@ export function Sidebar() {
             +
           </button>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-1.5">
           {availableTags.length === 0 ? (
             <p className="text-xs text-slate-500">No tags yet</p>
           ) : null}
           {availableTags.map((tag) => (
-            <span
+            <button
               key={tag}
-              className={`group rounded-lg border px-2.5 py-1.5 text-xs transition hover:border-lumo-violet/40 hover:text-white active:scale-95 ${
+              className={`rounded-md px-2 py-1 text-xs leading-none transition hover:text-white active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lumo-violet/35 ${
                 activeTag === tag
-                  ? "border-lumo-violet/40 bg-lumo-violet/15 text-white"
-                  : "border-white/10 bg-white/[0.04] text-slate-300"
+                  ? "bg-lumo-violet/15 text-white"
+                  : "bg-white/[0.04] text-slate-300 hover:bg-white/[0.07]"
               }`}
+              onClick={() => setActiveTag(tag)}
+              onContextMenu={(event) => openTagMenu(event, tag)}
+              title="Right-click to edit or delete"
             >
-              <button onClick={() => setActiveTag(tag)}>{tag}</button>
-              <button
-                type="button"
-                className="ml-2 inline-grid h-6 w-6 place-items-center rounded-md text-slate-500 opacity-0 transition duration-150 hover:bg-lumo-violet/10 hover:text-lumo-violet active:scale-95 group-hover:opacity-100 group-focus-within:opacity-100 focus:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-lumo-violet/55"
-                onClick={() => editTag(tag)}
-                aria-label="Rename"
-                title="Rename"
-              >
-                <PencilIcon />
-              </button>
-              <button
-                type="button"
-                className="ml-1 inline-grid h-6 w-6 place-items-center rounded-md text-slate-500 opacity-0 transition duration-150 hover:bg-[#FF4D6D]/10 hover:text-[#FF4D6D] active:scale-95 group-hover:opacity-100 group-focus-within:opacity-100 focus:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#FF4D6D]/55"
-                onClick={() => removeTag(tag)}
-                aria-label="Delete"
-                title="Delete"
-              >
-                <XIcon />
-              </button>
-            </span>
+              {tag}
+            </button>
           ))}
         </div>
         <button
@@ -361,6 +353,43 @@ export function Sidebar() {
           </button>
         </div>
       </div>
+      {tagMenu ? (
+        <div
+          className="fixed inset-0 z-40"
+          onClick={() => setTagMenu(null)}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            setTagMenu(null);
+          }}
+        >
+          <div
+            className="absolute z-50 w-36 rounded-xl border border-white/10 bg-night-900/95 p-1.5 shadow-[0_18px_60px_rgba(0,0,0,0.35)]"
+            style={{ left: tagMenu.x, top: tagMenu.y }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button
+              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-slate-300 transition hover:bg-lumo-violet/10 hover:text-white"
+              onClick={() => {
+                editTag(tagMenu.tag);
+                setTagMenu(null);
+              }}
+            >
+              <PencilIcon />
+              Rename
+            </button>
+            <button
+              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-rose-200 transition hover:bg-[#FF4D6D]/10 hover:text-[#FF4D6D]"
+              onClick={() => {
+                removeTag(tagMenu.tag);
+                setTagMenu(null);
+              }}
+            >
+              <XIcon />
+              Delete
+            </button>
+          </div>
+        </div>
+      ) : null}
     </aside>
   );
 }
