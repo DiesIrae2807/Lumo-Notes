@@ -33,6 +33,8 @@ const editorTools: Array<{ label: string; action: MarkdownAction }> = [
 const wordCount = (content: string) =>
   content.trim() ? content.trim().split(/\s+/).length : 0;
 
+const readingMinutes = (content: string) => Math.max(1, Math.ceil(wordCount(content) / 220));
+
 function EmptyEditor() {
   return (
     <main className="column-panel editor-glow flex min-h-0 flex-col overflow-hidden">
@@ -51,7 +53,13 @@ function EmptyEditor() {
   );
 }
 
-export function Editor() {
+export function Editor({
+  isFocusMode = false,
+  onToggleFocusMode,
+}: {
+  isFocusMode?: boolean;
+  onToggleFocusMode?: () => void;
+}) {
   const {
     addTagToSelectedNote,
     availableTags,
@@ -75,6 +83,8 @@ export function Editor() {
   } = useNotes();
   const [tagInput, setTagInput] = useState("");
   const [editorMode, setEditorMode] = useState<EditorMode>("edit");
+  const [isTypewriter, setIsTypewriter] = useState(false);
+  const [wordGoal, setWordGoal] = useState("");
   const bodyRef = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
@@ -138,6 +148,17 @@ export function Editor() {
     } catch (error) {
       window.alert(error instanceof Error ? error.message : String(error));
     }
+  };
+
+  const keepCursorCentered = (textarea: HTMLTextAreaElement) => {
+    if (!isTypewriter || !isFocusMode) return;
+
+    window.requestAnimationFrame(() => {
+      const valueBeforeCursor = textarea.value.slice(0, textarea.selectionStart);
+      const lineIndex = valueBeforeCursor.split("\n").length - 1;
+      const lineHeight = 32;
+      textarea.scrollTop = Math.max(0, lineIndex * lineHeight - textarea.clientHeight / 2);
+    });
   };
 
   const insertMarkdown = (action: MarkdownAction) => {
@@ -228,6 +249,7 @@ export function Editor() {
       selectedNote.content.slice(0, start) + insertion + selectedNote.content.slice(end);
 
     updateSelectedNote({ content: nextContent });
+    keepCursorCentered(textarea);
 
     window.setTimeout(() => {
       textarea.focus();
@@ -256,8 +278,19 @@ export function Editor() {
     }
   };
 
+  const currentWordCount = wordCount(selectedNote.content);
+  const numericWordGoal = Number(wordGoal);
+  const goalProgress =
+    Number.isFinite(numericWordGoal) && numericWordGoal > 0
+      ? Math.min(100, Math.round((currentWordCount / numericWordGoal) * 100))
+      : null;
+
   return (
-    <main className="column-panel editor-glow flex min-h-0 flex-col overflow-hidden">
+    <main
+      className={`column-panel editor-glow flex min-h-0 flex-col overflow-hidden ${
+        isFocusMode ? "focus-editor" : ""
+      }`}
+    >
       <div className="flex items-center justify-between border-b border-white/10 px-6 py-4">
         <div className="flex min-w-0 items-center gap-2 text-sm text-slate-400">
           <span className="h-2 w-2 shrink-0 rounded-full bg-lumo-blue" />
@@ -306,6 +339,14 @@ export function Editor() {
             Export .md
           </button>
           <button
+            className={`rounded-lg px-3 py-1.5 transition hover:bg-white/[0.05] hover:text-slate-300 active:scale-95 ${
+              isFocusMode ? "text-lumo-teal" : ""
+            }`}
+            onClick={onToggleFocusMode}
+          >
+            {isFocusMode ? "Exit Focus" : "Focus"}
+          </button>
+          <button
             className="rounded-lg px-3 py-1.5 transition hover:bg-white/[0.05] hover:text-slate-300 active:scale-95"
             onClick={() =>
               selectedNote.isDeleted ? restoreNote(selectedNote.id) : moveToTrash(selectedNote.id)
@@ -325,7 +366,34 @@ export function Editor() {
       </div>
 
       <article className="scroll-area flex-1 overflow-y-auto px-6 py-7 md:px-8">
-        <div className="mx-auto max-w-3xl">
+        <div className={`mx-auto ${isFocusMode ? "max-w-5xl" : "max-w-3xl"}`}>
+          {isFocusMode ? (
+            <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.025] px-4 py-3 text-xs text-slate-400">
+              <div className="flex flex-wrap items-center gap-4">
+                <span>{currentWordCount} words</span>
+                <span>{selectedNote.content.length} chars</span>
+                <span>{readingMinutes(selectedNote.content)} min read</span>
+                {goalProgress !== null ? <span>{goalProgress}% of goal</span> : null}
+              </div>
+              <div className="flex items-center gap-3">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={isTypewriter}
+                    onChange={(event) => setIsTypewriter(event.target.checked)}
+                  />
+                  Typewriter
+                </label>
+                <input
+                  className="h-8 w-28 rounded-lg border border-white/10 bg-night-950/60 px-2 text-xs text-slate-200 outline-none placeholder:text-slate-600 focus:border-lumo-teal/40"
+                  value={wordGoal}
+                  onChange={(event) => setWordGoal(event.target.value.replace(/[^\d]/g, ""))}
+                  placeholder="Word goal"
+                />
+              </div>
+            </div>
+          ) : null}
+
           <div className="mb-7">
             <div className="mb-4 grid h-7 w-7 place-items-center text-xl text-lumo-violet">
               *
@@ -445,12 +513,17 @@ export function Editor() {
               isInternalLinkResolved={isInternalLinkResolved}
             />
           ) : editorMode === "split" ? (
-            <div className="grid gap-4 lg:grid-cols-2">
+            <div className="grid gap-4 xl:grid-cols-2">
               <textarea
                 ref={bodyRef}
-                className="min-h-[420px] w-full resize-none rounded-xl border border-white/10 bg-night-950/20 p-4 text-base leading-8 text-slate-200 outline-none transition placeholder:text-slate-600 focus:border-lumo-teal/35 focus:bg-night-950/35"
+                className={`min-h-[420px] w-full resize-none rounded-xl border border-white/10 bg-night-950/20 p-4 text-base leading-8 text-slate-200 outline-none transition placeholder:text-slate-600 focus:border-lumo-teal/35 focus:bg-night-950/35 ${
+                  isFocusMode && isTypewriter ? "focus-typewriter-textarea" : ""
+                }`}
                 value={selectedNote.content}
-                onChange={(event) => updateSelectedNote({ content: event.target.value })}
+                onChange={(event) => {
+                  updateSelectedNote({ content: event.target.value });
+                  keepCursorCentered(event.target);
+                }}
                 onBlur={forceSaveSelectedNote}
                 onKeyDown={handleEditorKeyDown}
                 placeholder="Start writing..."
@@ -464,9 +537,14 @@ export function Editor() {
           ) : (
             <textarea
               ref={bodyRef}
-              className="min-h-[420px] w-full resize-none rounded-xl border border-white/10 bg-night-950/20 p-4 text-base leading-8 text-slate-200 outline-none transition placeholder:text-slate-600 focus:border-lumo-teal/35 focus:bg-night-950/35"
+              className={`min-h-[420px] w-full resize-none rounded-xl border border-white/10 bg-night-950/20 p-4 text-base leading-8 text-slate-200 outline-none transition placeholder:text-slate-600 focus:border-lumo-teal/35 focus:bg-night-950/35 ${
+                isFocusMode && isTypewriter ? "focus-typewriter-textarea" : ""
+              }`}
               value={selectedNote.content}
-              onChange={(event) => updateSelectedNote({ content: event.target.value })}
+              onChange={(event) => {
+                updateSelectedNote({ content: event.target.value });
+                keepCursorCentered(event.target);
+              }}
               onBlur={forceSaveSelectedNote}
               onKeyDown={handleEditorKeyDown}
               placeholder="Start writing..."

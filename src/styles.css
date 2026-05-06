@@ -79,6 +79,24 @@
       rgba(10, 16, 32, 0.48);
   }
 
+  .focus-editor {
+    border-right: 0;
+    background:
+      radial-gradient(circle at 50% 12%, rgba(156, 124, 244, 0.16), transparent 34%),
+      radial-gradient(circle at 68% 26%, rgba(89, 213, 202, 0.14), transparent 36%),
+      rgba(7, 10, 18, 0.72);
+  }
+
+  .focus-editor textarea {
+    min-height: min(58vh, 620px);
+  }
+
+  .focus-typewriter-textarea {
+    scroll-behavior: smooth;
+    padding-top: min(22vh, 180px);
+    padding-bottom: min(22vh, 180px);
+  }
+
   .window-shell {
     height: 100dvh;
     width: 100dvw;

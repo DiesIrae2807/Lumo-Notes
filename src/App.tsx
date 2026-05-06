@@ -1,4 +1,4 @@
-import { useEffect, type MouseEvent } from "react";
+import { useEffect, useState, type MouseEvent } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Editor } from "./components/Editor";
 import { InsightsPanel } from "./components/InsightsPanel";
@@ -131,6 +131,12 @@ function AppShortcuts() {
         return;
       }
 
+      if (key === "f" && event.shiftKey) {
+        event.preventDefault();
+        window.dispatchEvent(new Event("lumo-toggle-focus-mode"));
+        return;
+      }
+
       if (key === "f") {
         event.preventDefault();
         window.dispatchEvent(new Event("lumo-focus-search"));
@@ -168,6 +174,31 @@ export default function App() {
 
 function Workspace() {
   const { activeView } = useNotes();
+  const [isFocusMode, setIsFocusMode] = useState(false);
+
+  useEffect(() => {
+    const toggleFocusMode = () => setIsFocusMode((current) => !current);
+    const exitFocusMode = () => setIsFocusMode(false);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (
+        event.key === "Escape" &&
+        isFocusMode &&
+        !document.querySelector("[data-command-palette='true']")
+      ) {
+        event.preventDefault();
+        setIsFocusMode(false);
+      }
+    };
+
+    window.addEventListener("lumo-toggle-focus-mode", toggleFocusMode);
+    window.addEventListener("lumo-exit-focus-mode", exitFocusMode);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("lumo-toggle-focus-mode", toggleFocusMode);
+      window.removeEventListener("lumo-exit-focus-mode", exitFocusMode);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [isFocusMode]);
 
   return (
       <div className="app-root min-h-[100dvh] overflow-hidden bg-night-950 text-slate-100">
@@ -179,15 +210,27 @@ function Workspace() {
 
         <div className="window-shell relative flex min-h-[100dvh] flex-col overflow-hidden bg-night-900/62 backdrop-blur-xl">
           <WindowTitleBar />
-          <div className="workspace-grid grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[235px_330px_minmax(460px,1fr)] xl:grid-cols-[235px_330px_minmax(520px,1fr)_280px]">
-            <Sidebar />
-            <NotesList />
-            {activeView === "graph" ? (
-              <GraphView />
+          <div
+            className={`workspace-grid grid min-h-0 flex-1 overflow-hidden ${
+              isFocusMode
+                ? "grid-cols-1"
+                : "grid-cols-1 lg:grid-cols-[235px_330px_minmax(460px,1fr)] xl:grid-cols-[235px_330px_minmax(520px,1fr)_280px]"
+            }`}
+          >
+            {isFocusMode ? (
+              <Editor isFocusMode onToggleFocusMode={() => setIsFocusMode(false)} />
             ) : (
               <>
-                <Editor />
-                <InsightsPanel />
+                <Sidebar />
+                <NotesList />
+                {activeView === "graph" ? (
+                  <GraphView />
+                ) : (
+                  <>
+                    <Editor onToggleFocusMode={() => setIsFocusMode(true)} />
+                    <InsightsPanel />
+                  </>
+                )}
               </>
             )}
           </div>

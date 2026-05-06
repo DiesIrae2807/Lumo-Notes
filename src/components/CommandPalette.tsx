@@ -169,6 +169,14 @@ export function CommandPalette() {
         },
       },
       {
+        id: "command-toggle-focus-mode",
+        title: "Toggle Focus Mode",
+        subtitle: "Hide surrounding panels for focused writing",
+        section: "Commands",
+        keywords: "focus distraction free writing zen",
+        run: () => window.dispatchEvent(new Event("lumo-toggle-focus-mode")),
+      },
+      {
         id: "command-preview",
         title: "Toggle Preview Mode",
         subtitle: "Show rendered Markdown preview",
