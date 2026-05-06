@@ -1,6 +1,4 @@
-import { useState } from "react";
 import { BrandMark } from "./BrandMark";
-import { ImportExportActions } from "./ImportExportActions";
 import { SectionHeader } from "./SectionHeader";
 import { useNotes } from "../store/notesStore";
 import type { SidebarView } from "../types/note";
@@ -10,7 +8,6 @@ const navGlyphs: Record<string, string> = {
   Favorites: "F",
   Recent: "R",
   Graph: "G",
-  Settings: "S",
   Trash: "T",
 };
 
@@ -19,7 +16,6 @@ const navItems: Array<{ label: string; view: SidebarView }> = [
   { label: "Favorites", view: "favorites" },
   { label: "Recent", view: "recent" },
   { label: "Graph", view: "graph" },
-  { label: "Settings", view: "settings" },
   { label: "Trash", view: "trash" },
 ];
 
@@ -69,6 +65,25 @@ function XIcon() {
   );
 }
 
+function CogIcon() {
+  return (
+    <svg width="17" height="17" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+      <path
+        d="M9 6.35A2.65 2.65 0 1 0 9 11.65A2.65 2.65 0 0 0 9 6.35Z"
+        stroke="currentColor"
+        strokeWidth="1.45"
+      />
+      <path
+        d="M14.6 9.95V8.05L12.95 7.72C12.82 7.32 12.66 6.94 12.45 6.6L13.38 5.22L12.03 3.87L10.65 4.8C10.31 4.6 9.94 4.43 9.53 4.31L9.05 2.7H7.15L6.82 4.35C6.42 4.48 6.04 4.64 5.7 4.85L4.32 3.92L2.97 5.27L3.9 6.65C3.7 6.99 3.53 7.36 3.41 7.77L1.8 8.25V10.15L3.45 10.48C3.58 10.88 3.74 11.26 3.95 11.6L3.02 12.98L4.37 14.33L5.75 13.4C6.09 13.6 6.46 13.77 6.87 13.89L7.35 15.5H9.25L9.58 13.85C9.98 13.72 10.36 13.56 10.7 13.35L12.08 14.28L13.43 12.93L12.5 11.55C12.7 11.21 12.87 10.84 12.99 10.43L14.6 9.95Z"
+        stroke="currentColor"
+        strokeWidth="1.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 function ActionIconButton({
   children,
   danger = false,
@@ -107,7 +122,6 @@ function ActionIconButton({
 }
 
 export function Sidebar() {
-  const [isToolsOpen, setIsToolsOpen] = useState(false);
   const {
     activeFolderId,
     activeTag,
@@ -332,19 +346,19 @@ export function Sidebar() {
           <p className="truncate text-sm font-medium text-white">Alex Smith</p>
           <p className="truncate text-xs text-slate-500">alex@lumonotes.app</p>
         </div>
-        <div className="relative">
+        <div>
           <button
-            className="grid h-8 w-8 place-items-center rounded-lg border border-white/10 text-slate-400 transition hover:text-white"
-            onClick={() => setIsToolsOpen((current) => !current)}
-            title="Tools"
+            className={`grid h-8 w-8 place-items-center rounded-lg border border-white/10 transition active:scale-95 ${
+              activeView === "settings"
+                ? "border-lumo-teal/30 bg-lumo-teal/10 text-lumo-teal"
+                : "text-slate-400 hover:border-lumo-violet/30 hover:bg-white/[0.05] hover:text-white"
+            }`}
+            onClick={() => setActiveView("settings")}
+            aria-label="Open Settings"
+            title="Settings"
           >
-            ...
+            <CogIcon />
           </button>
-          {isToolsOpen ? (
-            <div className="absolute bottom-10 right-0 z-20 w-64 rounded-2xl border border-white/10 bg-night-900/95 p-3 shadow-[0_18px_60px_rgba(0,0,0,0.35)]">
-              <ImportExportActions compact />
-            </div>
-          ) : null}
         </div>
       </div>
     </aside>
