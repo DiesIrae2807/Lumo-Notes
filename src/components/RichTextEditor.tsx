@@ -1,5 +1,5 @@
 import { EditorContent, useEditor, type Editor as TiptapEditor } from "@tiptap/react";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Attachment } from "../types/note";
 import { editorHtmlToMarkdown, markdownToEditorHtml } from "../utils/richTextMarkdown";
 import { getAttachmentDataUrl } from "../services/database";
@@ -19,6 +19,7 @@ export type RichTextAction =
 
 export type RichTextLinkRequest = {
   selectedText: string;
+  title?: string;
 };
 
 type RichTextEditorProps = {
@@ -32,6 +33,53 @@ type RichTextEditorProps = {
   onChange: (markdown: string, reason?: "typing" | "format") => void;
   onInternalLinkClick?: (title: string) => void;
   onReady?: (editor: TiptapEditor | null) => void;
+};
+
+type FloatingPosition = {
+  left: number;
+  top: number;
+};
+
+type LinkPopover = FloatingPosition & {
+  label: string;
+  title: string;
+};
+
+type AttachmentPopover = FloatingPosition & {
+  id: string;
+  pos: number;
+};
+
+type SlashCommand = {
+  action: () => void;
+  label: string;
+  subtitle: string;
+};
+
+const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+
+const positionFromCoords = (
+  shell: HTMLDivElement | null,
+  coords: { left: number; top: number },
+  offsetY = -44,
+): FloatingPosition => {
+  const rect = shell?.getBoundingClientRect();
+  if (!rect) return { left: 16, top: 16 };
+  return {
+    left: clamp(coords.left - rect.left, 12, Math.max(12, rect.width - 220)),
+    top: clamp(coords.top - rect.top + offsetY, 12, Math.max(12, rect.height - 92)),
+  };
+};
+
+const selectedText = (editor: TiptapEditor) =>
+  editor.state.doc.textBetween(editor.state.selection.from, editor.state.selection.to, " ");
+
+const dispatchLinkDialog = (detail: RichTextLinkRequest) => {
+  window.dispatchEvent(
+    new CustomEvent<RichTextLinkRequest>("lumo-open-rich-link-dialog", {
+      detail,
+    }),
+  );
 };
 
 export function runRichTextAction(editor: TiptapEditor | null, action: RichTextAction) {
@@ -60,16 +108,7 @@ export function runRichTextAction(editor: TiptapEditor | null, action: RichTextA
     }
   }
   if (action === "link") {
-    const selectedText = editor.state.doc.textBetween(
-      editor.state.selection.from,
-      editor.state.selection.to,
-      " ",
-    );
-    window.dispatchEvent(
-      new CustomEvent<RichTextLinkRequest>("lumo-open-rich-link-dialog", {
-        detail: { selectedText },
-      }),
-    );
+    dispatchLinkDialog({ selectedText: selectedText(editor) });
   }
 }
 
@@ -115,7 +154,24 @@ export function RichTextEditor({
   const isApplyingContent = useRef(false);
   const latestMarkdown = useRef(content);
   const attachmentUrls = useRef<Record<string, string>>({});
+  const shellRef = useRef<HTMLDivElement | null>(null);
+  const findInputRef = useRef<HTMLInputElement | null>(null);
+  const [bubblePosition, setBubblePosition] = useState<FloatingPosition | null>(null);
+  const [linkPopover, setLinkPopover] = useState<LinkPopover | null>(null);
+  const [attachmentPopover, setAttachmentPopover] = useState<AttachmentPopover | null>(null);
+  const [slashPosition, setSlashPosition] = useState<FloatingPosition | null>(null);
+  const [findOpen, setFindOpen] = useState(false);
+  const [findQuery, setFindQuery] = useState("");
+  const [findIndex, setFindIndex] = useState(0);
+  const [findTotal, setFindTotal] = useState(0);
   const html = useMemo(() => markdownToEditorHtml(content, attachmentUrls.current), [content]);
+
+  const hideFloatingUi = useCallback(() => {
+    setBubblePosition(null);
+    setLinkPopover(null);
+    setAttachmentPopover(null);
+    setSlashPosition(null);
+  }, []);
 
   const editor = useEditor({
     content: html,
@@ -124,14 +180,55 @@ export function RichTextEditor({
         class: `rich-editor-prose ${isFocusMode && isTypewriter ? "rich-editor-typewriter" : ""}`,
         spellcheck: "true",
       },
-      handleClick: (_view, _pos, event) => {
+      transformPastedHTML: (html) =>
+        html
+          .replace(/\sstyle=(".*?"|'.*?')/gi, "")
+          .replace(/\sclass=(".*?"|'.*?')/gi, ""),
+      transformPastedText: (text) => text.replace(/\u00a0/g, " "),
+      handleClick: (_view, pos, event) => {
         const target = event.target as HTMLElement | null;
+        const image = target?.closest("img");
+        if (image) {
+          const attachmentSrc = image.getAttribute("data-attachment-src") ?? image.getAttribute("src") ?? "";
+          const attachmentId = attachmentSrc.startsWith("attachment://")
+            ? attachmentSrc.slice("attachment://".length)
+            : "";
+          if (attachmentId) {
+            event.preventDefault();
+            const coords = positionFromCoords(shellRef.current, {
+              left: event.clientX,
+              top: event.clientY,
+            });
+            setAttachmentPopover({ ...coords, id: attachmentId, pos });
+            setLinkPopover(null);
+            setSlashPosition(null);
+            setBubblePosition(null);
+            return true;
+          }
+        }
+
         const link = target?.closest("a");
-        if (!link) return false;
+        if (!link) {
+          hideFloatingUi();
+          return false;
+        }
         const href = link.getAttribute("href") ?? "";
         if (href.startsWith("internal:")) {
           event.preventDefault();
-          onInternalLinkClick?.(decodeURIComponent(href.slice("internal:".length)));
+          editor?.chain().focus().setTextSelection(pos).extendMarkRange("link").run();
+          const title = decodeURIComponent(href.slice("internal:".length));
+          const coords = positionFromCoords(shellRef.current, {
+            left: event.clientX,
+            top: event.clientY,
+          });
+          setLinkPopover({
+            ...coords,
+            label: link.textContent?.trim() || title,
+            title,
+          });
+          setAttachmentPopover(null);
+          setSlashPosition(null);
+          setBubblePosition(null);
           return true;
         }
         if (href.startsWith("attachment://")) {
@@ -142,10 +239,50 @@ export function RichTextEditor({
         return false;
       },
       handleKeyDown: (_view, event) => {
+        const key = event.key.toLowerCase();
+        if (event.ctrlKey && key === "f") {
+          event.preventDefault();
+          setFindOpen(true);
+          window.setTimeout(() => findInputRef.current?.focus(), 0);
+          return true;
+        }
         if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === "k") {
           event.preventDefault();
           runRichTextAction(editor, "link");
           return true;
+        }
+        if (event.key === "/") {
+          window.setTimeout(() => {
+            if (!editor) return;
+            const coords = editor.view.coordsAtPos(editor.state.selection.from);
+            setSlashPosition(positionFromCoords(shellRef.current, coords, 16));
+            setBubblePosition(null);
+            setLinkPopover(null);
+            setAttachmentPopover(null);
+          }, 0);
+          return false;
+        }
+        if (event.key === "Escape") {
+          if (slashPosition || findOpen || linkPopover || attachmentPopover || bubblePosition) {
+            event.preventDefault();
+            setFindOpen(false);
+            hideFloatingUi();
+            return true;
+          }
+        }
+        if (event.key === " " && editor) {
+          const { $from } = editor.state.selection;
+          const textBefore = $from.parent.textBetween(0, $from.parentOffset);
+          if (/^\[(x|X| )?\]$/.test(textBefore)) {
+            event.preventDefault();
+            editor
+              .chain()
+              .focus()
+              .deleteRange({ from: $from.start(), to: $from.pos })
+              .toggleTaskList()
+              .run();
+            return true;
+          }
         }
         return false;
       },
@@ -171,6 +308,16 @@ export function RichTextEditor({
     },
     onDestroy: () => onReady?.(null),
     onSelectionUpdate: ({ editor }) => {
+      const { from, to } = editor.state.selection;
+      if (from !== to) {
+        const coords = editor.view.coordsAtPos(from);
+        setBubblePosition(positionFromCoords(shellRef.current, coords, -48));
+        setSlashPosition(null);
+        setLinkPopover(null);
+        setAttachmentPopover(null);
+      } else {
+        setBubblePosition(null);
+      }
       window.dispatchEvent(
         new CustomEvent("lumo-rich-selection-state", {
           detail: {
@@ -258,14 +405,348 @@ export function RichTextEditor({
     };
   }, [editor]);
 
+  useEffect(() => {
+    if (!editor) return;
+
+    const focusHeading = (event: Event) => {
+      const title = (event as CustomEvent<{ title: string }>).detail?.title?.trim();
+      if (!title) return;
+
+      let targetPosition: number | null = null;
+      editor.state.doc.descendants((node, pos) => {
+        if (targetPosition !== null) return false;
+        if (node.type.name === "heading" && node.textContent.trim() === title) {
+          targetPosition = pos + 1;
+          return false;
+        }
+        return true;
+      });
+
+      if (targetPosition !== null) {
+        editor.chain().focus().setTextSelection(targetPosition).run();
+      }
+    };
+
+    window.addEventListener("lumo-focus-note-heading", focusHeading);
+    return () => window.removeEventListener("lumo-focus-note-heading", focusHeading);
+  }, [editor]);
+
   const insertAttachmentLabel = useCallback(() => {
     if (!attachments.length) return null;
     return attachments.map((attachment) => attachment.filename).join(", ");
   }, [attachments]);
 
+  const runSlashCommand = useCallback(
+    (action: () => void) => {
+      if (!editor) return;
+      const { from } = editor.state.selection;
+      if (from > 0 && editor.state.doc.textBetween(from - 1, from) === "/") {
+        editor.chain().focus().deleteRange({ from: from - 1, to: from }).run();
+      }
+      action();
+      setSlashPosition(null);
+    },
+    [editor],
+  );
+
+  const moveCurrentBlock = useCallback(
+    (direction: -1 | 1) => {
+      if (!editor) return;
+      const { state, view } = editor;
+      const { $from } = state.selection;
+      let depth = $from.depth;
+
+      while (depth > 0 && !$from.node(depth).isBlock) {
+        depth -= 1;
+      }
+
+      if (depth <= 0) return;
+
+      const parent = $from.node(depth - 1);
+      const index = $from.index(depth - 1);
+      const node = $from.node(depth);
+      const from = $from.before(depth);
+      const to = $from.after(depth);
+
+      if (direction === -1) {
+        if (index <= 0) return;
+        const previous = parent.child(index - 1);
+        const insertAt = from - previous.nodeSize;
+        const transaction = state.tr.delete(from, to).insert(insertAt, node.copy(node.content)).scrollIntoView();
+        view.dispatch(transaction);
+        editor.commands.focus();
+        return;
+      }
+
+      if (index >= parent.childCount - 1) return;
+      const next = parent.child(index + 1);
+      const insertAt = from + next.nodeSize;
+      const transaction = state.tr.delete(from, to).insert(insertAt, node.copy(node.content)).scrollIntoView();
+      view.dispatch(transaction);
+      editor.commands.focus();
+    },
+    [editor],
+  );
+
+  const slashCommands: SlashCommand[] = useMemo(
+    () => [
+      {
+        action: () => editor?.chain().focus().setNode("heading", { level: 2, accent: false }).run(),
+        label: "Heading",
+        subtitle: "Start a section",
+      },
+      {
+        action: () => editor?.chain().focus().toggleTaskList().run(),
+        label: "Checklist",
+        subtitle: "Track tasks inline",
+      },
+      {
+        action: () => editor?.chain().focus().toggleBulletList().run(),
+        label: "Bulleted list",
+        subtitle: "Create quick points",
+      },
+      {
+        action: () => editor?.chain().focus().toggleBlockquote().run(),
+        label: "Quote",
+        subtitle: "Add a callout",
+      },
+      {
+        action: () => editor?.chain().focus().toggleCodeBlock().run(),
+        label: "Code block",
+        subtitle: "Insert formatted code",
+      },
+      {
+        action: () => runRichTextAction(editor ?? null, "link"),
+        label: "Internal link",
+        subtitle: "Link to another note",
+      },
+      {
+        action: () => window.dispatchEvent(new Event("lumo-editor-attach-file")),
+        label: "Attach file",
+        subtitle: "Add image or file",
+      },
+      {
+        action: () => moveCurrentBlock(-1),
+        label: "Move block up",
+        subtitle: "Reorder the current block",
+      },
+      {
+        action: () => moveCurrentBlock(1),
+        label: "Move block down",
+        subtitle: "Reorder the current block",
+      },
+    ],
+    [editor, moveCurrentBlock],
+  );
+
+  const findMatches = useCallback(
+    (query: string) => {
+      if (!editor || !query.trim()) return [];
+      const needle = query.trim().toLowerCase();
+      const matches: Array<{ from: number; to: number }> = [];
+
+      editor.state.doc.descendants((node, pos) => {
+        if (!node.isText || !node.text) return true;
+        const text = node.text.toLowerCase();
+        let index = text.indexOf(needle);
+        while (index !== -1) {
+          matches.push({ from: pos + index, to: pos + index + needle.length });
+          index = text.indexOf(needle, index + needle.length);
+        }
+        return true;
+      });
+
+      return matches;
+    },
+    [editor],
+  );
+
+  const selectFindMatch = useCallback(
+    (query: string, direction: 1 | -1 = 1) => {
+      if (!editor) return;
+      const matches = findMatches(query);
+      setFindTotal(matches.length);
+      if (!matches.length) {
+        setFindIndex(0);
+        return;
+      }
+
+      const nextIndex = direction === 1
+        ? (findIndex + 1) % matches.length
+        : (findIndex - 1 + matches.length) % matches.length;
+      const match = matches[nextIndex];
+      setFindIndex(nextIndex);
+      editor.chain().focus().setTextSelection(match).run();
+    },
+    [editor, findIndex, findMatches],
+  );
+
+  const removeSelectedAttachmentReference = useCallback(() => {
+    if (!editor || !attachmentPopover) return;
+    editor.chain().focus().deleteRange({ from: attachmentPopover.pos, to: attachmentPopover.pos + 1 }).run();
+    setAttachmentPopover(null);
+  }, [attachmentPopover, editor]);
+
   return (
-    <div className="rich-editor-shell" data-attachment-labels={insertAttachmentLabel() ?? undefined}>
+    <div
+      ref={shellRef}
+      className="rich-editor-shell"
+      data-attachment-labels={insertAttachmentLabel() ?? undefined}
+      data-empty={content.trim() ? undefined : "true"}
+    >
       <EditorContent editor={editor} />
+      {bubblePosition ? (
+        <div
+          className="rich-editor-popover rich-editor-bubble"
+          style={{ left: bubblePosition.left, top: bubblePosition.top }}
+          onMouseDown={(event) => event.preventDefault()}
+        >
+          {[
+            ["bold", "B"],
+            ["italic", "I"],
+            ["link", "Link"],
+            ["code", "Code"],
+          ].map(([action, label]) => (
+            <button
+              key={action}
+              className="rich-editor-popover-button"
+              onClick={() => runRichTextAction(editor ?? null, action as RichTextAction)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {slashPosition ? (
+        <div
+          className="rich-editor-popover rich-editor-command-menu"
+          style={{ left: slashPosition.left, top: slashPosition.top }}
+          onMouseDown={(event) => event.preventDefault()}
+        >
+          {slashCommands.map((command) => (
+            <button
+              key={command.label}
+              className="rich-editor-command-item"
+              onClick={() => runSlashCommand(command.action)}
+            >
+              <span className="font-medium text-slate-100">{command.label}</span>
+              <span className="text-[11px] text-slate-500">{command.subtitle}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {linkPopover ? (
+        <div
+          className="rich-editor-popover rich-editor-link-popover"
+          style={{ left: linkPopover.left, top: linkPopover.top }}
+          onMouseDown={(event) => event.preventDefault()}
+        >
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-xs font-semibold text-white">{linkPopover.label}</p>
+            <p className="truncate text-[11px] text-slate-500">{linkPopover.title}</p>
+          </div>
+          <button
+            className="rich-editor-popover-button"
+            onClick={() => {
+              onInternalLinkClick?.(linkPopover.title);
+              setLinkPopover(null);
+            }}
+          >
+            Open
+          </button>
+          <button
+            className="rich-editor-popover-button"
+            onClick={() => {
+              dispatchLinkDialog({
+                selectedText: linkPopover.label,
+                title: linkPopover.title,
+              });
+              setLinkPopover(null);
+            }}
+          >
+            Edit
+          </button>
+          <button
+            className="rich-editor-popover-button rich-editor-popover-danger"
+            onClick={() => {
+              editor?.chain().focus().extendMarkRange("link").unsetLink().run();
+              setLinkPopover(null);
+            }}
+          >
+            Remove
+          </button>
+        </div>
+      ) : null}
+      {attachmentPopover ? (
+        <div
+          className="rich-editor-popover rich-editor-attachment-popover"
+          style={{ left: attachmentPopover.left, top: attachmentPopover.top }}
+          onMouseDown={(event) => event.preventDefault()}
+        >
+          <button
+            className="rich-editor-popover-button"
+            onClick={() => {
+              onAttachmentClick?.(attachmentPopover.id);
+              setAttachmentPopover(null);
+            }}
+          >
+            Open
+          </button>
+          <button
+            className="rich-editor-popover-button"
+            onClick={() => editor?.chain().focus().setNodeSelection(attachmentPopover.pos).updateAttributes("image", { width: 320 }).run()}
+          >
+            Small
+          </button>
+          <button
+            className="rich-editor-popover-button"
+            onClick={() => editor?.chain().focus().setNodeSelection(attachmentPopover.pos).updateAttributes("image", { width: null }).run()}
+          >
+            Full
+          </button>
+          <button
+            className="rich-editor-popover-button rich-editor-popover-danger"
+            onClick={removeSelectedAttachmentReference}
+          >
+            Remove ref
+          </button>
+        </div>
+      ) : null}
+      {findOpen ? (
+        <form
+          className="rich-editor-find-panel"
+          onSubmit={(event) => {
+            event.preventDefault();
+            selectFindMatch(findQuery, 1);
+          }}
+        >
+          <input
+            ref={findInputRef}
+            value={findQuery}
+            onChange={(event) => {
+              setFindQuery(event.target.value);
+              setFindIndex(0);
+              const matches = findMatches(event.target.value);
+              setFindTotal(matches.length);
+              if (matches[0]) {
+                editor?.chain().focus().setTextSelection(matches[0]).run();
+              }
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.preventDefault();
+                setFindOpen(false);
+                editor?.commands.focus();
+              }
+            }}
+            placeholder="Find in note"
+          />
+          <span>{findQuery.trim() ? `${findTotal ? findIndex + 1 : 0}/${findTotal}` : "0/0"}</span>
+          <button type="button" onClick={() => selectFindMatch(findQuery, -1)}>Prev</button>
+          <button type="submit">Next</button>
+          <button type="button" onClick={() => setFindOpen(false)}>Close</button>
+        </form>
+      ) : null}
     </div>
   );
 }

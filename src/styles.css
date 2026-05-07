@@ -120,6 +120,7 @@
   }
 
   .rich-editor-shell {
+    position: relative;
     min-height: 420px;
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 0.75rem;
@@ -132,7 +133,15 @@
     background: rgba(5, 10, 18, 0.35);
   }
 
+  .rich-editor-shell[data-empty="true"] .rich-editor-prose::before {
+    content: "Start writing...";
+    position: absolute;
+    color: rgb(100 116 139);
+    pointer-events: none;
+  }
+
   .rich-editor-prose {
+    position: relative;
     min-height: 420px;
     padding: 1rem;
     color: rgb(226 232 240);
@@ -235,6 +244,11 @@
     color: var(--lumo-secondary);
     font-weight: 650;
     text-decoration: none;
+    cursor: pointer;
+  }
+
+  .rich-editor-prose a:hover {
+    color: color-mix(in srgb, var(--lumo-secondary) 72%, white);
   }
 
   .rich-editor-image {
@@ -269,6 +283,111 @@
   .rich-editor-typewriter {
     padding-top: min(18vh, 140px);
     padding-bottom: min(22vh, 180px);
+  }
+
+  .rich-editor-popover,
+  .rich-editor-find-panel {
+    position: absolute;
+    z-index: 35;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background:
+      radial-gradient(circle at 12% 0%, color-mix(in srgb, var(--lumo-secondary) 10%, transparent), transparent 42%),
+      rgba(8, 13, 25, 0.96);
+    box-shadow: 0 18px 48px -28px rgba(0, 0, 0, 0.72);
+    backdrop-filter: blur(18px);
+  }
+
+  .rich-editor-bubble,
+  .rich-editor-link-popover,
+  .rich-editor-attachment-popover {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    border-radius: 0.85rem;
+    padding: 0.35rem;
+  }
+
+  .rich-editor-link-popover {
+    width: min(420px, calc(100% - 24px));
+    gap: 0.4rem;
+  }
+
+  .rich-editor-command-menu {
+    width: min(260px, calc(100% - 24px));
+    border-radius: 1rem;
+    padding: 0.35rem;
+  }
+
+  .rich-editor-popover-button,
+  .rich-editor-command-item,
+  .rich-editor-find-panel button {
+    border-radius: 0.65rem;
+    color: rgb(203 213 225);
+    transition: background-color 150ms ease, color 150ms ease, transform 100ms ease;
+  }
+
+  .rich-editor-popover-button {
+    padding: 0.4rem 0.55rem;
+    font-size: 0.72rem;
+    font-weight: 650;
+  }
+
+  .rich-editor-popover-button:hover,
+  .rich-editor-command-item:hover,
+  .rich-editor-find-panel button:hover {
+    background: rgba(255, 255, 255, 0.06);
+    color: white;
+  }
+
+  .rich-editor-popover-button:active,
+  .rich-editor-command-item:active,
+  .rich-editor-find-panel button:active {
+    transform: scale(0.97);
+  }
+
+  .rich-editor-popover-danger:hover {
+    background: rgba(255, 77, 109, 0.12);
+    color: #ff8a9a;
+  }
+
+  .rich-editor-command-item {
+    display: flex;
+    width: 100%;
+    flex-direction: column;
+    gap: 0.1rem;
+    padding: 0.55rem 0.65rem;
+    text-align: left;
+  }
+
+  .rich-editor-find-panel {
+    right: 0.75rem;
+    top: 0.75rem;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    border-radius: 0.9rem;
+    padding: 0.35rem;
+    font-size: 0.72rem;
+    color: rgb(148 163 184);
+  }
+
+  .rich-editor-find-panel input {
+    height: 2rem;
+    width: 11rem;
+    border: 0;
+    border-radius: 0.6rem;
+    background: rgba(2, 8, 18, 0.7);
+    padding: 0 0.55rem;
+    color: rgb(226 232 240);
+    outline: none;
+  }
+
+  .rich-editor-find-panel input:focus {
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--lumo-secondary) 24%, transparent);
+  }
+
+  .rich-editor-find-panel button {
+    padding: 0.4rem 0.5rem;
   }
 
   .rich-editor-preview-shell {

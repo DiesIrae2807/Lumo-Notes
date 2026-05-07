@@ -326,12 +326,12 @@ export function Editor({
 
   useEffect(() => {
     const openLinkDialog = (event: Event) => {
-      const { selectedText = "" } = (event as CustomEvent<RichTextLinkRequest>).detail ?? {};
+      const { selectedText = "", title } = (event as CustomEvent<RichTextLinkRequest>).detail ?? {};
       setEditorMode("edit");
       setLinkDialog({
         displayText: selectedText,
         isOpen: true,
-        title: selectedText,
+        title: title ?? selectedText,
       });
       window.setTimeout(() => linkTitleInputRef.current?.focus(), 0);
     };
@@ -339,6 +339,15 @@ export function Editor({
     window.addEventListener("lumo-open-rich-link-dialog", openLinkDialog);
     return () => window.removeEventListener("lumo-open-rich-link-dialog", openLinkDialog);
   }, []);
+
+  useEffect(() => {
+    const attachFromEditor = () => {
+      void attachFile();
+    };
+
+    window.addEventListener("lumo-editor-attach-file", attachFromEditor);
+    return () => window.removeEventListener("lumo-editor-attach-file", attachFromEditor);
+  });
 
   if (!selectedNote) {
     return <EmptyEditor />;

@@ -20,6 +20,19 @@ const accentMap = {
 const wordCount = (content: string) =>
   content.trim() ? content.trim().split(/\s+/).length : 0;
 
+const extractOutline = (content: string) =>
+  content
+    .split(/\r?\n/)
+    .map((line) => {
+      const match = line.match(/^(#{1,3})\s+(.+)$/);
+      if (!match) return null;
+      return {
+        level: match[1].length,
+        title: match[2].replace(/^==|==$/g, "").trim(),
+      };
+    })
+    .filter((item): item is { level: number; title: string } => Boolean(item?.title));
+
 export function InsightsPanel({ onCollapse }: { onCollapse?: () => void }) {
   const { activeView, createNote, notes, selectedNote, selectNote } = useNotes();
   const [activeTab, setActiveTab] = useState<"insights" | "links">("insights");
@@ -66,6 +79,10 @@ export function InsightsPanel({ onCollapse }: { onCollapse?: () => void }) {
     ? excerptFromMarkdown(selectedNote.preview || selectedNote.content) ||
       "This note does not have a preview yet."
     : "Select a note to see contextual details.";
+  const outline = useMemo(
+    () => (selectedNote ? extractOutline(selectedNote.content).slice(0, 8) : []),
+    [selectedNote],
+  );
 
   return (
     <aside className="column-panel hidden min-h-0 flex-col overflow-hidden xl:flex">
@@ -146,6 +163,33 @@ export function InsightsPanel({ onCollapse }: { onCollapse?: () => void }) {
                 <span className="mt-2 h-1.5 w-1.5 rounded-full bg-lumo-teal" />
                 <span>{point}</span>
               </p>
+            ))}
+          </div>
+        </section>
+
+        <section className="insight-card">
+          <SectionHeader title="Outline" />
+          <div className="mt-4 space-y-1">
+            {outline.length === 0 ? (
+              <p className="text-xs leading-5 text-slate-500">
+                Add headings to build a quick note outline.
+              </p>
+            ) : null}
+            {outline.map((heading, index) => (
+              <button
+                key={`${heading.title}-${index}`}
+                className="block w-full truncate rounded-lg px-2 py-1.5 text-left text-xs text-slate-400 transition hover:bg-white/[0.05] hover:text-white"
+                style={{ paddingLeft: `${0.5 + (heading.level - 1) * 0.75}rem` }}
+                onClick={() =>
+                  window.dispatchEvent(
+                    new CustomEvent("lumo-focus-note-heading", {
+                      detail: { title: heading.title },
+                    }),
+                  )
+                }
+              >
+                {heading.title}
+              </button>
             ))}
           </div>
         </section>
