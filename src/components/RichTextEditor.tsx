@@ -686,7 +686,7 @@ export function RichTextEditor({
   return (
     <div
       ref={shellRef}
-      className="rich-editor-shell"
+      className={`rich-editor-shell ${isFocusMode ? "rich-editor-shell-focus" : "rich-editor-shell-open"}`}
       data-attachment-labels={insertAttachmentLabel() ?? undefined}
       data-empty={content.trim() ? undefined : "true"}
     >

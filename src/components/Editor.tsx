@@ -625,7 +625,7 @@ export function Editor({
       </div>
 
       <article className="scroll-area flex-1 overflow-y-auto px-6 py-7 md:px-8">
-        <div className={`mx-auto ${isFocusMode ? "max-w-5xl" : "max-w-3xl"}`}>
+        <div className={`w-full ${isFocusMode ? "mx-auto max-w-5xl" : "max-w-[1400px]"}`}>
           {isFocusMode ? (
             <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.025] px-4 py-3 text-xs text-slate-400">
               <div className="flex flex-wrap items-center gap-4">

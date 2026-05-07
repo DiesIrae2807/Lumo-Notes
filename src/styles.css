@@ -121,16 +121,27 @@
 
   .rich-editor-shell {
     position: relative;
+    width: 100%;
     min-height: 420px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 1px solid transparent;
     border-radius: 0.75rem;
-    background: rgba(5, 10, 18, 0.2);
+    background: transparent;
     transition: border-color 160ms ease, background-color 160ms ease;
   }
 
   .rich-editor-shell:focus-within {
-    border-color: rgba(89, 213, 202, 0.35);
-    background: rgba(5, 10, 18, 0.35);
+    border-color: transparent;
+    background: transparent;
+  }
+
+  .rich-editor-shell-focus {
+    border-color: color-mix(in srgb, var(--lumo-secondary) 24%, transparent);
+    background: rgba(5, 10, 18, 0.18);
+  }
+
+  .rich-editor-shell-focus:focus-within {
+    border-color: color-mix(in srgb, var(--lumo-secondary) 36%, transparent);
+    background: rgba(5, 10, 18, 0.24);
   }
 
   .rich-editor-shell[data-empty="true"] .rich-editor-prose::before {
@@ -143,7 +154,7 @@
   .rich-editor-prose {
     position: relative;
     min-height: 420px;
-    padding: 1rem;
+    padding: 1rem 0;
     color: rgb(226 232 240);
     font-size: var(--editor-font-size);
     line-height: var(--editor-line-height);
