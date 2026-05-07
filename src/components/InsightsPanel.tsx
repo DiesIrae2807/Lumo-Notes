@@ -9,6 +9,7 @@ import {
   resolveInternalLinks,
   uniqueResolvedNotes,
 } from "../utils/links";
+import { confirmDialog } from "../utils/confirm";
 
 const accentMap = {
   violet: "bg-lumo-violet",
@@ -243,8 +244,14 @@ function LinkedNotesPanel({
           <button
             key={`${link.sourceNoteId}-${link.rawText}`}
             className="w-full rounded-lg border border-dashed border-lumo-blue/25 bg-lumo-blue/[0.035] px-3 py-2 text-left transition hover:border-lumo-blue/45 hover:bg-lumo-blue/[0.06] active:scale-[0.99]"
-            onClick={() => {
-              if (window.confirm(`Create a new note titled "${link.targetTitle}"?`)) {
+            onClick={async () => {
+              if (
+                await confirmDialog({
+                  confirmLabel: "Create Note",
+                  message: `Create a new note titled "${link.targetTitle}"?`,
+                  title: "Create linked note",
+                })
+              ) {
                 onCreateNote(link.targetTitle);
               }
             }}

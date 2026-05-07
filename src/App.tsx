@@ -11,9 +11,11 @@ import { BrandMark } from "./components/BrandMark";
 import { InsightsIcon } from "./components/icons/InsightsIcon";
 import { TopMenuBar } from "./components/TopMenuBar";
 import { ToastProvider } from "./components/ToastProvider";
+import { ConfirmProvider } from "./components/ConfirmProvider";
 import { NotesProvider } from "./store/notesStore";
 import { SettingsProvider } from "./store/settingsStore";
 import { useNotes } from "./store/notesStore";
+import { confirmDialog } from "./utils/confirm";
 
 const appWindow = getCurrentWindow();
 
@@ -159,9 +161,18 @@ function AppShortcuts() {
 
       if (event.key === "Delete" && !isTypingTarget(event.target) && selectedNote && !selectedNote.isDeleted) {
         event.preventDefault();
-        if (window.confirm("Move this note to Trash? You can restore it later from Trash.")) {
-          moveToTrash(selectedNote.id);
-        }
+        void (async () => {
+          if (
+            await confirmDialog({
+              confirmLabel: "Move to Trash",
+              message: "Move this note to Trash? You can restore it later from Trash.",
+              title: "Move note to Trash",
+              variant: "danger",
+            })
+          ) {
+            moveToTrash(selectedNote.id);
+          }
+        })();
       }
     };
 
@@ -175,13 +186,15 @@ function AppShortcuts() {
 export default function App() {
   return (
     <ToastProvider>
-      <SettingsProvider>
-        <NotesProvider>
-          <AppShortcuts />
-          <CommandPalette />
-          <Workspace />
-        </NotesProvider>
-      </SettingsProvider>
+      <ConfirmProvider>
+        <SettingsProvider>
+          <NotesProvider>
+            <AppShortcuts />
+            <CommandPalette />
+            <Workspace />
+          </NotesProvider>
+        </SettingsProvider>
+      </ConfirmProvider>
     </ToastProvider>
   );
 }

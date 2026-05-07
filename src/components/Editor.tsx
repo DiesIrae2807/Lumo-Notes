@@ -17,6 +17,7 @@ import { noteToMarkdown, sanitizeFilename, saveTextFile } from "../services/file
 import { formatMetadataDate } from "../utils/date";
 import { resolveInternalLink } from "../utils/links";
 import { notify, notifyError } from "../utils/toast";
+import { confirmDialog } from "../utils/confirm";
 
 type MarkdownAction =
   RichTextAction;
@@ -351,24 +352,36 @@ export function Editor({
     setTagInput("");
   };
 
-  const confirmPermanentDelete = () => {
+  const confirmPermanentDelete = async () => {
     if (
       !settings.confirmPermanentDelete ||
-      window.confirm("Permanently delete this note? This cannot be undone.")
+      await confirmDialog({
+        confirmLabel: "Delete Permanently",
+        message: "Permanently delete this note? This cannot be undone.",
+        title: "Delete note permanently",
+        variant: "danger",
+      })
     ) {
       permanentlyDeleteSelectedNote();
       notify({ kind: "success", title: "Note permanently deleted" });
     }
   };
 
-  const confirmMoveToTrash = () => {
-    if (window.confirm("Move this note to Trash? You can restore it later from Trash.")) {
+  const confirmMoveToTrash = async () => {
+    if (
+      await confirmDialog({
+        confirmLabel: "Move to Trash",
+        message: "Move this note to Trash? You can restore it later from Trash.",
+        title: "Move note to Trash",
+        variant: "danger",
+      })
+    ) {
       moveToTrash(selectedNote.id);
       notify({ kind: "info", title: "Moved note to Trash" });
     }
   };
 
-  const openInternalLink = (title: string) => {
+  const openInternalLink = async (title: string) => {
     const linkedNote = resolveInternalLink(title, notes, activeView === "trash");
 
     if (linkedNote) {
@@ -376,7 +389,13 @@ export function Editor({
       return;
     }
 
-    if (window.confirm(`Create a new note titled "${title}"?`)) {
+    if (
+      await confirmDialog({
+        confirmLabel: "Create Note",
+        message: `Create a new note titled "${title}"?`,
+        title: "Create linked note",
+      })
+    ) {
       createNote(title);
     }
   };
@@ -420,9 +439,13 @@ export function Editor({
 
   const confirmRemoveAttachment = async (id: string) => {
     if (
-      !window.confirm(
-        "Remove this attachment from the note? The Markdown reference may remain unless you remove it from the note body.",
-      )
+      !await confirmDialog({
+        confirmLabel: "Remove Attachment",
+        message:
+          "Remove this attachment from the note? The Markdown reference may remain unless you remove it from the note body.",
+        title: "Remove attachment",
+        variant: "danger",
+      })
     ) {
       return;
     }
@@ -569,7 +592,7 @@ export function Editor({
               </button>
               <button
                 className="rounded-lg px-3 py-1.5 text-rose-300 transition hover:bg-rose-400/10 hover:text-rose-100 active:scale-95"
-                onClick={confirmPermanentDelete}
+                onClick={() => void confirmPermanentDelete()}
               >
                 Delete Permanently
               </button>
@@ -598,7 +621,7 @@ export function Editor({
                     className="w-full rounded-lg px-3 py-2 text-left text-xs text-rose-300 transition hover:bg-rose-400/10 hover:text-rose-100"
                     onClick={() => {
                       setIsOverflowOpen(false);
-                      confirmMoveToTrash();
+                      void confirmMoveToTrash();
                     }}
                   >
                     Move to Trash

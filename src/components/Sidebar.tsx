@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { BrandMark } from "./BrandMark";
 import { SectionHeader } from "./SectionHeader";
 import { useNotes } from "../store/notesStore";
 import type { SidebarView } from "../types/note";
 import { notify } from "../utils/toast";
+import { confirmDialog } from "../utils/confirm";
 
 const navGlyphs: Record<string, string> = {
   "All Notes": "A",
@@ -123,8 +124,27 @@ function ActionIconButton({
   );
 }
 
+type NameDialogState =
+  | {
+      description: string;
+      initialValue: string;
+      isOpen: true;
+      label: string;
+      placeholder: string;
+      title: string;
+      type: "create-folder" | "rename-folder" | "create-tag" | "rename-tag";
+      targetId?: string;
+      targetName?: string;
+    }
+  | {
+      isOpen: false;
+    };
+
 export function Sidebar() {
   const [tagMenu, setTagMenu] = useState<{ tag: string; x: number; y: number } | null>(null);
+  const [nameDialog, setNameDialog] = useState<NameDialogState>({ isOpen: false });
+  const [nameDialogValue, setNameDialogValue] = useState("");
+  const nameDialogInputRef = useRef<HTMLInputElement | null>(null);
   const {
     activeFolderId,
     activeTag,
@@ -164,35 +184,122 @@ export function Sidebar() {
     return notes.filter((note) => !note.isDeleted).length;
   };
 
+  useEffect(() => {
+    if (!nameDialog.isOpen) return;
+    setNameDialogValue(nameDialog.initialValue);
+    window.setTimeout(() => {
+      nameDialogInputRef.current?.focus();
+      nameDialogInputRef.current?.select();
+    }, 0);
+  }, [nameDialog]);
+
+  const openNameDialog = (dialog: Exclude<NameDialogState, { isOpen: false }>) => {
+    setTagMenu(null);
+    setNameDialog(dialog);
+  };
+
+  const closeNameDialog = () => {
+    setNameDialog({ isOpen: false });
+    setNameDialogValue("");
+  };
+
+  const submitNameDialog = () => {
+    if (!nameDialog.isOpen) return;
+    const name = nameDialogValue.trim();
+    if (!name) return;
+
+    if (nameDialog.type === "create-folder") {
+      createFolder(name);
+    }
+
+    if (nameDialog.type === "rename-folder" && nameDialog.targetId) {
+      renameFolder(nameDialog.targetId, name);
+    }
+
+    if (nameDialog.type === "create-tag") {
+      createTag(name);
+    }
+
+    if (nameDialog.type === "rename-tag" && nameDialog.targetName) {
+      renameTag(nameDialog.targetName, name);
+    }
+
+    closeNameDialog();
+  };
+
   const addFolder = () => {
-    const name = window.prompt("Folder name");
-    if (name) createFolder(name);
+    openNameDialog({
+      description: "Create a collection for grouping local notes.",
+      initialValue: "",
+      isOpen: true,
+      label: "Folder name",
+      placeholder: "Projects",
+      title: "New folder",
+      type: "create-folder",
+    });
   };
 
   const editFolder = (folderId: string, currentName: string) => {
-    const nextName = window.prompt("Rename folder", currentName);
-    if (nextName) renameFolder(folderId, nextName);
+    openNameDialog({
+      description: "Rename this folder. Notes assigned to it will keep their folder.",
+      initialValue: currentName,
+      isOpen: true,
+      label: "Folder name",
+      placeholder: "Projects",
+      targetId: folderId,
+      title: "Rename folder",
+      type: "rename-folder",
+    });
   };
 
-  const removeFolder = (folderId: string, name: string) => {
-    if (window.confirm(`Delete "${name}"? Notes will move to Uncategorized.`)) {
+  const removeFolder = async (folderId: string, name: string) => {
+    if (
+      await confirmDialog({
+        confirmLabel: "Delete Folder",
+        message: `Delete "${name}"? Notes will move to Uncategorized.`,
+        title: "Delete folder",
+        variant: "danger",
+      })
+    ) {
       deleteFolder(folderId);
       notify({ kind: "info", title: "Folder deleted", message: "Notes were moved to Uncategorized." });
     }
   };
 
   const addTag = () => {
-    const name = window.prompt("Tag name");
-    if (name) createTag(name);
+    openNameDialog({
+      description: "Create a tag for filtering and organizing notes.",
+      initialValue: "",
+      isOpen: true,
+      label: "Tag name",
+      placeholder: "research",
+      title: "New tag",
+      type: "create-tag",
+    });
   };
 
   const editTag = (tag: string) => {
-    const nextName = window.prompt("Rename tag", tag);
-    if (nextName) renameTag(tag, nextName);
+    openNameDialog({
+      description: "Rename this tag everywhere it appears.",
+      initialValue: tag,
+      isOpen: true,
+      label: "Tag name",
+      placeholder: "research",
+      targetName: tag,
+      title: "Rename tag",
+      type: "rename-tag",
+    });
   };
 
-  const removeTag = (tag: string) => {
-    if (window.confirm(`Delete "${tag}"? It will be removed from notes.`)) {
+  const removeTag = async (tag: string) => {
+    if (
+      await confirmDialog({
+        confirmLabel: "Delete Tag",
+        message: `Delete "${tag}"? It will be removed from notes.`,
+        title: "Delete tag",
+        variant: "danger",
+      })
+    ) {
       deleteTag(tag);
       notify({ kind: "info", title: "Tag deleted", message: tag });
     }
@@ -284,7 +391,7 @@ export function Sidebar() {
               <ActionIconButton
                 danger
                 label="Delete"
-                onClick={() => removeFolder(collection.id, collection.name)}
+                onClick={() => void removeFolder(collection.id, collection.name)}
                 visible={isSelected}
               >
                 <XIcon />
@@ -383,7 +490,7 @@ export function Sidebar() {
             <button
               className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-rose-200 transition hover:bg-[#FF4D6D]/10 hover:text-[#FF4D6D]"
               onClick={() => {
-                removeTag(tagMenu.tag);
+                void removeTag(tagMenu.tag);
                 setTagMenu(null);
               }}
             >
@@ -391,6 +498,61 @@ export function Sidebar() {
               Delete
             </button>
           </div>
+        </div>
+      ) : null}
+      {nameDialog.isOpen ? (
+        <div
+          className="fixed inset-0 z-[70] grid place-items-center bg-night-950/55 px-4 backdrop-blur-sm"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) closeNameDialog();
+          }}
+        >
+          <form
+            className="w-full max-w-md rounded-2xl border border-white/10 bg-night-900/95 p-4 shadow-[0_24px_80px_rgba(0,0,0,0.45)]"
+            onSubmit={(event) => {
+              event.preventDefault();
+              submitNameDialog();
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.preventDefault();
+                closeNameDialog();
+              }
+            }}
+          >
+            <div className="mb-4">
+              <p className="text-sm font-semibold text-white">{nameDialog.title}</p>
+              <p className="mt-1 text-xs text-slate-500">{nameDialog.description}</p>
+            </div>
+            <label className="block space-y-2">
+              <span className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
+                {nameDialog.label}
+              </span>
+              <input
+                ref={nameDialogInputRef}
+                className="h-10 w-full rounded-lg border border-white/10 bg-night-950/80 px-3 text-sm text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-lumo-teal/50 focus:ring-2 focus:ring-lumo-teal/10"
+                value={nameDialogValue}
+                onChange={(event) => setNameDialogValue(event.target.value)}
+                placeholder={nameDialog.placeholder}
+              />
+            </label>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                className="rounded-lg px-3 py-2 text-sm text-slate-400 transition hover:bg-white/[0.05] hover:text-white"
+                onClick={closeNameDialog}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="rounded-lg bg-lumo-violet px-3 py-2 text-sm font-medium text-white transition hover:bg-lumo-violet/90 disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={!nameDialogValue.trim()}
+              >
+                Save
+              </button>
+            </div>
+          </form>
         </div>
       ) : null}
     </aside>

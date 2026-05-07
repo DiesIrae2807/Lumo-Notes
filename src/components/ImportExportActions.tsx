@@ -13,6 +13,7 @@ import {
   validateBackup,
 } from "../services/fileTransfer";
 import { notify, notifyError } from "../utils/toast";
+import { confirmDialog } from "../utils/confirm";
 
 export function ImportExportActions({ compact = false }: { compact?: boolean }) {
   const {
@@ -60,9 +61,12 @@ export function ImportExportActions({ compact = false }: { compact?: boolean }) 
 
   const exportAll = () =>
     runAction(async () => {
-      const includeTrash = window.confirm(
-        "Include notes in Trash in this Markdown export? OK includes Trash; Cancel exports active notes only.",
-      );
+      const includeTrash = await confirmDialog({
+        cancelLabel: "Active Only",
+        confirmLabel: "Include Trash",
+        message: "Include notes in Trash in this Markdown export?",
+        title: "Export all notes",
+      });
       const exportNotes = notes.filter((note) => includeTrash || !note.isDeleted);
       if (exportNotes.length === 0) return "No notes to export.";
       const path = await chooseFolderAndWriteFiles(
@@ -99,9 +103,11 @@ export function ImportExportActions({ compact = false }: { compact?: boolean }) 
       if (files.length === 0) return null;
       const backup = validateBackup(JSON.parse(files[0].content));
       if (
-        !window.confirm(
-          `Merge ${backup.notes.length} notes from this backup into the current database? Existing notes will not be deleted.`,
-        )
+        !await confirmDialog({
+          confirmLabel: "Merge Backup",
+          message: `Merge ${backup.notes.length} notes from this backup into the current database? Existing notes will not be deleted.`,
+          title: "Restore backup",
+        })
       ) {
         return null;
       }

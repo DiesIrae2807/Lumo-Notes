@@ -13,6 +13,7 @@ import {
 import type { SidebarView } from "../types/note";
 import { getPlainTextPreview, markdownToPlainText } from "../utils/markdown";
 import { notify, notifyError } from "../utils/toast";
+import { confirmDialog } from "../utils/confirm";
 
 type CommandItem = {
   id: string;
@@ -126,9 +127,11 @@ export function CommandPalette() {
     if (files.length === 0) return;
     const backup = validateBackup(JSON.parse(files[0].content));
     if (
-      window.confirm(
-        `Merge ${backup.notes.length} notes from this backup into the current database? Existing notes will not be deleted.`,
-      )
+      await confirmDialog({
+        confirmLabel: "Merge Backup",
+        message: `Merge ${backup.notes.length} notes from this backup into the current database? Existing notes will not be deleted.`,
+        title: "Restore backup",
+      })
     ) {
       await restoreBackupMerge(backup);
     }

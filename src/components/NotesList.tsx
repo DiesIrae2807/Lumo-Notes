@@ -5,6 +5,7 @@ import { useNotes } from "../store/notesStore";
 import { useSettings } from "../store/settingsStore";
 import type { Note } from "../types/note";
 import { formatRelativeTime, isSameDay, isThisWeek, isYesterday } from "../utils/date";
+import { confirmDialog } from "../utils/confirm";
 
 function NoteGroup({
   title,
@@ -122,10 +123,15 @@ export function NotesList() {
     return () => window.removeEventListener("lumo-focus-search", focusSearch);
   }, []);
 
-  const confirmEmptyTrash = () => {
+  const confirmEmptyTrash = async () => {
     if (
       !settings.confirmPermanentDelete ||
-      window.confirm("Permanently delete all notes in Trash? This cannot be undone.")
+      await confirmDialog({
+        confirmLabel: "Empty Trash",
+        message: "Permanently delete all notes in Trash? This cannot be undone.",
+        title: "Empty Trash",
+        variant: "danger",
+      })
     ) {
       permanentlyDeleteTrashedNotes();
     }
@@ -237,7 +243,7 @@ export function NotesList() {
         {activeView === "trash" && trashedCount > 0 ? (
           <button
             className="h-10 rounded-xl border border-rose-400/20 bg-rose-400/[0.06] px-3 text-xs text-rose-200 transition hover:border-rose-300/40 hover:bg-rose-400/[0.1] active:scale-95"
-            onClick={confirmEmptyTrash}
+            onClick={() => void confirmEmptyTrash()}
           >
             Empty
           </button>

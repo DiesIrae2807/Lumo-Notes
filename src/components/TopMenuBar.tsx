@@ -13,6 +13,7 @@ import {
   validateBackup,
 } from "../services/fileTransfer";
 import { notify, notifyError } from "../utils/toast";
+import { confirmDialog } from "../utils/confirm";
 
 type MenuName = "file" | "edit";
 
@@ -145,9 +146,12 @@ export function TopMenuBar({ onExit }: { onExit: () => void }) {
 
   const exportAll = () =>
     runAction(async () => {
-      const includeTrash = window.confirm(
-        "Include notes in Trash in this Markdown export? OK includes Trash; Cancel exports active notes only.",
-      );
+      const includeTrash = await confirmDialog({
+        cancelLabel: "Active Only",
+        confirmLabel: "Include Trash",
+        message: "Include notes in Trash in this Markdown export?",
+        title: "Export all notes",
+      });
       const exportNotes = notes.filter((note) => includeTrash || !note.isDeleted);
       if (exportNotes.length === 0) {
         setMessage("No notes to export.");
@@ -194,9 +198,11 @@ export function TopMenuBar({ onExit }: { onExit: () => void }) {
       if (files.length === 0) return;
       const backup = validateBackup(JSON.parse(files[0].content));
       if (
-        !window.confirm(
-          `Merge ${backup.notes.length} notes from this backup into the current database? Existing notes will not be deleted.`,
-        )
+        !await confirmDialog({
+          confirmLabel: "Merge Backup",
+          message: `Merge ${backup.notes.length} notes from this backup into the current database? Existing notes will not be deleted.`,
+          title: "Restore backup",
+        })
       ) {
         return;
       }
@@ -204,14 +210,21 @@ export function TopMenuBar({ onExit }: { onExit: () => void }) {
       setMessage(`${count} backup note${count === 1 ? "" : "s"} restored.`);
     });
 
-  const deleteFromEditMenu = () => {
+  const deleteFromEditMenu = async () => {
     if (editableTarget()) {
       execEditCommand("delete");
       return;
     }
 
     if (selectedNote && !selectedNote.isDeleted) {
-      if (window.confirm("Move this note to Trash? You can restore it later from Trash.")) {
+      if (
+        await confirmDialog({
+          confirmLabel: "Move to Trash",
+          message: "Move this note to Trash? You can restore it later from Trash.",
+          title: "Move note to Trash",
+          variant: "danger",
+        })
+      ) {
         moveToTrash(selectedNote.id);
       }
     }
@@ -253,10 +266,15 @@ export function TopMenuBar({ onExit }: { onExit: () => void }) {
         danger: true,
         disabled: trashCount === 0,
         label: "Empty Trash...",
-        onSelect: () => {
+        onSelect: async () => {
           if (
             !settings.confirmPermanentDelete ||
-            window.confirm("Permanently delete all notes in Trash? This cannot be undone.")
+            await confirmDialog({
+              confirmLabel: "Empty Trash",
+              message: "Permanently delete all notes in Trash? This cannot be undone.",
+              title: "Empty Trash",
+              variant: "danger",
+            })
           ) {
             permanentlyDeleteTrashedNotes();
           }
@@ -344,11 +362,18 @@ export function TopMenuBar({ onExit }: { onExit: () => void }) {
         disabled: !selectedNote,
         danger: !selectedNote?.isDeleted,
         label: selectedNote?.isDeleted ? "Restore" : "Move to Trash",
-        onSelect: () => {
+        onSelect: async () => {
           if (!selectedNote) return;
           if (selectedNote.isDeleted) {
             restoreNote(selectedNote.id);
-          } else if (window.confirm("Move this note to Trash? You can restore it later from Trash.")) {
+          } else if (
+            await confirmDialog({
+              confirmLabel: "Move to Trash",
+              message: "Move this note to Trash? You can restore it later from Trash.",
+              title: "Move note to Trash",
+              variant: "danger",
+            })
+          ) {
             moveToTrash(selectedNote.id);
           }
         },
@@ -357,11 +382,16 @@ export function TopMenuBar({ onExit }: { onExit: () => void }) {
         danger: true,
         disabled: !selectedNote?.isDeleted,
         label: "Delete Permanently...",
-        onSelect: () => {
+        onSelect: async () => {
           if (
             selectedNote?.isDeleted &&
             (!settings.confirmPermanentDelete ||
-              window.confirm("Permanently delete this note? This cannot be undone."))
+              await confirmDialog({
+                confirmLabel: "Delete Permanently",
+                message: "Permanently delete this note? This cannot be undone.",
+                title: "Delete note permanently",
+                variant: "danger",
+              }))
           ) {
             permanentlyDeleteSelectedNote();
           }
