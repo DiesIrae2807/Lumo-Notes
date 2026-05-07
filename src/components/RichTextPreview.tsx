@@ -1,14 +1,9 @@
 import { EditorContent, useEditor } from "@tiptap/react";
-import StarterKit from "@tiptap/starter-kit";
-import Link from "@tiptap/extension-link";
-import Image from "@tiptap/extension-image";
-import TaskItem from "@tiptap/extension-task-item";
-import TaskList from "@tiptap/extension-task-list";
-import { Extension } from "@tiptap/core";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Attachment } from "../types/note";
 import { getAttachmentDataUrl } from "../services/database";
 import { markdownToEditorHtml } from "../utils/richTextMarkdown";
+import { richTextExtensions } from "./editorExtensions";
 
 type RichTextPreviewProps = {
   attachments?: Attachment[];
@@ -16,61 +11,6 @@ type RichTextPreviewProps = {
   onAttachmentClick?: (id: string) => void;
   onInternalLinkClick?: (title: string) => void;
 };
-
-const previewExtensions = [
-  Extension.create({
-    name: "accentHeadingAttribute",
-    addGlobalAttributes() {
-      return [
-        {
-          types: ["heading"],
-          attributes: {
-            accent: {
-              default: false,
-              parseHTML: (element) => element.getAttribute("data-accent-heading") === "true",
-              renderHTML: (attributes) =>
-                attributes.accent
-                  ? {
-                      "data-accent-heading": "true",
-                    }
-                  : {},
-            },
-          },
-        },
-      ];
-    },
-  }),
-  StarterKit.configure({
-    heading: {
-      levels: [1, 2, 3],
-    },
-  }),
-  Link.configure({
-    autolink: true,
-    HTMLAttributes: {
-      class: "rich-editor-link",
-      rel: null,
-      target: null,
-    },
-    isAllowedUri: (url, { defaultValidate }) =>
-      url.startsWith("internal:") || url.startsWith("attachment://") || defaultValidate(url),
-    openOnClick: false,
-    protocols: ["internal", "attachment"],
-  }),
-  Image.configure({
-    HTMLAttributes: {
-      class: "rich-editor-image",
-    },
-  }),
-  TaskList.configure({
-    HTMLAttributes: {
-      class: "rich-editor-task-list",
-    },
-  }),
-  TaskItem.configure({
-    nested: true,
-  }),
-];
 
 export function RichTextPreview({
   attachments = [],
@@ -114,7 +54,7 @@ export function RichTextPreview({
           return false;
         },
       },
-      extensions: previewExtensions,
+      extensions: richTextExtensions,
       immediatelyRender: false,
     },
     [],

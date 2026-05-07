@@ -138,7 +138,11 @@ function inlineNodeToMarkdown(node: Node): string {
   if (tag === "code") return `\`${children}\``;
   if (tag === "br") return "\n";
   if (tag === "img") {
-    return `![${node.getAttribute("alt") ?? "image"}](${node.getAttribute("data-attachment-src") ?? node.getAttribute("src") ?? ""})`;
+    const source = node.getAttribute("data-attachment-src") ?? node.getAttribute("src") ?? "";
+    if (source.startsWith("data:")) {
+      return "";
+    }
+    return `![${node.getAttribute("alt") ?? "image"}](${source})`;
   }
   if (tag === "a") {
     const href = node.getAttribute("href") ?? "";

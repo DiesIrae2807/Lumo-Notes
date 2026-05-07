@@ -1052,7 +1052,7 @@ pub fn create_note(state: tauri::State<'_, DbState>, note: NoteDto) -> Result<()
 #[tauri::command]
 pub fn update_note(state: tauri::State<'_, DbState>, note: NoteDto) -> Result<(), String> {
     let connection = connect(&state.path)?;
-    connection
+    let changed_rows = connection
         .execute(
             "UPDATE notes
              SET title = ?2, content = ?3, preview = ?4, folder_id = ?5, folder_name = ?6,
@@ -1072,6 +1072,9 @@ pub fn update_note(state: tauri::State<'_, DbState>, note: NoteDto) -> Result<()
             ],
         )
         .map_err(|error| error.to_string())?;
+    if changed_rows == 0 {
+        return Err("Note no longer exists in local storage. Reload notes or create it again.".to_string());
+    }
     replace_note_tags(&connection, &note)?;
     let _ = upsert_search_index_note(&connection, &note.id);
     Ok(())

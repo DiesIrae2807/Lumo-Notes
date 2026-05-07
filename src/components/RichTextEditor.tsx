@@ -1,14 +1,9 @@
 import { EditorContent, useEditor, type Editor as TiptapEditor } from "@tiptap/react";
-import StarterKit from "@tiptap/starter-kit";
-import Link from "@tiptap/extension-link";
-import Image from "@tiptap/extension-image";
-import TaskItem from "@tiptap/extension-task-item";
-import TaskList from "@tiptap/extension-task-list";
-import { Extension } from "@tiptap/core";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { Attachment } from "../types/note";
 import { editorHtmlToMarkdown, markdownToEditorHtml } from "../utils/richTextMarkdown";
 import { getAttachmentDataUrl } from "../services/database";
+import { richTextExtensions } from "./editorExtensions";
 
 export type RichTextAction =
   | "bold"
@@ -38,61 +33,6 @@ type RichTextEditorProps = {
   onInternalLinkClick?: (title: string) => void;
   onReady?: (editor: TiptapEditor | null) => void;
 };
-
-const extensions = [
-  Extension.create({
-    name: "accentHeadingAttribute",
-    addGlobalAttributes() {
-      return [
-        {
-          types: ["heading"],
-          attributes: {
-            accent: {
-              default: false,
-              parseHTML: (element) => element.getAttribute("data-accent-heading") === "true",
-              renderHTML: (attributes) =>
-                attributes.accent
-                  ? {
-                      "data-accent-heading": "true",
-                    }
-                  : {},
-            },
-          },
-        },
-      ];
-    },
-  }),
-  StarterKit.configure({
-    heading: {
-      levels: [1, 2, 3],
-    },
-  }),
-  Link.configure({
-    autolink: true,
-    HTMLAttributes: {
-      class: "rich-editor-link",
-      rel: null,
-      target: null,
-    },
-    isAllowedUri: (url, { defaultValidate }) =>
-      url.startsWith("internal:") || url.startsWith("attachment://") || defaultValidate(url),
-    openOnClick: false,
-    protocols: ["internal", "attachment"],
-  }),
-  Image.configure({
-    HTMLAttributes: {
-      class: "rich-editor-image",
-    },
-  }),
-  TaskList.configure({
-    HTMLAttributes: {
-      class: "rich-editor-task-list",
-    },
-  }),
-  TaskItem.configure({
-    nested: true,
-  }),
-];
 
 export function runRichTextAction(editor: TiptapEditor | null, action: RichTextAction) {
   if (!editor) return;
@@ -216,7 +156,7 @@ export function RichTextEditor({
         },
       },
     },
-    extensions,
+    extensions: richTextExtensions,
     immediatelyRender: false,
     onCreate: ({ editor }) => {
       onReady?.(editor);
