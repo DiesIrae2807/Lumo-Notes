@@ -155,15 +155,6 @@ export function SettingsScreen() {
 
             <SettingsCard title="Editor">
               <SettingSelect
-                label="Default editor mode"
-                name="defaultEditorMode"
-                options={[
-                  { label: "Edit", value: "edit" },
-                  { label: "Preview", value: "preview" },
-                  { label: "Split", value: "split" },
-                ]}
-              />
-              <SettingSelect
                 label="Font size"
                 name="editorFontSize"
                 options={[

@@ -6,7 +6,6 @@ import {
   type RichTextAction,
   type RichTextLinkRequest,
 } from "./RichTextEditor";
-import { RichTextPreview } from "./RichTextPreview";
 import type { Editor as TiptapEditor } from "@tiptap/react";
 import { FavoriteHeartIcon } from "./icons/FavoriteHeartIcon";
 import { FocusIcon } from "./icons/FocusIcon";
@@ -21,8 +20,6 @@ import { confirmDialog } from "../utils/confirm";
 
 type MarkdownAction =
   RichTextAction;
-
-type EditorMode = "edit" | "preview" | "split";
 
 type EditorSnapshot = {
   content: string;
@@ -138,7 +135,6 @@ export function Editor({
   } = useNotes();
   const { settings } = useSettings();
   const [tagInput, setTagInput] = useState("");
-  const [editorMode, setEditorMode] = useState<EditorMode>(settings.defaultEditorMode);
   const [isTypewriter, setIsTypewriter] = useState(false);
   const [isAttachmentBusy, setIsAttachmentBusy] = useState(false);
   const [wordGoal, setWordGoal] = useState("");
@@ -284,26 +280,13 @@ export function Editor({
   }, [ensureHistory, publishHistoryState, selectedNote, updateSelectedNote]);
 
   useEffect(() => {
-    setEditorMode(settings.defaultEditorMode);
-  }, [selectedNote?.id, settings.defaultEditorMode]);
-
-  useEffect(() => {
     const focusEditor = () => {
-      setEditorMode("edit");
       window.setTimeout(() => richEditorRef.current?.commands.focus(), 0);
-    };
-    const setMode = (event: Event) => {
-      const mode = (event as CustomEvent<EditorMode>).detail;
-      if (mode === "edit" || mode === "preview" || mode === "split") {
-        setEditorMode(mode);
-      }
     };
 
     window.addEventListener("lumo-focus-editor", focusEditor);
-    window.addEventListener("lumo-set-editor-mode", setMode);
     return () => {
       window.removeEventListener("lumo-focus-editor", focusEditor);
-      window.removeEventListener("lumo-set-editor-mode", setMode);
     };
   }, []);
 
@@ -327,7 +310,6 @@ export function Editor({
   useEffect(() => {
     const openLinkDialog = (event: Event) => {
       const { selectedText = "", title } = (event as CustomEvent<RichTextLinkRequest>).detail ?? {};
-      setEditorMode("edit");
       setLinkDialog({
         displayText: selectedText,
         isOpen: true,
@@ -830,83 +812,31 @@ export function Editor({
             ) : null}
           </div>
 
-          {editorMode === "preview" ? (
-            <RichTextPreview
-              content={selectedNote.content}
-              attachments={selectedNoteAttachments}
-              onInternalLinkClick={openInternalLink}
-              onAttachmentClick={openAttachmentById}
-            />
-          ) : editorMode === "split" ? (
-            <div className="grid gap-4 xl:grid-cols-2">
-              <RichTextEditor
-                attachments={selectedNoteAttachments}
-                content={selectedNote.content}
-                isFocusMode={isFocusMode}
-                isTypewriter={isTypewriter}
-                noteId={selectedNote.id}
-                onAttachmentClick={openAttachmentById}
-                onChange={(content, reason = "typing") =>
-                  applyEditorChange({ content }, reason, { forceCheckpoint: reason === "format" })
-                }
-                onBlur={() => {
-                  finishHistoryChunk();
-                  forceSaveSelectedNote();
-                }}
-                onInternalLinkClick={openInternalLink}
-                onReady={(editor) => {
-                  richEditorRef.current = editor;
-                }}
-              />
-              <RichTextPreview
-                content={selectedNote.content}
-                attachments={selectedNoteAttachments}
-                onInternalLinkClick={openInternalLink}
-                onAttachmentClick={openAttachmentById}
-              />
-            </div>
-          ) : (
-            <RichTextEditor
-              attachments={selectedNoteAttachments}
-              content={selectedNote.content}
-              isFocusMode={isFocusMode}
-              isTypewriter={isTypewriter}
-              noteId={selectedNote.id}
-              onAttachmentClick={openAttachmentById}
-              onChange={(content, reason = "typing") =>
-                applyEditorChange({ content }, reason, { forceCheckpoint: reason === "format" })
-              }
-              onBlur={() => {
-                finishHistoryChunk();
-                forceSaveSelectedNote();
-              }}
-              onInternalLinkClick={openInternalLink}
-              onReady={(editor) => {
-                richEditorRef.current = editor;
-              }}
-            />
-          )}
+          <RichTextEditor
+            attachments={selectedNoteAttachments}
+            content={selectedNote.content}
+            isFocusMode={isFocusMode}
+            isTypewriter={isTypewriter}
+            noteId={selectedNote.id}
+            onAttachmentClick={openAttachmentById}
+            onChange={(content, reason = "typing") =>
+              applyEditorChange({ content }, reason, { forceCheckpoint: reason === "format" })
+            }
+            onBlur={() => {
+              finishHistoryChunk();
+              forceSaveSelectedNote();
+            }}
+            onInternalLinkClick={openInternalLink}
+            onReady={(editor) => {
+              richEditorRef.current = editor;
+            }}
+          />
 
         </div>
       </article>
 
       <div className="flex items-center justify-between border-t border-white/10 px-6 py-3 text-slate-400">
         <div className="flex items-center gap-3">
-          <div className="inline-flex rounded-xl bg-night-950/35 p-1 text-xs text-slate-400">
-            {(["edit", "preview", "split"] as const).map((mode) => (
-              <button
-                key={mode}
-                className={`rounded-lg px-2.5 py-1.5 capitalize transition active:scale-95 ${
-                  editorMode === mode
-                    ? "bg-lumo-violet/20 text-white"
-                    : "hover:bg-white/[0.05] hover:text-slate-200"
-                }`}
-                onClick={() => setEditorMode(mode)}
-              >
-                {mode}
-              </button>
-            ))}
-          </div>
           {editorTools.map((tool) => (
             <button
               key={tool.action}

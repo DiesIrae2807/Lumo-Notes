@@ -188,36 +188,6 @@ export function CommandPalette() {
         run: () => window.dispatchEvent(new Event("lumo-toggle-focus-mode")),
       },
       {
-        id: "command-preview",
-        title: "Toggle Preview Mode",
-        subtitle: "Show rendered Markdown preview",
-        section: "Commands",
-        keywords: "markdown preview render",
-        run: () => {
-          forceSaveSelectedNote();
-          setActiveView("all");
-          window.setTimeout(
-            () => window.dispatchEvent(new CustomEvent("lumo-set-editor-mode", { detail: "preview" })),
-            0,
-          );
-        },
-      },
-      {
-        id: "command-split",
-        title: "Toggle Split Mode",
-        subtitle: "Show editor and preview side by side",
-        section: "Commands",
-        keywords: "markdown split preview",
-        run: () => {
-          forceSaveSelectedNote();
-          setActiveView("all");
-          window.setTimeout(
-            () => window.dispatchEvent(new CustomEvent("lumo-set-editor-mode", { detail: "split" })),
-            0,
-          );
-        },
-      },
-      {
         id: "command-export-backup",
         title: "Export Backup",
         subtitle: "Save a full JSON backup",
