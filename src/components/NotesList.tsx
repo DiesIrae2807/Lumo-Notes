@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { NoteCard } from "./NoteCard";
 import { SectionHeader } from "./SectionHeader";
 import { useNotes } from "../store/notesStore";
@@ -6,6 +6,8 @@ import { useSettings } from "../store/settingsStore";
 import type { Note } from "../types/note";
 import { formatRelativeTime, isSameDay, isThisWeek, isYesterday } from "../utils/date";
 import { confirmDialog } from "../utils/confirm";
+import { noteToMarkdown, sanitizeFilename, saveTextFile } from "../services/fileTransfer";
+import { notify, notifyError } from "../utils/toast";
 
 function NoteGroup({
   title,
@@ -59,12 +61,14 @@ function renderCards(
   togglePinned: (id: string) => void,
   searchQuery: string,
   searchSnippets: Record<string, string>,
+  onContextMenu: (event: MouseEvent<HTMLElement>, note: Note) => void,
 ) {
   return notes.map((note) => (
     <NoteCard
       key={note.id}
       isActive={note.id === selectedNoteId}
       note={note}
+      onContextMenu={(event) => onContextMenu(event, note)}
       onSelect={() => selectNote(note.id)}
       onToggleFavorite={() => toggleFavorite(note.id)}
       onTogglePinned={() => togglePinned(note.id)}
@@ -83,8 +87,12 @@ export function NotesList() {
     createNote,
     filteredNotes,
     folders,
+    forceSaveSelectedNote,
+    moveToTrash,
     notes,
+    permanentlyDeleteNote,
     permanentlyDeleteTrashedNotes,
+    restoreNote,
     isSearchLoading,
     searchQuery,
     searchSnippets,
@@ -95,6 +103,11 @@ export function NotesList() {
     togglePinned,
   } = useNotes();
   const { settings } = useSettings();
+  const [contextMenu, setContextMenu] = useState<{
+    left: number;
+    note: Note;
+    top: number;
+  } | null>(null);
 
   const pinned = filteredNotes.filter((note) => note.isPinned && !note.isDeleted);
   const unpinned = filteredNotes.filter((note) => !note.isPinned || note.isDeleted);
@@ -123,6 +136,19 @@ export function NotesList() {
     return () => window.removeEventListener("lumo-focus-search", focusSearch);
   }, []);
 
+  useEffect(() => {
+    if (!contextMenu) return;
+    const close = () => setContextMenu(null);
+    window.addEventListener("click", close);
+    window.addEventListener("keydown", close);
+    window.addEventListener("scroll", close, true);
+    return () => {
+      window.removeEventListener("click", close);
+      window.removeEventListener("keydown", close);
+      window.removeEventListener("scroll", close, true);
+    };
+  }, [contextMenu]);
+
   const confirmEmptyTrash = async () => {
     if (
       !settings.confirmPermanentDelete ||
@@ -135,6 +161,68 @@ export function NotesList() {
     ) {
       permanentlyDeleteTrashedNotes();
     }
+  };
+
+  const openContextMenu = (event: MouseEvent<HTMLElement>, note: Note) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const menuWidth = 190;
+    const menuHeight = note.isDeleted ? 136 : 112;
+    setContextMenu({
+      left: Math.min(event.clientX, window.innerWidth - menuWidth - 10),
+      note,
+      top: Math.min(event.clientY, window.innerHeight - menuHeight - 10),
+    });
+  };
+
+  const exportNote = async (note: Note) => {
+    try {
+      forceSaveSelectedNote();
+      const path = await saveTextFile(
+        "Export note",
+        `${sanitizeFilename(note.title || "Untitled Note")}.md`,
+        noteToMarkdown(note, settings.markdownExportFrontmatter),
+      );
+      if (path) notify({ kind: "success", title: "Note exported" });
+    } catch (error) {
+      notifyError("Export failed", error);
+    }
+  };
+
+  const deleteNote = async (note: Note) => {
+    if (note.isDeleted) {
+      if (
+        !settings.confirmPermanentDelete ||
+        await confirmDialog({
+          confirmLabel: "Delete Permanently",
+          message: "Permanently delete this note? This cannot be undone.",
+          title: "Delete note permanently",
+          variant: "danger",
+        })
+      ) {
+        permanentlyDeleteNote(note.id);
+        notify({ kind: "success", title: "Note permanently deleted" });
+      }
+      return;
+    }
+
+    if (
+      await confirmDialog({
+        confirmLabel: "Move to Trash",
+        message: "Move this note to Trash? You can restore it later from Trash.",
+        title: "Move note to Trash",
+        variant: "danger",
+      })
+    ) {
+      moveToTrash(note.id);
+      notify({ kind: "info", title: "Moved note to Trash" });
+    }
+  };
+
+  const editNote = (note: Note) => {
+    forceSaveSelectedNote();
+    selectNote(note.id);
+    window.setTimeout(() => window.dispatchEvent(new Event("lumo-focus-note-title")), 0);
   };
 
   const emptyState = (() => {
@@ -262,36 +350,85 @@ export function NotesList() {
           <>
             {pinned.length > 0 ? (
               <NoteGroup title="Pinned">
-                {renderCards(pinned, selectedNoteId, selectNote, toggleFavorite, togglePinned, searchQuery, searchSnippets)}
+                {renderCards(pinned, selectedNoteId, selectNote, toggleFavorite, togglePinned, searchQuery, searchSnippets, openContextMenu)}
               </NoteGroup>
             ) : null}
 
             {today.length > 0 ? (
               <NoteGroup title="Today">
-                {renderCards(today, selectedNoteId, selectNote, toggleFavorite, togglePinned, searchQuery, searchSnippets)}
+                {renderCards(today, selectedNoteId, selectNote, toggleFavorite, togglePinned, searchQuery, searchSnippets, openContextMenu)}
               </NoteGroup>
             ) : null}
 
             {yesterday.length > 0 ? (
               <NoteGroup title="Yesterday">
-                {renderCards(yesterday, selectedNoteId, selectNote, toggleFavorite, togglePinned, searchQuery, searchSnippets)}
+                {renderCards(yesterday, selectedNoteId, selectNote, toggleFavorite, togglePinned, searchQuery, searchSnippets, openContextMenu)}
               </NoteGroup>
             ) : null}
 
             {thisWeek.length > 0 ? (
               <NoteGroup title="This Week">
-                {renderCards(thisWeek, selectedNoteId, selectNote, toggleFavorite, togglePinned, searchQuery, searchSnippets)}
+                {renderCards(thisWeek, selectedNoteId, selectNote, toggleFavorite, togglePinned, searchQuery, searchSnippets, openContextMenu)}
               </NoteGroup>
             ) : null}
 
             {older.length > 0 ? (
               <NoteGroup title="Older">
-                {renderCards(older, selectedNoteId, selectNote, toggleFavorite, togglePinned, searchQuery, searchSnippets)}
+                {renderCards(older, selectedNoteId, selectNote, toggleFavorite, togglePinned, searchQuery, searchSnippets, openContextMenu)}
               </NoteGroup>
             ) : null}
           </>
         )}
       </div>
+
+      {contextMenu ? (
+        <div
+          className="fixed z-[95] w-48 rounded-xl border border-white/10 bg-night-900/95 p-1.5 text-sm shadow-[0_18px_60px_rgba(0,0,0,0.42)] backdrop-blur-xl"
+          style={{ left: contextMenu.left, top: contextMenu.top }}
+          onClick={(event) => event.stopPropagation()}
+          onContextMenu={(event) => event.preventDefault()}
+        >
+          <button
+            className="w-full rounded-lg px-3 py-2 text-left text-slate-200 transition hover:bg-white/[0.06] hover:text-white"
+            onClick={() => {
+              editNote(contextMenu.note);
+              setContextMenu(null);
+            }}
+          >
+            Edit note
+          </button>
+          <button
+            className="w-full rounded-lg px-3 py-2 text-left text-slate-200 transition hover:bg-white/[0.06] hover:text-white"
+            onClick={() => {
+              void exportNote(contextMenu.note);
+              setContextMenu(null);
+            }}
+          >
+            Export Markdown
+          </button>
+          {contextMenu.note.isDeleted ? (
+            <button
+              className="w-full rounded-lg px-3 py-2 text-left text-slate-200 transition hover:bg-white/[0.06] hover:text-white"
+              onClick={() => {
+                restoreNote(contextMenu.note.id);
+                notify({ kind: "success", title: "Note restored" });
+                setContextMenu(null);
+              }}
+            >
+              Restore
+            </button>
+          ) : null}
+          <button
+            className="w-full rounded-lg px-3 py-2 text-left text-rose-300 transition hover:bg-rose-400/10 hover:text-rose-100"
+            onClick={() => {
+              void deleteNote(contextMenu.note);
+              setContextMenu(null);
+            }}
+          >
+            {contextMenu.note.isDeleted ? "Delete permanently" : "Move to Trash"}
+          </button>
+        </div>
+      ) : null}
 
       <div className="flex items-center justify-between border-t border-white/10 px-4 py-3 text-xs text-slate-400">
         <span>{hasSearch ? `${filteredNotes.length} results` : `${filteredNotes.length} notes`}</span>

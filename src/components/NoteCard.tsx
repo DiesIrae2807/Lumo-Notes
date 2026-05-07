@@ -1,4 +1,5 @@
 import type { Note } from "../types/note";
+import type { MouseEvent } from "react";
 import { FavoriteHeartIcon } from "./icons/FavoriteHeartIcon";
 import { PinIcon } from "./icons/PinIcon";
 import { formatRelativeTime } from "../utils/date";
@@ -46,6 +47,7 @@ function HighlightedText({ query, text }: { query?: string; text: string }) {
 export function NoteCard({
   isActive,
   note,
+  onContextMenu,
   onSelect,
   onToggleFavorite,
   onTogglePinned,
@@ -54,6 +56,7 @@ export function NoteCard({
 }: {
   isActive: boolean;
   note: Note;
+  onContextMenu?: (event: MouseEvent<HTMLElement>) => void;
   onSelect: () => void;
   onToggleFavorite: () => void;
   onTogglePinned: () => void;
@@ -68,6 +71,7 @@ export function NoteCard({
       role="button"
       tabIndex={0}
       onClick={onSelect}
+      onContextMenu={onContextMenu}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();

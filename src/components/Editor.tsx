@@ -147,6 +147,7 @@ export function Editor({
   const historiesRef = useRef(new Map<string, EditorHistory>());
   const forceHistoryCheckpointRef = useRef(false);
   const [richToolbarState, setRichToolbarState] = useState<Record<string, boolean>>({});
+  const titleInputRef = useRef<HTMLInputElement | null>(null);
 
   const publishHistoryState = useCallback((history: EditorHistory | null) => {
     window.dispatchEvent(
@@ -282,8 +283,14 @@ export function Editor({
     };
 
     window.addEventListener("lumo-focus-editor", focusEditor);
+    const focusTitle = () => {
+      titleInputRef.current?.focus();
+      titleInputRef.current?.select();
+    };
+    window.addEventListener("lumo-focus-note-title", focusTitle);
     return () => {
       window.removeEventListener("lumo-focus-editor", focusEditor);
+      window.removeEventListener("lumo-focus-note-title", focusTitle);
     };
   }, []);
 
@@ -624,6 +631,7 @@ export function Editor({
 
           <div className="mb-7 pt-1">
             <input
+              ref={titleInputRef}
               className="w-full border-none bg-transparent pb-1 text-3xl font-semibold leading-[1.18] tracking-tight text-white outline-none placeholder:text-slate-600 md:text-4xl"
               value={selectedNote.title}
               onChange={(event) => applyEditorChange({ title: event.target.value }, "typing")}

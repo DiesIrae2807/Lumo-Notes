@@ -47,6 +47,7 @@ type NotesContextValue = {
   togglePinned: (id: string) => void;
   moveToTrash: (id: string) => void;
   restoreNote: (id: string) => void;
+  permanentlyDeleteNote: (id: string) => void;
   permanentlyDeleteSelectedNote: () => void;
   permanentlyDeleteTrashedNotes: () => void;
   createFolder: (name: string) => void;
@@ -845,6 +846,30 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     });
   }, [flushNoteSave, notes, selectedNote]);
 
+  const permanentlyDeleteNote = useCallback(
+    (id: string) => {
+      const target = notes.find((note) => note.id === id);
+      if (!target?.isDeleted) return;
+
+      flushNoteSave(id);
+      const nextTrashedNote =
+        notes
+          .filter((note) => note.isDeleted && note.id !== id)
+          .sort(
+            (a, b) =>
+              new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+          )[0] ?? null;
+
+      setNotes((current) => current.filter((note) => note.id !== id));
+      setAttachments((current) => current.filter((attachment) => attachment.noteId !== id));
+      setSelectedNoteId((current) => (current === id ? nextTrashedNote?.id ?? null : current));
+      void database.permanentlyDeleteNote(id).catch((error) => {
+        setDatabaseError(error instanceof Error ? error.message : String(error));
+      });
+    },
+    [flushNoteSave, notes],
+  );
+
   const permanentlyDeleteTrashedNotes = useCallback(() => {
     const trashedIds = new Set(notes.filter((note) => note.isDeleted).map((note) => note.id));
     if (trashedIds.size === 0) {
@@ -1125,6 +1150,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       togglePinned,
       moveToTrash,
       restoreNote,
+      permanentlyDeleteNote,
       permanentlyDeleteSelectedNote,
       permanentlyDeleteTrashedNotes,
       createFolder,
@@ -1161,6 +1187,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       importMarkdownNotes,
       moveToTrash,
       openAttachment,
+      permanentlyDeleteNote,
       permanentlyDeleteSelectedNote,
       permanentlyDeleteTrashedNotes,
       removeAttachment,
