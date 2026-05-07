@@ -54,7 +54,10 @@ export function markdownToEditorHtml(markdown: string, attachmentUrls: Record<st
     const heading = line.match(/^(#{1,6})\s+(.*)$/);
     if (heading) {
       const level = heading[1].length;
-      blocks.push(`<h${level}>${inlineMarkdownToHtml(heading[2], attachmentUrls)}</h${level}>`);
+      const accentHeading = heading[2].match(/^==(.+)==$/);
+      const text = accentHeading ? accentHeading[1] : heading[2];
+      const accentAttribute = accentHeading ? ' data-accent-heading="true"' : "";
+      blocks.push(`<h${level}${accentAttribute}>${inlineMarkdownToHtml(text, attachmentUrls)}</h${level}>`);
       index += 1;
       continue;
     }
@@ -153,7 +156,12 @@ function blockNodeToMarkdown(node: Element): string {
   const tag = node.tagName.toLowerCase();
   const inline = () => Array.from(node.childNodes).map(inlineNodeToMarkdown).join("").trimEnd();
 
-  if (/^h[1-6]$/.test(tag)) return `${"#".repeat(Number(tag.slice(1)))} ${inline()}`;
+  if (/^h[1-6]$/.test(tag)) {
+    const content = inline();
+    return `${"#".repeat(Number(tag.slice(1)))} ${
+      node.getAttribute("data-accent-heading") === "true" ? `==${content}==` : content
+    }`;
+  }
   if (tag === "p") return inline();
   if (tag === "blockquote") {
     return Array.from(node.childNodes)

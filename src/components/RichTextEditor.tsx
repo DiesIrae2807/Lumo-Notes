@@ -4,6 +4,7 @@ import Link from "@tiptap/extension-link";
 import Image from "@tiptap/extension-image";
 import TaskItem from "@tiptap/extension-task-item";
 import TaskList from "@tiptap/extension-task-list";
+import { Extension } from "@tiptap/core";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { Attachment } from "../types/note";
 import { editorHtmlToMarkdown, markdownToEditorHtml } from "../utils/richTextMarkdown";
@@ -21,6 +22,10 @@ export type RichTextAction =
   | "checkbox"
   | "link";
 
+export type RichTextLinkRequest = {
+  selectedText: string;
+};
+
 type RichTextEditorProps = {
   attachments: Attachment[];
   content: string;
@@ -35,6 +40,28 @@ type RichTextEditorProps = {
 };
 
 const extensions = [
+  Extension.create({
+    name: "accentHeadingAttribute",
+    addGlobalAttributes() {
+      return [
+        {
+          types: ["heading"],
+          attributes: {
+            accent: {
+              default: false,
+              parseHTML: (element) => element.getAttribute("data-accent-heading") === "true",
+              renderHTML: (attributes) =>
+                attributes.accent
+                  ? {
+                      "data-accent-heading": "true",
+                    }
+                  : {},
+            },
+          },
+        },
+      ];
+    },
+  }),
   StarterKit.configure({
     heading: {
       levels: [1, 2, 3],
@@ -44,8 +71,13 @@ const extensions = [
     autolink: true,
     HTMLAttributes: {
       class: "rich-editor-link",
+      rel: null,
+      target: null,
     },
+    isAllowedUri: (url, { defaultValidate }) =>
+      url.startsWith("internal:") || url.startsWith("attachment://") || defaultValidate(url),
     openOnClick: false,
+    protocols: ["internal", "attachment"],
   }),
   Image.configure({
     HTMLAttributes: {
@@ -68,26 +100,64 @@ export function runRichTextAction(editor: TiptapEditor | null, action: RichTextA
 
   if (action === "bold") chain.toggleBold().run();
   if (action === "italic") chain.toggleItalic().run();
-  if (action === "heading") chain.toggleHeading({ level: 2 }).run();
+  if (action === "heading") {
+    if (editor.isActive("heading", { level: 2, accent: false })) {
+      chain.setParagraph().run();
+    } else {
+      chain.setNode("heading", { level: 2, accent: false }).run();
+    }
+  }
   if (action === "bullet") chain.toggleBulletList().run();
   if (action === "numbered") chain.toggleOrderedList().run();
   if (action === "quote") chain.toggleBlockquote().run();
   if (action === "code") chain.toggleCode().run();
   if (action === "checkbox") chain.toggleTaskList().run();
-  if (action === "accentHeading") chain.toggleHeading({ level: 2 }).run();
+  if (action === "accentHeading") {
+    if (editor.isActive("heading", { level: 2, accent: true })) {
+      chain.setParagraph().run();
+    } else {
+      chain.setNode("heading", { level: 2, accent: true }).run();
+    }
+  }
   if (action === "link") {
     const selectedText = editor.state.doc.textBetween(
       editor.state.selection.from,
       editor.state.selection.to,
       " ",
     );
-    const title = window.prompt("Linked note title", selectedText || "");
-    if (!title?.trim()) return;
-    const alias = selectedText && selectedText !== title ? selectedText : title;
-    chain
-      .insertContent(`<a href="internal:${encodeURIComponent(title.trim())}">${alias}</a>`)
-      .run();
+    window.dispatchEvent(
+      new CustomEvent<RichTextLinkRequest>("lumo-open-rich-link-dialog", {
+        detail: { selectedText },
+      }),
+    );
   }
+}
+
+export function insertInternalRichTextLink(
+  editor: TiptapEditor | null,
+  title: string,
+  displayText?: string,
+) {
+  const targetTitle = title.trim();
+  if (!editor || !targetTitle) return;
+
+  const label = displayText?.trim() || targetTitle;
+  editor
+    .chain()
+    .focus()
+    .insertContent({
+      marks: [
+        {
+          type: "link",
+          attrs: {
+            href: `internal:${encodeURIComponent(targetTitle)}`,
+          },
+        },
+      ],
+      text: label,
+      type: "text",
+    })
+    .run();
 }
 
 export function RichTextEditor({
@@ -134,7 +204,7 @@ export function RichTextEditor({
       handleKeyDown: (_view, event) => {
         if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === "k") {
           event.preventDefault();
-          window.dispatchEvent(new Event("lumo-rich-internal-link"));
+          runRichTextAction(editor, "link");
           return true;
         }
         return false;
@@ -168,6 +238,7 @@ export function RichTextEditor({
             bullet: editor.isActive("bulletList"),
             checkbox: editor.isActive("taskList"),
             code: editor.isActive("code"),
+            accentHeading: editor.isActive("heading", { level: 2, accent: true }),
             heading: editor.isActive("heading", { level: 2 }),
             italic: editor.isActive("italic"),
             numbered: editor.isActive("orderedList"),
@@ -238,15 +309,12 @@ export function RichTextEditor({
 
     const undo = () => editor.chain().focus().undo().run();
     const redo = () => editor.chain().focus().redo().run();
-    const link = () => runRichTextAction(editor, "link");
 
     window.addEventListener("lumo-editor-undo", undo);
     window.addEventListener("lumo-editor-redo", redo);
-    window.addEventListener("lumo-rich-internal-link", link);
     return () => {
       window.removeEventListener("lumo-editor-undo", undo);
       window.removeEventListener("lumo-editor-redo", redo);
-      window.removeEventListener("lumo-rich-internal-link", link);
     };
   }, [editor]);
 

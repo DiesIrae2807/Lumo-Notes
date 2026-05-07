@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { MarkdownPreview } from "./MarkdownPreview";
-import { RichTextEditor, runRichTextAction, type RichTextAction } from "./RichTextEditor";
+import {
+  RichTextEditor,
+  insertInternalRichTextLink,
+  runRichTextAction,
+  type RichTextAction,
+  type RichTextLinkRequest,
+} from "./RichTextEditor";
+import { RichTextPreview } from "./RichTextPreview";
 import type { Editor as TiptapEditor } from "@tiptap/react";
 import { FavoriteHeartIcon } from "./icons/FavoriteHeartIcon";
 import { FocusIcon } from "./icons/FocusIcon";
@@ -137,7 +143,13 @@ export function Editor({
   const [wordGoal, setWordGoal] = useState("");
   const [isMetadataOpen, setIsMetadataOpen] = useState(false);
   const [isOverflowOpen, setIsOverflowOpen] = useState(false);
+  const [linkDialog, setLinkDialog] = useState<{
+    displayText: string;
+    isOpen: boolean;
+    title: string;
+  }>({ displayText: "", isOpen: false, title: "" });
   const richEditorRef = useRef<TiptapEditor | null>(null);
+  const linkTitleInputRef = useRef<HTMLInputElement | null>(null);
   const historiesRef = useRef(new Map<string, EditorHistory>());
   const forceHistoryCheckpointRef = useRef(false);
   const [richToolbarState, setRichToolbarState] = useState<Record<string, boolean>>({});
@@ -311,6 +323,22 @@ export function Editor({
     return () => window.removeEventListener("lumo-rich-selection-state", updateToolbarState);
   }, []);
 
+  useEffect(() => {
+    const openLinkDialog = (event: Event) => {
+      const { selectedText = "" } = (event as CustomEvent<RichTextLinkRequest>).detail ?? {};
+      setEditorMode("edit");
+      setLinkDialog({
+        displayText: selectedText,
+        isOpen: true,
+        title: selectedText,
+      });
+      window.setTimeout(() => linkTitleInputRef.current?.focus(), 0);
+    };
+
+    window.addEventListener("lumo-open-rich-link-dialog", openLinkDialog);
+    return () => window.removeEventListener("lumo-open-rich-link-dialog", openLinkDialog);
+  }, []);
+
   if (!selectedNote) {
     return <EmptyEditor />;
   }
@@ -408,6 +436,18 @@ export function Editor({
 
   const insertMarkdown = (action: MarkdownAction) => {
     runRichTextAction(richEditorRef.current, action);
+  };
+
+  const closeLinkDialog = () => {
+    setLinkDialog({ displayText: "", isOpen: false, title: "" });
+    window.setTimeout(() => richEditorRef.current?.commands.focus(), 0);
+  };
+
+  const submitLinkDialog = () => {
+    const title = linkDialog.title.trim();
+    if (!title) return;
+    insertInternalRichTextLink(richEditorRef.current, title, linkDialog.displayText);
+    setLinkDialog({ displayText: "", isOpen: false, title: "" });
   };
 
   const handleHistoryKeyDown = (
@@ -759,11 +799,10 @@ export function Editor({
           </div>
 
           {editorMode === "preview" ? (
-            <MarkdownPreview
+            <RichTextPreview
               content={selectedNote.content}
               attachments={selectedNoteAttachments}
               onInternalLinkClick={openInternalLink}
-              isInternalLinkResolved={isInternalLinkResolved}
               onAttachmentClick={openAttachmentById}
             />
           ) : editorMode === "split" ? (
@@ -787,11 +826,10 @@ export function Editor({
                   richEditorRef.current = editor;
                 }}
               />
-              <MarkdownPreview
+              <RichTextPreview
                 content={selectedNote.content}
                 attachments={selectedNoteAttachments}
                 onInternalLinkClick={openInternalLink}
-                isInternalLinkResolved={isInternalLinkResolved}
                 onAttachmentClick={openAttachmentById}
               />
             </div>
@@ -861,6 +899,78 @@ export function Editor({
           Updated {updatedLabel} · {currentWordCount} words
         </span>
       </div>
+      {linkDialog.isOpen ? (
+        <div
+          className="fixed inset-0 z-[70] grid place-items-center bg-night-950/55 px-4 backdrop-blur-sm"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) closeLinkDialog();
+          }}
+        >
+          <form
+            className="w-full max-w-md rounded-2xl border border-white/10 bg-night-900/95 p-4 shadow-[0_24px_80px_rgba(0,0,0,0.45)]"
+            onSubmit={(event) => {
+              event.preventDefault();
+              submitLinkDialog();
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.preventDefault();
+                closeLinkDialog();
+              }
+            }}
+          >
+            <div className="mb-4">
+              <p className="text-sm font-semibold text-white">Internal link</p>
+              <p className="mt-1 text-xs text-slate-500">
+                Link to a note and optionally choose the text shown in the editor.
+              </p>
+            </div>
+            <label className="block space-y-2">
+              <span className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
+                Linked note title
+              </span>
+              <input
+                ref={linkTitleInputRef}
+                className="h-10 w-full rounded-lg border border-white/10 bg-night-950/80 px-3 text-sm text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-lumo-teal/50 focus:ring-2 focus:ring-lumo-teal/10"
+                value={linkDialog.title}
+                onChange={(event) =>
+                  setLinkDialog((current) => ({ ...current, title: event.target.value }))
+                }
+                placeholder="Project Aurora"
+              />
+            </label>
+            <label className="mt-3 block space-y-2">
+              <span className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
+                Display text
+              </span>
+              <input
+                className="h-10 w-full rounded-lg border border-white/10 bg-night-950/80 px-3 text-sm text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-lumo-teal/50 focus:ring-2 focus:ring-lumo-teal/10"
+                value={linkDialog.displayText}
+                onChange={(event) =>
+                  setLinkDialog((current) => ({ ...current, displayText: event.target.value }))
+                }
+                placeholder="Defaults to linked note title"
+              />
+            </label>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                className="rounded-lg px-3 py-2 text-sm text-slate-400 transition hover:bg-white/[0.05] hover:text-white"
+                onClick={closeLinkDialog}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="rounded-lg bg-lumo-violet px-3 py-2 text-sm font-medium text-white transition hover:bg-lumo-violet/90 disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={!linkDialog.title.trim()}
+              >
+                Insert link
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
     </main>
   );
 }

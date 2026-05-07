@@ -159,6 +159,13 @@
     line-height: 1.18;
   }
 
+  .rich-editor-prose h1[data-accent-heading="true"],
+  .rich-editor-prose h2[data-accent-heading="true"],
+  .rich-editor-prose h3[data-accent-heading="true"] {
+    color: var(--lumo-secondary);
+    text-shadow: 0 0 18px color-mix(in srgb, var(--lumo-secondary) 14%, transparent);
+  }
+
   .rich-editor-prose h1 {
     font-size: 1.85rem;
   }
@@ -262,6 +269,17 @@
   .rich-editor-typewriter {
     padding-top: min(18vh, 140px);
     padding-bottom: min(22vh, 180px);
+  }
+
+  .rich-editor-preview-shell {
+    background: rgba(5, 10, 18, 0.16);
+  }
+
+  .rich-editor-preview-empty {
+    display: grid;
+    place-items: center;
+    color: rgb(100 116 139);
+    text-align: center;
   }
 
   .panel {
