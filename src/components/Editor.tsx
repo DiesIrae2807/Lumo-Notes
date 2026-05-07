@@ -53,7 +53,6 @@ const editorTools: Array<{ label: string; action: MarkdownAction }> = [
 const wordCount = (content: string) =>
   content.trim() ? content.trim().split(/\s+/).length : 0;
 
-const readingMinutes = (content: string) => Math.max(1, Math.ceil(wordCount(content) / 220));
 const TYPING_GROUP_MS = 950;
 const HISTORY_LIMIT = 80;
 
@@ -135,9 +134,7 @@ export function Editor({
   } = useNotes();
   const { settings } = useSettings();
   const [tagInput, setTagInput] = useState("");
-  const [isTypewriter, setIsTypewriter] = useState(false);
   const [isAttachmentBusy, setIsAttachmentBusy] = useState(false);
-  const [wordGoal, setWordGoal] = useState("");
   const [isMetadataOpen, setIsMetadataOpen] = useState(false);
   const [isOverflowOpen, setIsOverflowOpen] = useState(false);
   const [linkDialog, setLinkDialog] = useState<{
@@ -498,11 +495,6 @@ export function Editor({
   };
 
   const currentWordCount = wordCount(selectedNote.content);
-  const numericWordGoal = Number(wordGoal);
-  const goalProgress =
-    Number.isFinite(numericWordGoal) && numericWordGoal > 0
-      ? Math.min(100, Math.round((currentWordCount / numericWordGoal) * 100))
-      : null;
   const compactTags = selectedNote.tags.length > 0 ? selectedNote.tags.join(" · ") : "No tags";
   const updatedLabel = formatMetadataDate(selectedNote.updatedAt);
 
@@ -625,32 +617,9 @@ export function Editor({
       </div>
 
       <article className="scroll-area flex-1 overflow-y-auto px-6 py-7 md:px-8">
-        <div className={`w-full ${isFocusMode ? "mx-auto max-w-5xl" : "max-w-[1400px]"}`}>
+        <div className="w-full max-w-[1400px]">
           {isFocusMode ? (
-            <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.025] px-4 py-3 text-xs text-slate-400">
-              <div className="flex flex-wrap items-center gap-4">
-                <span>{currentWordCount} words</span>
-                <span>{selectedNote.content.length} chars</span>
-                <span>{readingMinutes(selectedNote.content)} min read</span>
-                {goalProgress !== null ? <span>{goalProgress}% of goal</span> : null}
-              </div>
-              <div className="flex items-center gap-3">
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={isTypewriter}
-                    onChange={(event) => setIsTypewriter(event.target.checked)}
-                  />
-                  Typewriter
-                </label>
-                <input
-                  className="h-8 w-28 rounded-lg border border-white/10 bg-night-950/60 px-2 text-xs text-slate-200 outline-none placeholder:text-slate-600 focus:border-lumo-teal/40"
-                  value={wordGoal}
-                  onChange={(event) => setWordGoal(event.target.value.replace(/[^\d]/g, ""))}
-                  placeholder="Word goal"
-                />
-              </div>
-            </div>
+            null
           ) : null}
 
           <div className="mb-7 pt-1">
@@ -816,7 +785,7 @@ export function Editor({
             attachments={selectedNoteAttachments}
             content={selectedNote.content}
             isFocusMode={isFocusMode}
-            isTypewriter={isTypewriter}
+            isTypewriter={false}
             noteId={selectedNote.id}
             onAttachmentClick={openAttachmentById}
             onChange={(content, reason = "typing") =>

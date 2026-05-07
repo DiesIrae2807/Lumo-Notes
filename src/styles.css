@@ -135,13 +135,13 @@
   }
 
   .rich-editor-shell-focus {
-    border-color: color-mix(in srgb, var(--lumo-secondary) 24%, transparent);
-    background: rgba(5, 10, 18, 0.18);
+    border-color: transparent;
+    background: transparent;
   }
 
   .rich-editor-shell-focus:focus-within {
-    border-color: color-mix(in srgb, var(--lumo-secondary) 36%, transparent);
-    background: rgba(5, 10, 18, 0.24);
+    border-color: transparent;
+    background: transparent;
   }
 
   .rich-editor-shell[data-empty="true"] .rich-editor-prose::before {
