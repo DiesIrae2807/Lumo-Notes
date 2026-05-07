@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MarkdownPreview } from "./MarkdownPreview";
+import { RichTextEditor, runRichTextAction, type RichTextAction } from "./RichTextEditor";
+import type { Editor as TiptapEditor } from "@tiptap/react";
 import { FavoriteHeartIcon } from "./icons/FavoriteHeartIcon";
 import { FocusIcon } from "./icons/FocusIcon";
 import { PinIcon } from "./icons/PinIcon";
@@ -11,16 +13,7 @@ import { resolveInternalLink } from "../utils/links";
 import { notify, notifyError } from "../utils/toast";
 
 type MarkdownAction =
-  | "bold"
-  | "italic"
-  | "heading"
-  | "accentHeading"
-  | "bullet"
-  | "numbered"
-  | "quote"
-  | "code"
-  | "checkbox"
-  | "link";
+  RichTextAction;
 
 type EditorMode = "edit" | "preview" | "split";
 
@@ -144,9 +137,10 @@ export function Editor({
   const [wordGoal, setWordGoal] = useState("");
   const [isMetadataOpen, setIsMetadataOpen] = useState(false);
   const [isOverflowOpen, setIsOverflowOpen] = useState(false);
-  const bodyRef = useRef<HTMLTextAreaElement | null>(null);
+  const richEditorRef = useRef<TiptapEditor | null>(null);
   const historiesRef = useRef(new Map<string, EditorHistory>());
   const forceHistoryCheckpointRef = useRef(false);
+  const [richToolbarState, setRichToolbarState] = useState<Record<string, boolean>>({});
 
   const publishHistoryState = useCallback((history: EditorHistory | null) => {
     window.dispatchEvent(
@@ -283,7 +277,7 @@ export function Editor({
   useEffect(() => {
     const focusEditor = () => {
       setEditorMode("edit");
-      window.setTimeout(() => bodyRef.current?.focus(), 0);
+      window.setTimeout(() => richEditorRef.current?.commands.focus(), 0);
     };
     const setMode = (event: Event) => {
       const mode = (event as CustomEvent<EditorMode>).detail;
@@ -309,18 +303,13 @@ export function Editor({
   }, [ensureHistory, publishHistoryState, selectedNote]);
 
   useEffect(() => {
-    const undo = () => undoEditor();
-    const redo = () => redoEditor();
-    const state = historiesRef.current.get(selectedNote?.id ?? "") ?? null;
-    publishHistoryState(state);
-
-    window.addEventListener("lumo-editor-undo", undo);
-    window.addEventListener("lumo-editor-redo", redo);
-    return () => {
-      window.removeEventListener("lumo-editor-undo", undo);
-      window.removeEventListener("lumo-editor-redo", redo);
+    const updateToolbarState = (event: Event) => {
+      setRichToolbarState((event as CustomEvent<Record<string, boolean>>).detail ?? {});
     };
-  }, [publishHistoryState, redoEditor, selectedNote?.id, undoEditor]);
+
+    window.addEventListener("lumo-rich-selection-state", updateToolbarState);
+    return () => window.removeEventListener("lumo-rich-selection-state", updateToolbarState);
+  }, []);
 
   if (!selectedNote) {
     return <EmptyEditor />;
@@ -417,128 +406,8 @@ export function Editor({
     }
   };
 
-  const keepCursorCentered = (textarea: HTMLTextAreaElement) => {
-    if (!isTypewriter || !isFocusMode) return;
-
-    window.requestAnimationFrame(() => {
-      const valueBeforeCursor = textarea.value.slice(0, textarea.selectionStart);
-      const lineIndex = valueBeforeCursor.split("\n").length - 1;
-      const lineHeight = 32;
-      textarea.scrollTop = Math.max(0, lineIndex * lineHeight - textarea.clientHeight / 2);
-    });
-  };
-
   const insertMarkdown = (action: MarkdownAction) => {
-    const textarea = bodyRef.current;
-    if (!textarea) {
-      const fallback = {
-        bold: "**bold text**",
-        italic: "*italic text*",
-        heading: "## Heading",
-        accentHeading: "## ==Heading==",
-        bullet: "- List item",
-        numbered: "1. List item",
-        quote: "> Quote",
-        code: "`code`",
-        checkbox: "- [ ] Task",
-        link: "[[Linked note placeholder]]",
-      } satisfies Record<MarkdownAction, string>;
-
-      const separator = selectedNote.content.trim() ? "\n\n" : "";
-      applyEditorChange(
-        { content: `${selectedNote.content}${separator}${fallback[action]}` },
-        "format",
-        { forceCheckpoint: true },
-      );
-      setEditorMode("edit");
-      return;
-    }
-
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
-    const currentContent = textarea.value;
-    const selected = currentContent.slice(start, end);
-    let insertion = selected;
-    let nextSelectionStart = start;
-    let nextSelectionEnd = start;
-    const isAtLineStart = start === 0 || currentContent[start - 1] === "\n";
-
-    const linePrefix = (prefix: string) => {
-      const fallback = selected || "List item";
-      return fallback
-        .split("\n")
-        .map((line) => `${prefix}${line || " "}`)
-        .join("\n");
-    };
-
-    const normalizeBlockInsertion = (value: string) => (isAtLineStart ? value : `\n${value}`);
-
-    switch (action) {
-      case "bold":
-        insertion = `**${selected || "bold text"}**`;
-        nextSelectionStart = start + 2;
-        nextSelectionEnd = nextSelectionStart + (selected || "bold text").length;
-        break;
-      case "italic":
-        insertion = `*${selected || "italic text"}*`;
-        nextSelectionStart = start + 1;
-        nextSelectionEnd = nextSelectionStart + (selected || "italic text").length;
-        break;
-      case "heading":
-        insertion = `## ${selected || "Heading"}`;
-        nextSelectionStart = start + 3;
-        nextSelectionEnd = nextSelectionStart + (selected || "Heading").length;
-        break;
-      case "accentHeading":
-        insertion = `## ==${selected || "Heading"}==`;
-        nextSelectionStart = start + 5;
-        nextSelectionEnd = nextSelectionStart + (selected || "Heading").length;
-        break;
-      case "bullet":
-        insertion = normalizeBlockInsertion(linePrefix("- "));
-        break;
-      case "numbered":
-        insertion = normalizeBlockInsertion(
-          (selected || "List item")
-            .split("\n")
-            .map((line, index) => `${index + 1}. ${line || " "}`)
-            .join("\n"),
-        );
-        break;
-      case "quote":
-        insertion = linePrefix("> ");
-        break;
-      case "code":
-        insertion = selected.includes("\n")
-          ? `\`\`\`\n${selected || "code"}\n\`\`\``
-          : `\`${selected || "code"}\``;
-        break;
-      case "checkbox":
-        insertion = normalizeBlockInsertion(linePrefix("- [ ] "));
-        break;
-      case "link":
-        insertion = `[[${selected || "Linked note placeholder"}]]`;
-        nextSelectionStart = start + 2;
-        nextSelectionEnd = nextSelectionStart + (selected || "Linked note placeholder").length;
-        break;
-    }
-
-    const nextContent = currentContent.slice(0, start) + insertion + currentContent.slice(end);
-
-    textarea.focus();
-    textarea.setRangeText(insertion, start, end, "end");
-    applyEditorChange({ content: nextContent }, "format", { forceCheckpoint: true });
-
-    keepCursorCentered(textarea);
-
-    window.setTimeout(() => {
-      textarea.focus();
-      if (nextSelectionStart === start && nextSelectionEnd === start) {
-        textarea.setSelectionRange(start + insertion.length, start + insertion.length);
-      } else {
-        textarea.setSelectionRange(nextSelectionStart, nextSelectionEnd);
-      }
-    }, 0);
+    runRichTextAction(richEditorRef.current, action);
   };
 
   const handleHistoryKeyDown = (
@@ -572,23 +441,6 @@ export function Editor({
     }
 
     return false;
-  };
-
-  const handleEditorKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (handleHistoryKeyDown(event) || !event.ctrlKey) return;
-
-    const key = event.key.toLowerCase();
-
-    if (key === "b") {
-      event.preventDefault();
-      insertMarkdown("bold");
-    } else if (key === "i") {
-      event.preventDefault();
-      insertMarkdown("italic");
-    } else if (event.shiftKey && key === "k") {
-      event.preventDefault();
-      insertMarkdown("link");
-    }
   };
 
   const currentWordCount = wordCount(selectedNote.content);
@@ -916,29 +768,24 @@ export function Editor({
             />
           ) : editorMode === "split" ? (
             <div className="grid gap-4 xl:grid-cols-2">
-              <textarea
-                ref={bodyRef}
-                className={`min-h-[420px] w-full resize-none rounded-xl border border-white/10 bg-night-950/20 p-4 text-base leading-8 text-slate-200 outline-none transition placeholder:text-slate-600 focus:border-lumo-teal/35 focus:bg-night-950/35 ${
-                  isFocusMode && isTypewriter ? "focus-typewriter-textarea" : ""
-                }`}
-                style={{ fontSize: "var(--editor-font-size)", lineHeight: "var(--editor-line-height)" }}
-                value={selectedNote.content}
-                onChange={(event) => {
-                  applyEditorChange({ content: event.target.value }, "typing");
-                  keepCursorCentered(event.target);
-                }}
+              <RichTextEditor
+                attachments={selectedNoteAttachments}
+                content={selectedNote.content}
+                isFocusMode={isFocusMode}
+                isTypewriter={isTypewriter}
+                noteId={selectedNote.id}
+                onAttachmentClick={openAttachmentById}
+                onChange={(content, reason = "typing") =>
+                  applyEditorChange({ content }, reason, { forceCheckpoint: reason === "format" })
+                }
                 onBlur={() => {
                   finishHistoryChunk();
                   forceSaveSelectedNote();
                 }}
-                onCut={() => {
-                  forceHistoryCheckpointRef.current = true;
+                onInternalLinkClick={openInternalLink}
+                onReady={(editor) => {
+                  richEditorRef.current = editor;
                 }}
-                onKeyDown={handleEditorKeyDown}
-                onPaste={() => {
-                  forceHistoryCheckpointRef.current = true;
-                }}
-                placeholder="Start writing..."
               />
               <MarkdownPreview
                 content={selectedNote.content}
@@ -949,29 +796,24 @@ export function Editor({
               />
             </div>
           ) : (
-            <textarea
-              ref={bodyRef}
-              className={`min-h-[420px] w-full resize-none rounded-xl border border-white/10 bg-night-950/20 p-4 text-base leading-8 text-slate-200 outline-none transition placeholder:text-slate-600 focus:border-lumo-teal/35 focus:bg-night-950/35 ${
-                isFocusMode && isTypewriter ? "focus-typewriter-textarea" : ""
-              }`}
-              style={{ fontSize: "var(--editor-font-size)", lineHeight: "var(--editor-line-height)" }}
-              value={selectedNote.content}
-              onChange={(event) => {
-                applyEditorChange({ content: event.target.value }, "typing");
-                keepCursorCentered(event.target);
-              }}
+            <RichTextEditor
+              attachments={selectedNoteAttachments}
+              content={selectedNote.content}
+              isFocusMode={isFocusMode}
+              isTypewriter={isTypewriter}
+              noteId={selectedNote.id}
+              onAttachmentClick={openAttachmentById}
+              onChange={(content, reason = "typing") =>
+                applyEditorChange({ content }, reason, { forceCheckpoint: reason === "format" })
+              }
               onBlur={() => {
                 finishHistoryChunk();
                 forceSaveSelectedNote();
               }}
-              onCut={() => {
-                forceHistoryCheckpointRef.current = true;
+              onInternalLinkClick={openInternalLink}
+              onReady={(editor) => {
+                richEditorRef.current = editor;
               }}
-              onKeyDown={handleEditorKeyDown}
-              onPaste={() => {
-                forceHistoryCheckpointRef.current = true;
-              }}
-              placeholder="Start writing..."
             />
           )}
 
@@ -998,7 +840,10 @@ export function Editor({
           {editorTools.map((tool) => (
             <button
               key={tool.action}
-              className="rounded-lg px-3 py-2 text-xs transition hover:bg-white/[0.05] hover:text-white active:scale-95"
+              className={`rounded-lg px-3 py-2 text-xs transition hover:bg-white/[0.05] hover:text-white active:scale-95 ${
+                richToolbarState[tool.action] ? "bg-lumo-violet/20 text-white" : ""
+              }`}
+              onMouseDown={(event) => event.preventDefault()}
               onClick={() => insertMarkdown(tool.action)}
             >
               {tool.label}
