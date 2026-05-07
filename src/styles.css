@@ -403,6 +403,19 @@
     padding: 0;
   }
 
+  .rich-editor-find-hit {
+    border-radius: 0.25rem;
+    background: rgba(114, 79, 12, 0.42);
+    color: #ffe8a3;
+  }
+
+  .rich-editor-find-hit-active {
+    border-radius: 0.25rem;
+    background: rgba(246, 200, 95, 0.32);
+    box-shadow: 0 0 0 1px rgba(246, 200, 95, 0.34);
+    color: #fff1bd;
+  }
+
   .rich-editor-preview-shell {
     background: rgba(5, 10, 18, 0.16);
   }

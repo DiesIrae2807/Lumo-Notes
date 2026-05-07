@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Attachment } from "../types/note";
 import { editorHtmlToMarkdown, markdownToEditorHtml } from "../utils/richTextMarkdown";
 import { getAttachmentDataUrl } from "../services/database";
-import { richTextExtensions } from "./editorExtensions";
+import { findHighlightPluginKey, richTextExtensions, type FindHighlightMeta } from "./editorExtensions";
 
 export type RichTextAction =
   | "bold"
@@ -627,6 +627,33 @@ export function RichTextEditor({
     [editor],
   );
 
+  const applyFindHighlights = useCallback(
+    (ranges: Array<{ from: number; to: number }>, activeIndex: number) => {
+      if (!editor) return;
+      const meta: FindHighlightMeta = { activeIndex, ranges };
+      editor.view.dispatch(editor.state.tr.setMeta(findHighlightPluginKey, meta));
+    },
+    [editor],
+  );
+
+  const scrollFindMatchIntoView = useCallback(
+    (match: { from: number; to: number }) => {
+      if (!editor) return;
+      const coords = editor.view.coordsAtPos(match.from);
+      const scrollContainer = shellRef.current?.closest(".scroll-area");
+      const containerRect = scrollContainer?.getBoundingClientRect();
+      if (!scrollContainer || !containerRect) return;
+
+      if (coords.top < containerRect.top + 80 || coords.bottom > containerRect.bottom - 80) {
+        scrollContainer.scrollBy({
+          behavior: "smooth",
+          top: coords.top - containerRect.top - 140,
+        });
+      }
+    },
+    [editor],
+  );
+
   const selectFindMatch = useCallback(
     (query: string, direction: 1 | -1 = 1) => {
       if (!editor) return;
@@ -634,6 +661,7 @@ export function RichTextEditor({
       setFindTotal(matches.length);
       if (!matches.length) {
         setFindIndex(0);
+        applyFindHighlights([], -1);
         return;
       }
 
@@ -642,9 +670,11 @@ export function RichTextEditor({
         : (findIndex - 1 + matches.length) % matches.length;
       const match = matches[nextIndex];
       setFindIndex(nextIndex);
-      editor.chain().focus().setTextSelection(match).run();
+      applyFindHighlights(matches, nextIndex);
+      scrollFindMatchIntoView(match);
+      window.setTimeout(() => findInputRef.current?.focus(), 0);
     },
-    [editor, findIndex, findMatches],
+    [applyFindHighlights, editor, findIndex, findMatches, scrollFindMatchIntoView],
   );
 
   const removeSelectedAttachmentReference = useCallback(() => {
@@ -795,15 +825,15 @@ export function RichTextEditor({
               setFindIndex(0);
               const matches = findMatches(event.target.value);
               setFindTotal(matches.length);
-              if (matches[0]) {
-                editor?.chain().focus().setTextSelection(matches[0]).run();
-              }
+              applyFindHighlights(matches, matches.length ? 0 : -1);
+              if (matches[0]) scrollFindMatchIntoView(matches[0]);
+              window.setTimeout(() => findInputRef.current?.focus(), 0);
             }}
             onKeyDown={(event) => {
               if (event.key === "Escape") {
                 event.preventDefault();
+                applyFindHighlights([], -1);
                 setFindOpen(false);
-                editor?.commands.focus();
               }
             }}
             placeholder="Find in note"
@@ -819,7 +849,15 @@ export function RichTextEditor({
               <path d="M6 3.5L10.5 8L6 12.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </button>
-          <button type="button" onClick={() => setFindOpen(false)} aria-label="Close find" title="Close find">
+          <button
+            type="button"
+            onClick={() => {
+              applyFindHighlights([], -1);
+              setFindOpen(false);
+            }}
+            aria-label="Close find"
+            title="Close find"
+          >
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
               <path d="M4.5 4.5L11.5 11.5M11.5 4.5L4.5 11.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
             </svg>

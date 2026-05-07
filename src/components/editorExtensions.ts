@@ -4,6 +4,15 @@ import Link from "@tiptap/extension-link";
 import StarterKit from "@tiptap/starter-kit";
 import TaskItem from "@tiptap/extension-task-item";
 import TaskList from "@tiptap/extension-task-list";
+import { Plugin, PluginKey } from "@tiptap/pm/state";
+import { Decoration, DecorationSet } from "@tiptap/pm/view";
+
+export const findHighlightPluginKey = new PluginKey<DecorationSet>("lumoFindHighlights");
+
+export type FindHighlightMeta = {
+  activeIndex: number;
+  ranges: Array<{ from: number; to: number }>;
+};
 
 const AccentHeadingAttribute = Extension.create({
   name: "accentHeadingAttribute",
@@ -46,8 +55,45 @@ const AttachmentImage = Image.extend({
   },
 });
 
+const FindHighlightExtension = Extension.create({
+  name: "findHighlight",
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        key: findHighlightPluginKey,
+        props: {
+          decorations(state) {
+            return findHighlightPluginKey.getState(state);
+          },
+        },
+        state: {
+          init() {
+            return DecorationSet.empty;
+          },
+          apply(transaction, decorations, _oldState, newState) {
+            const meta = transaction.getMeta(findHighlightPluginKey) as FindHighlightMeta | null;
+            if (meta) {
+              return DecorationSet.create(
+                newState.doc,
+                meta.ranges.map((range, index) =>
+                  Decoration.inline(range.from, range.to, {
+                    class: index === meta.activeIndex ? "rich-editor-find-hit-active" : "rich-editor-find-hit",
+                  }),
+                ),
+              );
+            }
+
+            return decorations.map(transaction.mapping, transaction.doc);
+          },
+        },
+      }),
+    ];
+  },
+});
+
 export const richTextExtensions = [
   AccentHeadingAttribute,
+  FindHighlightExtension,
   StarterKit.configure({
     heading: {
       levels: [1, 2, 3],
