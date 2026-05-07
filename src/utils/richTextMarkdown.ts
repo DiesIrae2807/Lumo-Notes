@@ -7,9 +7,10 @@ const escapeHtml = (value: string) =>
 
 const inlineMarkdownToHtml = (value: string, attachmentUrls: Record<string, string> = {}) => {
   let next = escapeHtml(value);
-  next = next.replace(/!\[([^\]]*)\]\((attachment:\/\/[^)]+)\)/g, (_match, alt, src) => {
+  next = next.replace(/!\[([^\]]*)\]\((attachment:\/\/[^)]+)\)(?:\{width=(\d+)\})?/g, (_match, alt, src, width) => {
     const id = String(src).slice("attachment://".length);
-    return `<img src="${attachmentUrls[id] ?? src}" data-attachment-src="${src}" alt="${alt}" />`;
+    const widthAttrs = width ? ` data-width="${width}" style="width: ${width}px;"` : "";
+    return `<img src="${attachmentUrls[id] ?? src}" data-attachment-src="${src}" alt="${alt}"${widthAttrs} />`;
   });
   next = next.replace(/\[([^\]]+)\]\((attachment:\/\/[^)]+)\)/g, '<a href="$2">$1</a>');
   next = next.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
@@ -142,7 +143,8 @@ function inlineNodeToMarkdown(node: Node): string {
     if (source.startsWith("data:")) {
       return "";
     }
-    return `![${node.getAttribute("alt") ?? "image"}](${source})`;
+    const width = node.getAttribute("data-width") ?? "";
+    return `![${node.getAttribute("alt") ?? "image"}](${source})${width ? `{width=${width}}` : ""}`;
   }
   if (tag === "a") {
     const href = node.getAttribute("href") ?? "";

@@ -41,6 +41,20 @@ const AttachmentImage = Image.extend({
   addAttributes() {
     return {
       ...this.parent?.(),
+      width: {
+        default: null,
+        parseHTML: (element) => {
+          const value = element.getAttribute("data-width") ?? element.getAttribute("width");
+          return value ? Number.parseInt(value, 10) : null;
+        },
+        renderHTML: (attributes) =>
+          attributes.width
+            ? {
+                "data-width": attributes.width,
+                style: `width: ${attributes.width}px;`,
+              }
+            : {},
+      },
       attachmentSrc: {
         default: null,
         parseHTML: (element) => element.getAttribute("data-attachment-src"),

@@ -1,6 +1,7 @@
 import { EditorContent, useEditor, type Editor as TiptapEditor } from "@tiptap/react";
+import { NodeSelection, TextSelection } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import type { Attachment } from "../types/note";
 import { editorHtmlToMarkdown, markdownToEditorHtml } from "../utils/richTextMarkdown";
 import { getAttachmentDataUrl } from "../services/database";
@@ -30,6 +31,7 @@ type RichTextEditorProps = {
   isTypewriter?: boolean;
   noteId: string;
   onAttachmentClick?: (id: string) => void;
+  onAttachmentSaveAs?: (id: string) => Promise<void> | void;
   onBlur?: () => void;
   onChange: (markdown: string, reason?: "typing" | "format") => void;
   onInternalLinkClick?: (title: string) => void;
@@ -47,8 +49,12 @@ type LinkPopover = FloatingPosition & {
 };
 
 type AttachmentPopover = FloatingPosition & {
+  height: number;
   id: string;
   pos: number;
+  width: number;
+  x: number;
+  y: number;
 };
 
 type SlashCommand = {
@@ -148,6 +154,7 @@ export function RichTextEditor({
   isTypewriter = false,
   noteId,
   onAttachmentClick,
+  onAttachmentSaveAs,
   onBlur,
   onChange,
   onInternalLinkClick,
@@ -160,6 +167,7 @@ export function RichTextEditor({
   const findInputRef = useRef<HTMLInputElement | null>(null);
   const isPointerSelecting = useRef(false);
   const editorInstanceRef = useRef<TiptapEditor | null>(null);
+  const selectedImageRef = useRef<HTMLImageElement | null>(null);
   const [findPanelPosition, setFindPanelPosition] = useState<FloatingPosition | null>(null);
   const [bubblePosition, setBubblePosition] = useState<FloatingPosition | null>(null);
   const [linkPopover, setLinkPopover] = useState<LinkPopover | null>(null);
@@ -169,7 +177,15 @@ export function RichTextEditor({
   const [findQuery, setFindQuery] = useState("");
   const [findIndex, setFindIndex] = useState(0);
   const [findTotal, setFindTotal] = useState(0);
+  const [fullscreenAttachmentId, setFullscreenAttachmentId] = useState<string | null>(null);
   const html = useMemo(() => markdownToEditorHtml(content, attachmentUrls.current), [content]);
+
+  const selectedAttachment = attachmentPopover
+    ? attachments.find((attachment) => attachment.id === attachmentPopover.id)
+    : null;
+  const fullscreenAttachment = fullscreenAttachmentId
+    ? attachments.find((attachment) => attachment.id === fullscreenAttachmentId)
+    : null;
 
   const hideFloatingUi = useCallback(() => {
     setBubblePosition(null);
@@ -181,7 +197,7 @@ export function RichTextEditor({
   const updateBubblePosition = useCallback(
     (currentEditor: TiptapEditor) => {
       const { from, to } = currentEditor.state.selection;
-      if (from === to) {
+      if (!(currentEditor.state.selection instanceof TextSelection) || from === to) {
         setBubblePosition(null);
         return;
       }
@@ -197,7 +213,7 @@ export function RichTextEditor({
 
   const updateBubblePositionFromView = useCallback((view: EditorView) => {
     const { from, to } = view.state.selection;
-    if (from === to) {
+    if (!(view.state.selection instanceof TextSelection) || from === to) {
       setBubblePosition(null);
       return;
     }
@@ -208,6 +224,66 @@ export function RichTextEditor({
     setLinkPopover(null);
     setAttachmentPopover(null);
   }, []);
+
+  const measureImagePopover = useCallback((image: HTMLImageElement, pos: number, attachmentId: string) => {
+    const shellRect = shellRef.current?.getBoundingClientRect();
+    const imageRect = image.getBoundingClientRect();
+    if (!shellRect || imageRect.width < 8 || imageRect.height < 8) return null;
+
+    return {
+      id: attachmentId,
+      height: Math.round(imageRect.height),
+      left: clamp(imageRect.left - shellRect.left, 12, Math.max(12, shellRect.width - 260)),
+      pos,
+      top: clamp(imageRect.top - shellRect.top - 48, 12, Math.max(12, shellRect.height - 92)),
+      width: Math.round(imageRect.width),
+      x: imageRect.left - shellRect.left,
+      y: imageRect.top - shellRect.top,
+    };
+  }, []);
+
+  const openImagePopover = useCallback((image: HTMLImageElement, pos: number) => {
+    const attachmentSrc = image.getAttribute("data-attachment-src") ?? image.getAttribute("src") ?? "";
+    const attachmentId = attachmentSrc.startsWith("attachment://")
+      ? attachmentSrc.slice("attachment://".length)
+      : "";
+    if (!attachmentId) return false;
+
+    selectedImageRef.current = image;
+    const applyMeasurement = () => {
+      const next = measureImagePopover(image, pos, attachmentId);
+      if (next) setAttachmentPopover(next);
+    };
+
+    const measured = measureImagePopover(image, pos, attachmentId);
+    if (measured) {
+      setAttachmentPopover(measured);
+    } else {
+      window.requestAnimationFrame(applyMeasurement);
+      if (!image.complete) {
+        image.addEventListener("load", applyMeasurement, { once: true });
+      }
+    }
+    setLinkPopover(null);
+    setSlashPosition(null);
+    setBubblePosition(null);
+    return true;
+  }, [measureImagePopover]);
+
+  const openSelectedImagePopover = useCallback((currentEditor: TiptapEditor) => {
+    const { selection } = currentEditor.state;
+    if (!(selection instanceof NodeSelection) || selection.node.type.name !== "image") return false;
+
+    const dom = currentEditor.view.nodeDOM(selection.from);
+    const image = dom instanceof HTMLImageElement
+      ? dom
+      : dom instanceof HTMLElement
+        ? dom.querySelector("img")
+        : null;
+
+    if (!image) return false;
+    return openImagePopover(image, selection.from);
+  }, [openImagePopover]);
 
   const editor = useEditor({
     content: html,
@@ -225,20 +301,8 @@ export function RichTextEditor({
         const target = event.target as HTMLElement | null;
         const image = target?.closest("img");
         if (image) {
-          const attachmentSrc = image.getAttribute("data-attachment-src") ?? image.getAttribute("src") ?? "";
-          const attachmentId = attachmentSrc.startsWith("attachment://")
-            ? attachmentSrc.slice("attachment://".length)
-            : "";
-          if (attachmentId) {
-            event.preventDefault();
-            const coords = positionFromCoords(shellRef.current, {
-              left: event.clientX,
-              top: event.clientY,
-            });
-            setAttachmentPopover({ ...coords, id: attachmentId, pos });
-            setLinkPopover(null);
-            setSlashPosition(null);
-            setBubblePosition(null);
+          const imagePos = editor?.view.posAtDOM(image, 0) ?? pos;
+          if (openImagePopover(image as HTMLImageElement, imagePos)) {
             return true;
           }
         }
@@ -331,7 +395,24 @@ export function RichTextEditor({
         return false;
       },
       handleDOMEvents: {
-        mousedown: () => {
+        contextmenu: (view, event) => {
+          const target = event.target as HTMLElement | null;
+          const image = target?.closest("img");
+          if (!image) return false;
+          const pos = view.posAtDOM(image, 0);
+          if (openImagePopover(image as HTMLImageElement, pos)) {
+            event.preventDefault();
+            return true;
+          }
+          return false;
+        },
+        mousedown: (_view, event) => {
+          const target = event.target as HTMLElement | null;
+          if (target?.closest("img") || target?.closest(".rich-editor-popover") || target?.closest(".rich-editor-image-resize-handle")) {
+            isPointerSelecting.current = false;
+            setBubblePosition(null);
+            return false;
+          }
           isPointerSelecting.current = true;
           setBubblePosition(null);
           return false;
@@ -364,7 +445,11 @@ export function RichTextEditor({
     },
     onDestroy: () => onReady?.(null),
     onSelectionUpdate: ({ editor }) => {
-      if (!isPointerSelecting.current) updateBubblePosition(editor);
+      if (openSelectedImagePopover(editor)) {
+        setBubblePosition(null);
+      } else if (!isPointerSelecting.current) {
+        updateBubblePosition(editor);
+      }
       window.dispatchEvent(
         new CustomEvent("lumo-rich-selection-state", {
           detail: {
@@ -683,6 +768,74 @@ export function RichTextEditor({
     setAttachmentPopover(null);
   }, [attachmentPopover, editor]);
 
+  const copySelectedAttachmentReference = useCallback(async (cut = false) => {
+    if (!attachmentPopover || !selectedAttachment) return;
+    const markdown = selectedAttachment.mimeType.startsWith("image/")
+      ? `![${selectedAttachment.filename}](attachment://${selectedAttachment.id})`
+      : `[${selectedAttachment.filename}](attachment://${selectedAttachment.id})`;
+    await navigator.clipboard?.writeText(markdown).catch(() => undefined);
+    if (cut) removeSelectedAttachmentReference();
+  }, [attachmentPopover, removeSelectedAttachmentReference, selectedAttachment]);
+
+  const startImageResize = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (!editor || !attachmentPopover) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setBubblePosition(null);
+
+    const startX = event.clientX;
+    const startWidth = attachmentPopover.width;
+    const maxWidth = Math.max(180, (shellRef.current?.clientWidth ?? 900) - 48);
+    const image = selectedImageRef.current;
+    const selection = editor.state.selection;
+    const imagePos = selection instanceof NodeSelection && selection.node.type.name === "image"
+      ? selection.from
+      : attachmentPopover.pos;
+    let finalWidth = startWidth;
+
+    const onMove = (moveEvent: PointerEvent) => {
+      const nextWidth = Math.round(clamp(startWidth + moveEvent.clientX - startX, 140, maxWidth));
+      finalWidth = nextWidth;
+      if (image) {
+        image.style.width = `${nextWidth}px`;
+        image.setAttribute("data-width", String(nextWidth));
+        const shellRect = shellRef.current?.getBoundingClientRect();
+        const imageRect = image.getBoundingClientRect();
+        if (shellRect) {
+          setAttachmentPopover((current) =>
+            current
+              ? {
+                  ...current,
+                  height: Math.round(imageRect.height),
+                  left: clamp(imageRect.left - shellRect.left, 12, Math.max(12, shellRect.width - 260)),
+                  top: clamp(imageRect.top - shellRect.top - 48, 12, Math.max(12, shellRect.height - 92)),
+                  width: Math.round(imageRect.width),
+                  x: imageRect.left - shellRect.left,
+                  y: imageRect.top - shellRect.top,
+                }
+              : current,
+          );
+        }
+        return;
+      }
+      setAttachmentPopover((current) => current ? { ...current, width: nextWidth } : current);
+    };
+
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      editor
+        .chain()
+        .focus()
+        .setNodeSelection(imagePos)
+        .updateAttributes("image", { width: finalWidth })
+        .run();
+    };
+
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }, [attachmentPopover, editor]);
+
   return (
     <div
       ref={shellRef}
@@ -773,39 +926,87 @@ export function RichTextEditor({
           </button>
         </div>
       ) : null}
-      {attachmentPopover ? (
-        <div
-          className="rich-editor-popover rich-editor-attachment-popover"
-          style={{ left: attachmentPopover.left, top: attachmentPopover.top }}
-          onMouseDown={(event) => event.preventDefault()}
-        >
-          <button
-            className="rich-editor-popover-button"
-            onClick={() => {
-              onAttachmentClick?.(attachmentPopover.id);
-              setAttachmentPopover(null);
+      {attachmentPopover && attachmentPopover.width >= 8 && attachmentPopover.height >= 8 ? (
+        <>
+          <div
+            className="rich-editor-image-resize-frame"
+            style={{
+              height: attachmentPopover.height,
+              left: attachmentPopover.x,
+              top: attachmentPopover.y,
+              width: attachmentPopover.width,
             }}
           >
-            Open
-          </button>
-          <button
-            className="rich-editor-popover-button"
-            onClick={() => editor?.chain().focus().setNodeSelection(attachmentPopover.pos).updateAttributes("image", { width: 320 }).run()}
+            <button
+              className="rich-editor-image-resize-handle"
+              onPointerDown={startImageResize}
+              aria-label="Resize image"
+              title="Drag to resize"
+            />
+          </div>
+          <div
+            className="rich-editor-popover rich-editor-attachment-popover"
+            style={{ left: attachmentPopover.left, top: attachmentPopover.top }}
+            onMouseDown={(event) => event.preventDefault()}
           >
-            Small
-          </button>
-          <button
-            className="rich-editor-popover-button"
-            onClick={() => editor?.chain().focus().setNodeSelection(attachmentPopover.pos).updateAttributes("image", { width: null }).run()}
-          >
-            Full
-          </button>
-          <button
-            className="rich-editor-popover-button rich-editor-popover-danger"
-            onClick={removeSelectedAttachmentReference}
-          >
-            Remove ref
-          </button>
+            <button
+              className="rich-editor-popover-button"
+              onClick={() => setFullscreenAttachmentId(attachmentPopover.id)}
+            >
+              Open
+            </button>
+            <button
+              className="rich-editor-popover-button"
+              onClick={() => void onAttachmentSaveAs?.(attachmentPopover.id)}
+            >
+              Save as
+            </button>
+            <button
+              className="rich-editor-popover-button"
+              onClick={() => void copySelectedAttachmentReference(false)}
+            >
+              Copy
+            </button>
+            <button
+              className="rich-editor-popover-button"
+              onClick={() => void copySelectedAttachmentReference(true)}
+            >
+              Cut
+            </button>
+            <button
+              className="rich-editor-popover-button rich-editor-popover-danger"
+              onClick={removeSelectedAttachmentReference}
+            >
+              Remove
+            </button>
+          </div>
+        </>
+      ) : null}
+      {fullscreenAttachment && attachmentUrls.current[fullscreenAttachment.id] ? (
+        <div
+          className="rich-editor-image-lightbox"
+          role="dialog"
+          aria-modal="true"
+          aria-label={fullscreenAttachment.filename}
+          onClick={() => setFullscreenAttachmentId(null)}
+        >
+          <div className="rich-editor-image-lightbox-bar" onClick={(event) => event.stopPropagation()}>
+            <span>{fullscreenAttachment.filename}</span>
+            <button
+              className="rich-editor-popover-button"
+              onClick={() => void onAttachmentSaveAs?.(fullscreenAttachment.id)}
+            >
+              Save as
+            </button>
+            <button
+              className="rich-editor-popover-button"
+              onClick={() => setFullscreenAttachmentId(null)}
+              aria-label="Close image preview"
+            >
+              Close
+            </button>
+          </div>
+          <img src={attachmentUrls.current[fullscreenAttachment.id]} alt={fullscreenAttachment.filename} />
         </div>
       ) : null}
       {findOpen ? (

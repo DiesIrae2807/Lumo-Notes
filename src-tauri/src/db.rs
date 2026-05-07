@@ -978,6 +978,30 @@ pub fn open_attachment(state: tauri::State<'_, DbState>, id: String) -> Result<(
 }
 
 #[tauri::command]
+pub fn save_attachment_as(state: tauri::State<'_, DbState>, id: String) -> Result<Option<String>, String> {
+    let connection = connect(&state.path)?;
+    create_schema(&connection)?;
+    let Some(attachment) = attachment_by_id(&connection, &id)? else {
+        return Err("Attachment not found.".to_string());
+    };
+
+    if !Path::new(&attachment.stored_path).exists() {
+        return Err("Attachment file is missing from local storage.".to_string());
+    }
+
+    let Some(path) = rfd::FileDialog::new()
+        .set_title("Save image as")
+        .set_file_name(&attachment.filename)
+        .save_file()
+    else {
+        return Ok(None);
+    };
+
+    fs::copy(&attachment.stored_path, &path).map_err(|error| error.to_string())?;
+    Ok(Some(path.to_string_lossy().to_string()))
+}
+
+#[tauri::command]
 pub fn get_attachment_data_url(
     state: tauri::State<'_, DbState>,
     id: String,

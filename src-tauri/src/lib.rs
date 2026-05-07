@@ -30,6 +30,7 @@ pub fn run() {
             db::attach_file_to_note,
             db::remove_attachment,
             db::open_attachment,
+            db::save_attachment_as,
             db::get_attachment_data_url,
             db::get_app_settings,
             db::set_app_setting,

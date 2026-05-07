@@ -132,6 +132,10 @@ export async function openAttachment(id: string) {
   return invoke<void>("open_attachment", { id });
 }
 
+export async function saveAttachmentAs(id: string) {
+  return invoke<string | null>("save_attachment_as", { id });
+}
+
 export async function getAttachmentDataUrl(id: string) {
   return invoke<string>("get_attachment_data_url", { id });
 }

@@ -12,6 +12,7 @@ import { FocusIcon } from "./icons/FocusIcon";
 import { PinIcon } from "./icons/PinIcon";
 import { useNotes } from "../store/notesStore";
 import { useSettings } from "../store/settingsStore";
+import { saveAttachmentAs } from "../services/database";
 import { noteToMarkdown, sanitizeFilename, saveTextFile } from "../services/fileTransfer";
 import { formatMetadataDate } from "../utils/date";
 import { resolveInternalLink } from "../utils/links";
@@ -432,6 +433,15 @@ export function Editor({
     }
   };
 
+  const saveAttachmentById = async (id: string) => {
+    try {
+      const path = await saveAttachmentAs(id);
+      if (path) notify({ kind: "success", title: "Image saved" });
+    } catch (error) {
+      notifyError("Could not save image", error);
+    }
+  };
+
   const confirmRemoveAttachment = async (id: string) => {
     if (
       !await confirmDialog({
@@ -796,6 +806,7 @@ export function Editor({
             isTypewriter={false}
             noteId={selectedNote.id}
             onAttachmentClick={openAttachmentById}
+            onAttachmentSaveAs={saveAttachmentById}
             onChange={(content, reason = "typing") =>
               applyEditorChange({ content }, reason, { forceCheckpoint: reason === "format" })
             }
