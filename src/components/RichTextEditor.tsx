@@ -1,4 +1,5 @@
 import { EditorContent, useEditor, type Editor as TiptapEditor } from "@tiptap/react";
+import type { EditorView } from "@tiptap/pm/view";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Attachment } from "../types/note";
 import { editorHtmlToMarkdown, markdownToEditorHtml } from "../utils/richTextMarkdown";
@@ -62,12 +63,13 @@ const positionFromCoords = (
   shell: HTMLDivElement | null,
   coords: { left: number; top: number },
   offsetY = -44,
+  minTop = 12,
 ): FloatingPosition => {
   const rect = shell?.getBoundingClientRect();
   if (!rect) return { left: 16, top: 16 };
   return {
     left: clamp(coords.left - rect.left, 12, Math.max(12, rect.width - 220)),
-    top: clamp(coords.top - rect.top + offsetY, 12, Math.max(12, rect.height - 92)),
+    top: clamp(coords.top - rect.top + offsetY, minTop, Math.max(minTop, rect.height - 92)),
   };
 };
 
@@ -156,6 +158,9 @@ export function RichTextEditor({
   const attachmentUrls = useRef<Record<string, string>>({});
   const shellRef = useRef<HTMLDivElement | null>(null);
   const findInputRef = useRef<HTMLInputElement | null>(null);
+  const isPointerSelecting = useRef(false);
+  const editorInstanceRef = useRef<TiptapEditor | null>(null);
+  const [findPanelPosition, setFindPanelPosition] = useState<FloatingPosition | null>(null);
   const [bubblePosition, setBubblePosition] = useState<FloatingPosition | null>(null);
   const [linkPopover, setLinkPopover] = useState<LinkPopover | null>(null);
   const [attachmentPopover, setAttachmentPopover] = useState<AttachmentPopover | null>(null);
@@ -171,6 +176,37 @@ export function RichTextEditor({
     setLinkPopover(null);
     setAttachmentPopover(null);
     setSlashPosition(null);
+  }, []);
+
+  const updateBubblePosition = useCallback(
+    (currentEditor: TiptapEditor) => {
+      const { from, to } = currentEditor.state.selection;
+      if (from === to) {
+        setBubblePosition(null);
+        return;
+      }
+
+      const coords = currentEditor.view.coordsAtPos(from);
+      setBubblePosition(positionFromCoords(shellRef.current, coords, -64, -54));
+      setSlashPosition(null);
+      setLinkPopover(null);
+      setAttachmentPopover(null);
+    },
+    [],
+  );
+
+  const updateBubblePositionFromView = useCallback((view: EditorView) => {
+    const { from, to } = view.state.selection;
+    if (from === to) {
+      setBubblePosition(null);
+      return;
+    }
+
+    const coords = view.coordsAtPos(from);
+    setBubblePosition(positionFromCoords(shellRef.current, coords, -64, -54));
+    setSlashPosition(null);
+    setLinkPopover(null);
+    setAttachmentPopover(null);
   }, []);
 
   const editor = useEditor({
@@ -220,7 +256,7 @@ export function RichTextEditor({
           const coords = positionFromCoords(shellRef.current, {
             left: event.clientX,
             top: event.clientY,
-          });
+          }, -64, -54);
           setLinkPopover({
             ...coords,
             label: link.textContent?.trim() || title,
@@ -240,8 +276,16 @@ export function RichTextEditor({
       },
       handleKeyDown: (_view, event) => {
         const key = event.key.toLowerCase();
-        if (event.ctrlKey && key === "f") {
-          event.preventDefault();
+      if (event.ctrlKey && key === "f") {
+        event.preventDefault();
+          const rect = shellRef.current?.getBoundingClientRect();
+          const editorColumn = shellRef.current?.closest(".column-panel")?.getBoundingClientRect();
+          if (rect && editorColumn) {
+            setFindPanelPosition({
+              left: Math.max(12, editorColumn.right - 342),
+              top: Math.max(64, editorColumn.top + 22),
+            });
+          }
           setFindOpen(true);
           window.setTimeout(() => findInputRef.current?.focus(), 0);
           return true;
@@ -287,6 +331,18 @@ export function RichTextEditor({
         return false;
       },
       handleDOMEvents: {
+        mousedown: () => {
+          isPointerSelecting.current = true;
+          setBubblePosition(null);
+          return false;
+        },
+        mouseup: (view) => {
+          isPointerSelecting.current = false;
+          window.setTimeout(() => {
+            updateBubblePositionFromView(view);
+          }, 80);
+          return false;
+        },
         blur: () => {
           onBlur?.();
           return false;
@@ -308,16 +364,7 @@ export function RichTextEditor({
     },
     onDestroy: () => onReady?.(null),
     onSelectionUpdate: ({ editor }) => {
-      const { from, to } = editor.state.selection;
-      if (from !== to) {
-        const coords = editor.view.coordsAtPos(from);
-        setBubblePosition(positionFromCoords(shellRef.current, coords, -48));
-        setSlashPosition(null);
-        setLinkPopover(null);
-        setAttachmentPopover(null);
-      } else {
-        setBubblePosition(null);
-      }
+      if (!isPointerSelecting.current) updateBubblePosition(editor);
       window.dispatchEvent(
         new CustomEvent("lumo-rich-selection-state", {
           detail: {
@@ -354,7 +401,26 @@ export function RichTextEditor({
 
   useEffect(() => {
     onReady?.(editor ?? null);
+    editorInstanceRef.current = editor ?? null;
   }, [editor, onReady]);
+
+  useEffect(() => {
+    const finishPointerSelection = () => {
+      if (!isPointerSelecting.current) return;
+      isPointerSelecting.current = false;
+      window.setTimeout(() => {
+        const currentEditor = editorInstanceRef.current;
+        if (currentEditor) updateBubblePosition(currentEditor);
+      }, 90);
+    };
+
+    window.addEventListener("mouseup", finishPointerSelection);
+    window.addEventListener("pointerup", finishPointerSelection);
+    return () => {
+      window.removeEventListener("mouseup", finishPointerSelection);
+      window.removeEventListener("pointerup", finishPointerSelection);
+    };
+  }, [updateBubblePosition]);
 
   useEffect(() => {
     if (!editor) return;
@@ -715,6 +781,7 @@ export function RichTextEditor({
       {findOpen ? (
         <form
           className="rich-editor-find-panel"
+          style={findPanelPosition ? { left: findPanelPosition.left, right: "auto", top: findPanelPosition.top } : undefined}
           onSubmit={(event) => {
             event.preventDefault();
             selectFindMatch(findQuery, 1);
@@ -742,9 +809,21 @@ export function RichTextEditor({
             placeholder="Find in note"
           />
           <span>{findQuery.trim() ? `${findTotal ? findIndex + 1 : 0}/${findTotal}` : "0/0"}</span>
-          <button type="button" onClick={() => selectFindMatch(findQuery, -1)}>Prev</button>
-          <button type="submit">Next</button>
-          <button type="button" onClick={() => setFindOpen(false)}>Close</button>
+          <button type="button" onClick={() => selectFindMatch(findQuery, -1)} aria-label="Previous match" title="Previous match">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path d="M10 3.5L5.5 8L10 12.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+          <button type="submit" aria-label="Next match" title="Next match">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path d="M6 3.5L10.5 8L6 12.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+          <button type="button" onClick={() => setFindOpen(false)} aria-label="Close find" title="Close find">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path d="M4.5 4.5L11.5 11.5M11.5 4.5L4.5 11.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+            </svg>
+          </button>
         </form>
       ) : null}
     </div>
