@@ -262,6 +262,20 @@
     color: color-mix(in srgb, var(--lumo-secondary) 72%, white);
   }
 
+  .rich-editor-prose u {
+    text-decoration-color: color-mix(in srgb, var(--lumo-secondary) 70%, transparent);
+    text-decoration-thickness: 0.08em;
+    text-underline-offset: 0.18em;
+  }
+
+  .rich-editor-prose mark {
+    border-radius: 0.25rem;
+    background: color-mix(in srgb, var(--lumo-secondary) 34%, rgba(255, 255, 255, 0.04));
+    box-decoration-break: clone;
+    color: rgb(241 245 249);
+    padding: 0.02rem 0.18rem;
+  }
+
   .rich-editor-image {
     display: block;
     max-width: 100%;

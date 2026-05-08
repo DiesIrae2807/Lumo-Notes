@@ -10,6 +10,8 @@ import { findHighlightPluginKey, richTextExtensions, type FindHighlightMeta } fr
 export type RichTextAction =
   | "bold"
   | "italic"
+  | "underline"
+  | "highlight"
   | "heading"
   | "accentHeading"
   | "bullet"
@@ -109,6 +111,20 @@ export function runRichTextAction(editor: TiptapEditor | null, action: RichTextA
 
   if (action === "bold") chain.toggleBold().run();
   if (action === "italic") chain.toggleItalic().run();
+  if (action === "underline") {
+    if (editor.isActive("underline")) {
+      editor.chain().focus().unsetMark("underline").run();
+    } else {
+      editor.chain().focus().setMark("underline").run();
+    }
+  }
+  if (action === "highlight") {
+    if (editor.isActive("highlight")) {
+      editor.chain().focus().unsetMark("highlight").run();
+    } else {
+      editor.chain().focus().setMark("highlight").run();
+    }
+  }
   if (action === "heading") {
     if (editor.isActive("heading", { level: 2, accent: false })) {
       chain.setParagraph().run();
@@ -497,12 +513,14 @@ export function RichTextEditor({
         new CustomEvent("lumo-rich-selection-state", {
           detail: {
             bold: editor.isActive("bold"),
+            highlight: editor.isActive("highlight"),
             bullet: editor.isActive("bulletList"),
             checkbox: editor.isActive("taskList"),
             code: editor.isActive("code"),
             accentHeading: editor.isActive("heading", { level: 2, accent: true }),
             heading: editor.isActive("heading", { level: 2 }),
             italic: editor.isActive("italic"),
+            underline: editor.isActive("underline"),
             numbered: editor.isActive("orderedList"),
             quote: editor.isActive("blockquote"),
           },
@@ -913,6 +931,8 @@ export function RichTextEditor({
           {[
             ["bold", "B"],
             ["italic", "I"],
+            ["underline", "U"],
+            ["highlight", "Highlight"],
             ["link", "Link"],
             ["code", "Code"],
           ].map(([action, label]) => (

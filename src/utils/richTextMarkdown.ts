@@ -19,7 +19,8 @@ const inlineMarkdownToHtml = (value: string, attachmentUrls: Record<string, stri
   next = next.replace(/`([^`]+)`/g, "<code>$1</code>");
   next = next.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
   next = next.replace(/\*([^*]+)\*/g, "<em>$1</em>");
-  next = next.replace(/==([^=]+)==/g, '<span data-accent-heading="true">$1</span>');
+  next = next.replace(/&lt;u&gt;(.*?)&lt;\/u&gt;/g, "<u>$1</u>");
+  next = next.replace(/==([^=]+)==/g, '<mark data-lumo-highlight="true">$1</mark>');
   return next;
 };
 
@@ -136,6 +137,8 @@ function inlineNodeToMarkdown(node: Node): string {
 
   if (tag === "strong" || tag === "b") return `**${children}**`;
   if (tag === "em" || tag === "i") return `*${children}*`;
+  if (tag === "u") return `<u>${children}</u>`;
+  if (tag === "mark" || node.getAttribute("data-lumo-highlight") === "true") return `==${children}==`;
   if (tag === "code") return `\`${children}\``;
   if (tag === "br") return "\n";
   if (tag === "img") {

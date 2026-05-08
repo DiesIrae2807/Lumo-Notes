@@ -1,4 +1,4 @@
-import { Extension } from "@tiptap/core";
+import { Extension, Mark } from "@tiptap/core";
 import Image from "@tiptap/extension-image";
 import Link from "@tiptap/extension-link";
 import StarterKit from "@tiptap/starter-kit";
@@ -34,6 +34,39 @@ const AccentHeadingAttribute = Extension.create({
         },
       },
     ];
+  },
+});
+
+const UnderlineMark = Mark.create({
+  name: "underline",
+  parseHTML() {
+    return [
+      { tag: "u" },
+      {
+        style: "text-decoration-line",
+        getAttrs: (value) => String(value).includes("underline") && null,
+      },
+      {
+        style: "text-decoration",
+        getAttrs: (value) => String(value).includes("underline") && null,
+      },
+    ];
+  },
+  renderHTML({ HTMLAttributes }) {
+    return ["u", HTMLAttributes, 0];
+  },
+});
+
+const HighlightMark = Mark.create({
+  name: "highlight",
+  parseHTML() {
+    return [
+      { tag: "mark" },
+      { tag: "span[data-lumo-highlight='true']" },
+    ];
+  },
+  renderHTML({ HTMLAttributes }) {
+    return ["mark", { ...HTMLAttributes, "data-lumo-highlight": "true" }, 0];
   },
 });
 
@@ -107,6 +140,8 @@ const FindHighlightExtension = Extension.create({
 
 export const richTextExtensions = [
   AccentHeadingAttribute,
+  UnderlineMark,
+  HighlightMark,
   FindHighlightExtension,
   StarterKit.configure({
     heading: {

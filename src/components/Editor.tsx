@@ -41,6 +41,8 @@ type EditorHistory = {
 const editorTools: Array<{ label: string; action: MarkdownAction }> = [
   { label: "B", action: "bold" },
   { label: "I", action: "italic" },
+  { label: "U", action: "underline" },
+  { label: "Highlight", action: "highlight" },
   { label: "H", action: "heading" },
   { label: "Accent H", action: "accentHeading" },
   { label: "Bullets", action: "bullet" },
