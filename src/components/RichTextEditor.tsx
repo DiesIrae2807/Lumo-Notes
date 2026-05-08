@@ -31,6 +31,7 @@ type RichTextEditorProps = {
   isTypewriter?: boolean;
   noteId: string;
   onAttachmentClick?: (id: string) => void;
+  onAttachmentReferenceDeleted?: (id: string) => Promise<void> | void;
   onAttachmentSaveAs?: (id: string) => Promise<void> | void;
   onBlur?: () => void;
   onChange: (markdown: string, reason?: "typing" | "format") => void;
@@ -89,6 +90,18 @@ const dispatchLinkDialog = (detail: RichTextLinkRequest) => {
     }),
   );
 };
+
+const attachmentIdsFromMarkdown = (markdown: string) =>
+  new Set(
+    Array.from(markdown.matchAll(/attachment:\/\/([^)]+)/g), (match) => {
+      const id = match[1].trim();
+      try {
+        return decodeURIComponent(id);
+      } catch {
+        return id;
+      }
+    }).filter(Boolean),
+  );
 
 export function runRichTextAction(editor: TiptapEditor | null, action: RichTextAction) {
   if (!editor) return;
@@ -154,6 +167,7 @@ export function RichTextEditor({
   isTypewriter = false,
   noteId,
   onAttachmentClick,
+  onAttachmentReferenceDeleted,
   onAttachmentSaveAs,
   onBlur,
   onChange,
@@ -162,6 +176,7 @@ export function RichTextEditor({
 }: RichTextEditorProps) {
   const isApplyingContent = useRef(false);
   const latestMarkdown = useRef(content);
+  const onAttachmentReferenceDeletedRef = useRef(onAttachmentReferenceDeleted);
   const attachmentUrls = useRef<Record<string, string>>({});
   const shellRef = useRef<HTMLDivElement | null>(null);
   const findInputRef = useRef<HTMLInputElement | null>(null);
@@ -187,11 +202,16 @@ export function RichTextEditor({
     ? attachments.find((attachment) => attachment.id === fullscreenAttachmentId)
     : null;
 
+  useEffect(() => {
+    onAttachmentReferenceDeletedRef.current = onAttachmentReferenceDeleted;
+  }, [onAttachmentReferenceDeleted]);
+
   const hideFloatingUi = useCallback(() => {
     setBubblePosition(null);
     setLinkPopover(null);
     setAttachmentPopover(null);
     setSlashPosition(null);
+    selectedImageRef.current = null;
   }, []);
 
   const updateBubblePosition = useCallback(
@@ -242,6 +262,25 @@ export function RichTextEditor({
     };
   }, []);
 
+  const imageElementAtPos = useCallback((currentEditor: TiptapEditor, pos: number) => {
+    const dom = currentEditor.view.nodeDOM(pos);
+    if (dom instanceof HTMLImageElement) return dom;
+    if (dom instanceof HTMLElement) return dom.querySelector("img");
+    return null;
+  }, []);
+
+  const clearStaleAttachmentPopover = useCallback((currentEditor: TiptapEditor) => {
+    setAttachmentPopover((current) => {
+      if (!current) return current;
+      const node = currentEditor.state.doc.nodeAt(current.pos);
+      if (node?.type.name === "image" && imageElementAtPos(currentEditor, current.pos)) {
+        return current;
+      }
+      selectedImageRef.current = null;
+      return null;
+    });
+  }, [imageElementAtPos]);
+
   const openImagePopover = useCallback((image: HTMLImageElement, pos: number) => {
     const attachmentSrc = image.getAttribute("data-attachment-src") ?? image.getAttribute("src") ?? "";
     const attachmentId = attachmentSrc.startsWith("attachment://")
@@ -274,16 +313,10 @@ export function RichTextEditor({
     const { selection } = currentEditor.state;
     if (!(selection instanceof NodeSelection) || selection.node.type.name !== "image") return false;
 
-    const dom = currentEditor.view.nodeDOM(selection.from);
-    const image = dom instanceof HTMLImageElement
-      ? dom
-      : dom instanceof HTMLElement
-        ? dom.querySelector("img")
-        : null;
-
+    const image = imageElementAtPos(currentEditor, selection.from);
     if (!image) return false;
     return openImagePopover(image, selection.from);
-  }, [openImagePopover]);
+  }, [imageElementAtPos, openImagePopover]);
 
   const editor = useEditor({
     content: html,
@@ -406,9 +439,19 @@ export function RichTextEditor({
           }
           return false;
         },
-        mousedown: (_view, event) => {
+        mousedown: (view, event) => {
           const target = event.target as HTMLElement | null;
-          if (target?.closest("img") || target?.closest(".rich-editor-popover") || target?.closest(".rich-editor-image-resize-handle")) {
+          const image = target?.closest("img") as HTMLImageElement | null;
+          if (image) {
+            isPointerSelecting.current = false;
+            setBubblePosition(null);
+            const pos = view.posAtDOM(image, 0);
+            view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, pos)));
+            window.requestAnimationFrame(() => openImagePopover(image, pos));
+            event.preventDefault();
+            return true;
+          }
+          if (target?.closest(".rich-editor-popover") || target?.closest(".rich-editor-image-resize-handle")) {
             isPointerSelecting.current = false;
             setBubblePosition(null);
             return false;
@@ -467,6 +510,7 @@ export function RichTextEditor({
       );
     },
     onTransaction: ({ editor }) => {
+      clearStaleAttachmentPopover(editor);
       window.dispatchEvent(
         new CustomEvent("lumo-editor-history-state", {
           detail: {
@@ -479,6 +523,14 @@ export function RichTextEditor({
     onUpdate: ({ editor }) => {
       if (isApplyingContent.current) return;
       const markdown = editorHtmlToMarkdown(editor.getHTML());
+      const previousAttachmentIds = attachmentIdsFromMarkdown(latestMarkdown.current);
+      const nextAttachmentIds = attachmentIdsFromMarkdown(markdown);
+      previousAttachmentIds.forEach((id) => {
+        if (!nextAttachmentIds.has(id)) {
+          delete attachmentUrls.current[id];
+          void onAttachmentReferenceDeletedRef.current?.(id);
+        }
+      });
       latestMarkdown.current = markdown;
       onChange(markdown, "typing");
     },
@@ -786,11 +838,12 @@ export function RichTextEditor({
     const startX = event.clientX;
     const startWidth = attachmentPopover.width;
     const maxWidth = Math.max(180, (shellRef.current?.clientWidth ?? 900) - 48);
-    const image = selectedImageRef.current;
     const selection = editor.state.selection;
     const imagePos = selection instanceof NodeSelection && selection.node.type.name === "image"
       ? selection.from
       : attachmentPopover.pos;
+    const image = imageElementAtPos(editor, imagePos) ?? selectedImageRef.current;
+    if (image) selectedImageRef.current = image;
     let finalWidth = startWidth;
 
     const onMove = (moveEvent: PointerEvent) => {
@@ -830,11 +883,18 @@ export function RichTextEditor({
         .setNodeSelection(imagePos)
         .updateAttributes("image", { width: finalWidth })
         .run();
+      window.requestAnimationFrame(() => {
+        const nextImage = imageElementAtPos(editor, imagePos);
+        if (!nextImage) return;
+        selectedImageRef.current = nextImage;
+        const next = measureImagePopover(nextImage, imagePos, attachmentPopover.id);
+        if (next) setAttachmentPopover(next);
+      });
     };
 
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
-  }, [attachmentPopover, editor]);
+  }, [attachmentPopover, editor, imageElementAtPos, measureImagePopover]);
 
   return (
     <div

@@ -57,12 +57,6 @@ const wordCount = (content: string) =>
 const TYPING_GROUP_MS = 950;
 const HISTORY_LIMIT = 80;
 
-const formatFileSize = (bytes: number) => {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 102.4) / 10} KB`;
-  return `${Math.round(bytes / 1024 / 102.4) / 10} MB`;
-};
-
 const snapshotFromNote = (
   note: { title: string; preview: string; content: string },
   reason: EditorSnapshot["reason"] = "manual",
@@ -442,19 +436,7 @@ export function Editor({
     }
   };
 
-  const confirmRemoveAttachment = async (id: string) => {
-    if (
-      !await confirmDialog({
-        confirmLabel: "Remove Attachment",
-        message:
-          "Remove this attachment from the note? The Markdown reference may remain unless you remove it from the note body.",
-        title: "Remove attachment",
-        variant: "danger",
-      })
-    ) {
-      return;
-    }
-
+  const removeAttachmentEverywhere = async (id: string) => {
     try {
       await removeAttachment(id);
     } catch (error) {
@@ -758,45 +740,6 @@ export function Editor({
                 </div>
               </div>
             ) : null}
-            {selectedNoteAttachments.length > 0 ? (
-              <div className="mt-3 rounded-xl bg-white/[0.025] p-3">
-                <div className="mb-2 flex items-center justify-between">
-                  <span className="text-xs font-medium uppercase tracking-[0.16em] text-slate-500">
-                    Attachments
-                  </span>
-                  <button
-                    className="rounded-lg px-2 py-1 text-xs text-slate-400 transition hover:bg-white/[0.05] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-                    disabled={isAttachmentBusy}
-                    onClick={attachFile}
-                  >
-                    {isAttachmentBusy ? "Adding..." : "Attach"}
-                  </button>
-                </div>
-                <div className="grid gap-2">
-                  {selectedNoteAttachments.map((attachment) => (
-                    <div
-                      key={attachment.id}
-                      className="flex items-center gap-3 rounded-lg bg-night-950/35 px-3 py-2 text-xs text-slate-300"
-                    >
-                      <span className="min-w-0 flex-1 truncate">{attachment.filename}</span>
-                      <span className="shrink-0 text-slate-500">{formatFileSize(attachment.fileSize)}</span>
-                      <button
-                        className="shrink-0 text-slate-400 transition hover:text-lumo-teal"
-                        onClick={() => void openAttachmentById(attachment.id)}
-                      >
-                        Open
-                      </button>
-                      <button
-                        className="shrink-0 text-slate-500 transition hover:text-rose-300"
-                        onClick={() => void confirmRemoveAttachment(attachment.id)}
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : null}
           </div>
 
           <RichTextEditor
@@ -806,6 +749,7 @@ export function Editor({
             isTypewriter={false}
             noteId={selectedNote.id}
             onAttachmentClick={openAttachmentById}
+            onAttachmentReferenceDeleted={removeAttachmentEverywhere}
             onAttachmentSaveAs={saveAttachmentById}
             onChange={(content, reason = "typing") =>
               applyEditorChange({ content }, reason, { forceCheckpoint: reason === "format" })
