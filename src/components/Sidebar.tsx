@@ -36,10 +36,8 @@ function NavIcon({ active, label }: { active?: boolean; label: string }) {
   const Icon = navIcons[label] ?? AllNotesIcon;
   return (
     <span
-      className={`grid h-5 w-5 place-items-center rounded-md transition ${
-        active
-          ? "sidebar-nav-glyph-active"
-          : "border-slate-600 bg-slate-800/60 text-slate-400"
+      className={`grid h-5 w-5 place-items-center transition ${
+        active ? "sidebar-nav-glyph-active" : "text-slate-500"
       }`}
     >
       <Icon size={20} />

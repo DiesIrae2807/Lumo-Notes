@@ -690,8 +690,6 @@
   }
 
   .sidebar-nav-glyph-active {
-    border-color: color-mix(in srgb, var(--lumo-secondary) 58%, transparent);
-    background: color-mix(in srgb, var(--lumo-secondary) 18%, transparent);
     color: var(--lumo-secondary);
   }
 
