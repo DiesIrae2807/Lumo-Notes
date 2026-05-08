@@ -1,19 +1,18 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ComponentType } from "react";
 import { BrandMark } from "./BrandMark";
 import { SectionHeader } from "./SectionHeader";
 import { useNotes } from "../store/notesStore";
 import type { SidebarView } from "../types/note";
 import { notify } from "../utils/toast";
 import { confirmDialog } from "../utils/confirm";
-
-const navGlyphs: Record<string, string> = {
-  "All Notes": "A",
-  Favorites: "F",
-  Recent: "R",
-  Archive: "V",
-  Graph: "G",
-  Trash: "T",
-};
+import {
+  AllNotesIcon,
+  ArchiveIcon,
+  GraphIcon,
+  RecentIcon,
+  StarIcon,
+  TrashIcon,
+} from "./icons/AppIcons";
 
 const navItems: Array<{ label: string; view: SidebarView }> = [
   { label: "All Notes", view: "all" },
@@ -24,16 +23,26 @@ const navItems: Array<{ label: string; view: SidebarView }> = [
   { label: "Trash", view: "trash" },
 ];
 
-function IconDot({ active, label }: { active?: boolean; label: string }) {
+const navIcons: Record<string, ComponentType<{ size?: number }>> = {
+  "All Notes": AllNotesIcon,
+  Favorites: StarIcon,
+  Recent: RecentIcon,
+  Archive: ArchiveIcon,
+  Graph: GraphIcon,
+  Trash: TrashIcon,
+};
+
+function NavIcon({ active, label }: { active?: boolean; label: string }) {
+  const Icon = navIcons[label] ?? AllNotesIcon;
   return (
     <span
-      className={`grid h-4 w-4 place-items-center rounded-md border text-[10px] font-semibold ${
+      className={`grid h-5 w-5 place-items-center rounded-md transition ${
         active
           ? "sidebar-nav-glyph-active"
           : "border-slate-600 bg-slate-800/60 text-slate-400"
       }`}
     >
-      {navGlyphs[label]}
+      <Icon size={20} />
     </span>
   );
 }
@@ -340,7 +349,7 @@ export function Sidebar() {
                 : "text-slate-300"
             }`}
           >
-            <IconDot
+            <NavIcon
               active={activeView === item.view && !activeFolderId && !activeTag}
               label={item.label}
             />

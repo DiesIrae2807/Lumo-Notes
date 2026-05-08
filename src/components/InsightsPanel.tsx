@@ -37,6 +37,7 @@ export function InsightsPanel({ onCollapse }: { onCollapse?: () => void }) {
   const { activeView, createNote, notes, selectedNote, selectNote } = useNotes();
   const [activeTab, setActiveTab] = useState<"insights" | "links">("insights");
   const includeDeletedLinks = activeView === "trash";
+  const includeArchivedLinks = activeView === "archive";
   const linkDetails = useMemo(() => {
     if (!selectedNote) {
       return {
@@ -51,6 +52,7 @@ export function InsightsPanel({ onCollapse }: { onCollapse?: () => void }) {
       parseInternalLinks(selectedNote.content, selectedNote.id),
       notes,
       includeDeletedLinks,
+      includeArchivedLinks,
     );
     const outgoingNotes = uniqueResolvedNotes(outgoingLinks).filter(
       (note) => note.id !== selectedNote.id,
@@ -58,8 +60,14 @@ export function InsightsPanel({ onCollapse }: { onCollapse?: () => void }) {
     const backlinks = notes
       .filter((note) => note.id !== selectedNote.id)
       .filter((note) => includeDeletedLinks || !note.isDeleted)
+      .filter((note) => includeArchivedLinks || !note.isArchived)
       .filter((note) =>
-        resolveInternalLinks(parseInternalLinks(note.content, note.id), notes, includeDeletedLinks)
+        resolveInternalLinks(
+          parseInternalLinks(note.content, note.id),
+          notes,
+          includeDeletedLinks,
+          includeArchivedLinks,
+        )
           .some((link) => link.targetNote?.id === selectedNote.id),
       )
       .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
@@ -71,7 +79,7 @@ export function InsightsPanel({ onCollapse }: { onCollapse?: () => void }) {
       backlinks,
       unresolvedLinks,
     };
-  }, [includeDeletedLinks, notes, selectedNote]);
+  }, [includeArchivedLinks, includeDeletedLinks, notes, selectedNote]);
   const relatedNotes = [...linkDetails.outgoingNotes, ...linkDetails.backlinks]
     .filter((note, index, all) => all.findIndex((item) => item.id === note.id) === index)
     .slice(0, 3);
@@ -153,7 +161,7 @@ export function InsightsPanel({ onCollapse }: { onCollapse?: () => void }) {
             {[
               `Folder: ${selectedNote?.folderName ?? "None"}`,
               `Tags: ${selectedNote?.tags.join(", ") || "None"}`,
-              `Status: ${selectedNote?.isDeleted ? "In Trash" : "Active"}`,
+              `Status: ${selectedNote?.isDeleted ? "In Trash" : selectedNote?.isArchived ? "Archived" : "Active"}`,
               `Pinned: ${selectedNote?.isPinned ? "Yes" : "No"}`,
               `Created: ${selectedNote ? formatMetadataDate(selectedNote.createdAt) : "None"}`,
               `Updated: ${selectedNote ? formatMetadataDate(selectedNote.updatedAt) : "None"}`,

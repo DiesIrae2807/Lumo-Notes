@@ -42,6 +42,7 @@ function matches(item: CommandItem, query: string) {
 export function CommandPalette() {
   const {
     availableTags,
+    archiveNote,
     attachments,
     attachFileToSelectedNote,
     createNote,
@@ -49,6 +50,7 @@ export function CommandPalette() {
     forceSaveSelectedNote,
     importMarkdownNotes,
     notes,
+    activeView,
     restoreBackupMerge,
     selectedNote,
     selectNote,
@@ -57,6 +59,7 @@ export function CommandPalette() {
     setActiveView,
     toggleFavorite,
     togglePinned,
+    unarchiveNote,
   } = useNotes();
   const { settings } = useSettings();
   const [isOpen, setIsOpen] = useState(false);
@@ -245,6 +248,23 @@ export function CommandPalette() {
           run: () => togglePinned(selectedNote.id),
         },
         {
+          id: "command-toggle-archive",
+          title: selectedNote.isArchived ? "Unarchive Note" : "Archive Note",
+          subtitle: selectedNote.isArchived
+            ? "Restore this note to active views"
+            : "Hide this note from active views",
+          section: "Commands",
+          keywords: "archive archived unarchive hidden current note",
+          run: () => {
+            if (selectedNote.isDeleted) return;
+            if (selectedNote.isArchived) {
+              unarchiveNote(selectedNote.id);
+            } else {
+              archiveNote(selectedNote.id);
+            }
+          },
+        },
+        {
           id: "command-export-selected",
           title: "Export Selected Note",
           subtitle: "Save current note as Markdown",
@@ -256,7 +276,7 @@ export function CommandPalette() {
     }
 
     const noteItems: CommandItem[] = notes
-      .filter((note) => !note.isDeleted)
+      .filter((note) => !note.isDeleted && (!note.isArchived || activeView === "archive"))
       .map((note) => {
         const attachmentNames = attachments
           .filter((attachment) => attachment.noteId === note.id)
@@ -310,6 +330,8 @@ export function CommandPalette() {
     return [...commands, ...noteItems, ...folderItems, ...tagItems];
   }, [
     availableTags,
+    activeView,
+    archiveNote,
     attachments,
     attachFileToSelectedNote,
     createNote,
@@ -327,6 +349,7 @@ export function CommandPalette() {
     settings.markdownExportFrontmatter,
     toggleFavorite,
     togglePinned,
+    unarchiveNote,
   ]);
 
   const normalizedQuery = query.trim().toLowerCase();

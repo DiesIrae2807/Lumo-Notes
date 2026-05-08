@@ -112,7 +112,7 @@ export function NotesList() {
   } | null>(null);
 
   const pinned = filteredNotes.filter((note) => note.isPinned && !note.isDeleted && !note.isArchived);
-  const unpinned = filteredNotes.filter((note) => !note.isPinned || note.isDeleted);
+  const unpinned = filteredNotes.filter((note) => !note.isPinned || note.isDeleted || note.isArchived);
   const today = unpinned.filter((note) => isToday(note.updatedAt));
   const yesterday = unpinned.filter((note) => isYesterday(note.updatedAt));
   const thisWeek = unpinned.filter(

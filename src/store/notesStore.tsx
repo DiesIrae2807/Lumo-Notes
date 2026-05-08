@@ -282,7 +282,10 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         setSelectedNoteId(
           settings.startupBehavior === "allNotes"
             ? null
-            : snapshot.notes.find((note) => !note.isDeleted)?.id ?? snapshot.notes[0]?.id ?? null,
+            : snapshot.notes.find((note) => !note.isDeleted && !note.isArchived)?.id ??
+                snapshot.notes.find((note) => !note.isDeleted)?.id ??
+                snapshot.notes[0]?.id ??
+                null,
         );
         setDatabaseError(null);
       } catch (error) {
@@ -868,6 +871,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
   const restoreNote = useCallback(
     (id: string) => {
       flushNoteSave(id);
+      const target = notes.find((note) => note.id === id);
       const updatedAt = new Date().toISOString();
       updateNoteById(id, (note) => ({
         ...note,
@@ -877,9 +881,9 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       void database.restoreNote(id, updatedAt).catch((error) => {
         setDatabaseError(error instanceof Error ? error.message : String(error));
       });
-      setActiveViewState("all");
+      setActiveViewState(target?.isArchived ? "archive" : "all");
     },
-    [flushNoteSave, updateNoteById],
+    [flushNoteSave, notes, updateNoteById],
   );
 
   const permanentlyDeleteSelectedNote = useCallback(() => {

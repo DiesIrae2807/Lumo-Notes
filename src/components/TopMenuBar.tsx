@@ -46,6 +46,7 @@ function execEditCommand(command: string) {
 
 export function TopMenuBar({ onExit }: { onExit: () => void }) {
   const {
+    archiveNote,
     availableTags,
     attachments,
     attachFileToSelectedNote,
@@ -63,6 +64,7 @@ export function TopMenuBar({ onExit }: { onExit: () => void }) {
     setActiveView,
     toggleFavorite,
     togglePinned,
+    unarchiveNote,
   } = useNotes();
   const { settings } = useSettings();
   const [openMenu, setOpenMenu] = useState<MenuName | null>(null);
@@ -260,6 +262,7 @@ export function TopMenuBar({ onExit }: { onExit: () => void }) {
       { label: "Restore Backup...", onSelect: restoreBackup },
       { separator: true },
       { label: "Open Graph", onSelect: () => setActiveView("graph") },
+      { label: "Open Archive", onSelect: () => setActiveView("archive") },
       { label: "Settings / Preferences", onSelect: () => setActiveView("settings") },
       { separator: true },
       {
@@ -359,6 +362,18 @@ export function TopMenuBar({ onExit }: { onExit: () => void }) {
         },
       },
       {
+        disabled: !selectedNote || selectedNote.isDeleted,
+        label: selectedNote?.isArchived ? "Unarchive Note" : "Archive Note",
+        onSelect: () => {
+          if (!selectedNote || selectedNote.isDeleted) return;
+          if (selectedNote.isArchived) {
+            unarchiveNote(selectedNote.id);
+          } else {
+            archiveNote(selectedNote.id);
+          }
+        },
+      },
+      {
         disabled: !selectedNote,
         danger: !selectedNote?.isDeleted,
         label: selectedNote?.isDeleted ? "Restore" : "Move to Trash",
@@ -399,6 +414,7 @@ export function TopMenuBar({ onExit }: { onExit: () => void }) {
       },
     ],
     [
+      archiveNote,
       deleteFromEditMenu,
       editorHistory.canRedo,
       editorHistory.canUndo,
@@ -409,6 +425,7 @@ export function TopMenuBar({ onExit }: { onExit: () => void }) {
       settings.confirmPermanentDelete,
       toggleFavorite,
       togglePinned,
+      unarchiveNote,
     ],
   );
 

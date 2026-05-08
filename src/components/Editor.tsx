@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ComponentType } from "react";
 import {
   RichTextEditor,
   insertInternalRichTextLink,
@@ -10,6 +10,20 @@ import type { Editor as TiptapEditor } from "@tiptap/react";
 import { FavoriteHeartIcon } from "./icons/FavoriteHeartIcon";
 import { FocusIcon } from "./icons/FocusIcon";
 import { PinIcon } from "./icons/PinIcon";
+import {
+  AttachmentIcon,
+  BoldIcon,
+  BulletListIcon,
+  CheckSquareIcon,
+  CodeIcon,
+  HeadingIcon,
+  HighlightIcon,
+  ItalicIcon,
+  LinkIcon,
+  NumberedListIcon,
+  QuoteIcon,
+  UnderlineIcon,
+} from "./icons/AppIcons";
 import { useNotes } from "../store/notesStore";
 import { useSettings } from "../store/settingsStore";
 import { saveAttachmentAs } from "../services/database";
@@ -38,19 +52,23 @@ type EditorHistory = {
   present: EditorSnapshot;
 };
 
-const editorTools: Array<{ label: string; action: MarkdownAction }> = [
-  { label: "B", action: "bold" },
-  { label: "I", action: "italic" },
-  { label: "U", action: "underline" },
-  { label: "Highlight", action: "highlight" },
-  { label: "H", action: "heading" },
-  { label: "Accent H", action: "accentHeading" },
-  { label: "Bullets", action: "bullet" },
-  { label: "Numbers", action: "numbered" },
-  { label: "Quote", action: "quote" },
-  { label: "Code", action: "code" },
-  { label: "Check", action: "checkbox" },
-  { label: "Link", action: "link" },
+const editorTools: Array<{
+  action: MarkdownAction;
+  icon: ComponentType<{ size?: number }>;
+  label: string;
+}> = [
+  { label: "Bold", action: "bold", icon: BoldIcon },
+  { label: "Italic", action: "italic", icon: ItalicIcon },
+  { label: "Underline", action: "underline", icon: UnderlineIcon },
+  { label: "Highlight", action: "highlight", icon: HighlightIcon },
+  { label: "Heading", action: "heading", icon: HeadingIcon },
+  { label: "Accent heading", action: "accentHeading", icon: HeadingIcon },
+  { label: "Bulleted list", action: "bullet", icon: BulletListIcon },
+  { label: "Numbered list", action: "numbered", icon: NumberedListIcon },
+  { label: "Quote", action: "quote", icon: QuoteIcon },
+  { label: "Code", action: "code", icon: CodeIcon },
+  { label: "Checklist", action: "checkbox", icon: CheckSquareIcon },
+  { label: "Link", action: "link", icon: LinkIcon },
 ];
 
 const wordCount = (content: string) =>
@@ -554,27 +572,6 @@ export function Editor({
           >
             <PinIcon active={selectedNote.isPinned} />
           </button>
-          {!selectedNote.isDeleted ? (
-            <button
-              className={`rounded-lg px-2.5 py-1.5 text-xs transition hover:bg-white/[0.05] active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-lumo-violet/60 ${
-                selectedNote.isArchived ? "text-lumo-teal" : "text-slate-500 hover:text-slate-200"
-              }`}
-              onClick={() => {
-                if (selectedNote.isArchived) {
-                  unarchiveNote(selectedNote.id);
-                  notify({ kind: "success", title: "Note unarchived" });
-                } else {
-                  archiveNote(selectedNote.id);
-                  notify({ kind: "info", title: "Note archived" });
-                }
-              }}
-              title={selectedNote.isArchived ? "Unarchive note" : "Archive note"}
-              aria-label={selectedNote.isArchived ? "Unarchive note" : "Archive note"}
-              aria-pressed={selectedNote.isArchived}
-            >
-              {selectedNote.isArchived ? "Unarchive" : "Archive"}
-            </button>
-          ) : null}
           <button
             className={`grid h-8 w-8 place-items-center rounded-lg transition duration-150 hover:bg-white/[0.05] active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-lumo-violet/60 ${
               isFocusMode ? "text-lumo-violet" : "text-slate-500 hover:text-lumo-violet"
@@ -623,6 +620,21 @@ export function Editor({
                     }}
                   >
                     Export Markdown
+                  </button>
+                  <button
+                    className="w-full rounded-lg px-3 py-2 text-left text-xs text-slate-300 transition hover:bg-white/[0.06] hover:text-white"
+                    onClick={() => {
+                      setIsOverflowOpen(false);
+                      if (selectedNote.isArchived) {
+                        unarchiveNote(selectedNote.id);
+                        notify({ kind: "success", title: "Note unarchived" });
+                      } else {
+                        archiveNote(selectedNote.id);
+                        notify({ kind: "info", title: "Note archived" });
+                      }
+                    }}
+                  >
+                    {selectedNote.isArchived ? "Unarchive" : "Archive"}
                   </button>
                   <button
                     className="w-full rounded-lg px-3 py-2 text-left text-xs text-rose-300 transition hover:bg-rose-400/10 hover:text-rose-100"
@@ -794,24 +806,31 @@ export function Editor({
 
       <div className="flex items-center justify-between border-t border-white/10 px-6 py-3 text-slate-400">
         <div className="flex items-center gap-3">
-          {editorTools.map((tool) => (
-            <button
-              key={tool.action}
-              className={`rounded-lg px-3 py-2 text-xs transition hover:bg-white/[0.05] hover:text-white active:scale-95 ${
-                richToolbarState[tool.action] ? "bg-lumo-violet/20 text-white" : ""
-              }`}
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => insertMarkdown(tool.action)}
-            >
-              {tool.label}
-            </button>
-          ))}
+          {editorTools.map((tool) => {
+            const Icon = tool.icon;
+            return (
+              <button
+                key={tool.action}
+                className={`grid h-8 w-8 place-items-center rounded-lg text-slate-400 transition hover:bg-white/[0.05] hover:text-white active:scale-95 ${
+                  richToolbarState[tool.action] ? "bg-lumo-violet/20 text-white" : ""
+                } ${tool.action === "accentHeading" ? "text-[var(--secondary-accent)]" : ""}`}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => insertMarkdown(tool.action)}
+                aria-label={tool.label}
+                title={tool.label}
+              >
+                <Icon size={20} />
+              </button>
+            );
+          })}
           <button
-            className="rounded-lg px-3 py-2 text-xs transition hover:bg-white/[0.05] hover:text-white active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
+            className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 transition hover:bg-white/[0.05] hover:text-white active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
             disabled={isAttachmentBusy}
             onClick={() => void attachFile()}
+            aria-label={isAttachmentBusy ? "Adding attachment" : "Attach file"}
+            title={isAttachmentBusy ? "Adding attachment" : "Attach file"}
           >
-            {isAttachmentBusy ? "Adding..." : "Attach"}
+            <AttachmentIcon size={20} />
           </button>
         </div>
         <span className="text-xs text-slate-300">

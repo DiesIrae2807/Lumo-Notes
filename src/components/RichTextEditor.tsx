@@ -6,6 +6,14 @@ import type { Attachment } from "../types/note";
 import { editorHtmlToMarkdown, markdownToEditorHtml } from "../utils/richTextMarkdown";
 import { getAttachmentDataUrl } from "../services/database";
 import { findHighlightPluginKey, richTextExtensions, type FindHighlightMeta } from "./editorExtensions";
+import {
+  BoldIcon,
+  CodeIcon,
+  HighlightIcon,
+  ItalicIcon,
+  LinkIcon,
+  UnderlineIcon,
+} from "./icons/AppIcons";
 
 export type RichTextAction =
   | "bold"
@@ -929,19 +937,21 @@ export function RichTextEditor({
           onMouseDown={(event) => event.preventDefault()}
         >
           {[
-            ["bold", "B"],
-            ["italic", "I"],
-            ["underline", "U"],
-            ["highlight", "Highlight"],
-            ["link", "Link"],
-            ["code", "Code"],
-          ].map(([action, label]) => (
+            ["bold", "Bold", BoldIcon],
+            ["italic", "Italic", ItalicIcon],
+            ["underline", "Underline", UnderlineIcon],
+            ["highlight", "Highlight", HighlightIcon],
+            ["link", "Link", LinkIcon],
+            ["code", "Code", CodeIcon],
+          ].map(([action, label, Icon]) => (
             <button
-              key={action}
-              className="rich-editor-popover-button"
+              key={action as string}
+              className="rich-editor-popover-button rich-editor-popover-icon-button"
               onClick={() => runRichTextAction(editor ?? null, action as RichTextAction)}
+              aria-label={label as string}
+              title={label as string}
             >
-              {label}
+              <Icon size={15} />
             </button>
           ))}
         </div>

@@ -395,6 +395,14 @@
     font-weight: 650;
   }
 
+  .rich-editor-popover-icon-button {
+    display: grid;
+    width: 1.85rem;
+    height: 1.85rem;
+    place-items: center;
+    padding: 0;
+  }
+
   .rich-editor-popover-button:hover,
   .rich-editor-command-item:hover,
   .rich-editor-find-panel button:hover {

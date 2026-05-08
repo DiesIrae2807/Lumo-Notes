@@ -50,7 +50,7 @@ export function GraphView() {
   const [hoveredId, setHoveredId] = useState<string | null>(null);
 
   const graph = useMemo(() => {
-    const visibleNotes = notes.filter((note) => !note.isDeleted);
+    const visibleNotes = notes.filter((note) => !note.isDeleted && !note.isArchived);
     const noteMap = new Map(visibleNotes.map((note) => [note.id, note]));
     const edgeMap = new Map<string, GraphEdge>();
 
@@ -72,7 +72,8 @@ export function GraphView() {
     }
 
     const allEdges = Array.from(edgeMap.values());
-    const selectedId = selectedNote && !selectedNote.isDeleted ? selectedNote.id : null;
+    const selectedId =
+      selectedNote && !selectedNote.isDeleted && !selectedNote.isArchived ? selectedNote.id : null;
     const localIds = new Set<string>();
 
     if (selectedId) {

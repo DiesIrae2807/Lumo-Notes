@@ -35,6 +35,7 @@ export type ParsedMarkdownNote = {
   updatedAt?: string;
   isPinned: boolean;
   isFavorite: boolean;
+  isArchived: boolean;
 };
 
 const frontmatterKeys = [
@@ -45,6 +46,7 @@ const frontmatterKeys = [
   "updatedAt",
   "isPinned",
   "isFavorite",
+  "isArchived",
 ];
 
 export function sanitizeFilename(value: string, fallback = "Untitled Note") {
@@ -87,6 +89,7 @@ export function noteToMarkdown(note: Note, includeFrontmatter = true) {
     `updatedAt: ${quoteFrontmatter(note.updatedAt)}`,
     `isPinned: ${note.isPinned}`,
     `isFavorite: ${note.isFavorite}`,
+    `isArchived: ${note.isArchived}`,
     "---",
     note.content,
   ].join("\n");
@@ -190,6 +193,7 @@ export function parseMarkdownImport(file: ImportedTextFile): ParsedMarkdownNote 
       tags: [],
       isPinned: false,
       isFavorite: false,
+      isArchived: false,
     };
   }
 
@@ -206,6 +210,7 @@ export function parseMarkdownImport(file: ImportedTextFile): ParsedMarkdownNote 
     updatedAt: metadata.updatedAt ? String(metadata.updatedAt) : undefined,
     isPinned: String(metadata.isPinned).toLowerCase() === "true",
     isFavorite: String(metadata.isFavorite).toLowerCase() === "true",
+    isArchived: false,
   };
 }
 
