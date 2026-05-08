@@ -9,6 +9,7 @@ export type Note = {
   isPinned: boolean;
   isFavorite: boolean;
   isDeleted: boolean;
+  isArchived: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -30,4 +31,11 @@ export type Attachment = {
   createdAt: string;
 };
 
-export type SidebarView = "all" | "favorites" | "recent" | "trash" | "graph" | "settings";
+export type SidebarView =
+  | "all"
+  | "favorites"
+  | "recent"
+  | "archive"
+  | "trash"
+  | "graph"
+  | "settings";

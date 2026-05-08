@@ -10,6 +10,7 @@ const navGlyphs: Record<string, string> = {
   "All Notes": "A",
   Favorites: "F",
   Recent: "R",
+  Archive: "V",
   Graph: "G",
   Trash: "T",
 };
@@ -18,6 +19,7 @@ const navItems: Array<{ label: string; view: SidebarView }> = [
   { label: "All Notes", view: "all" },
   { label: "Favorites", view: "favorites" },
   { label: "Recent", view: "recent" },
+  { label: "Archive", view: "archive" },
   { label: "Graph", view: "graph" },
   { label: "Trash", view: "trash" },
 ];
@@ -170,18 +172,22 @@ export function Sidebar() {
     }
 
     if (view === "favorites") {
-      return notes.filter((note) => note.isFavorite && !note.isDeleted).length;
+      return notes.filter((note) => note.isFavorite && !note.isDeleted && !note.isArchived).length;
+    }
+
+    if (view === "archive") {
+      return notes.filter((note) => note.isArchived && !note.isDeleted).length;
     }
 
     if (view === "graph") {
-      return notes.filter((note) => !note.isDeleted).length;
+      return notes.filter((note) => !note.isDeleted && !note.isArchived).length;
     }
 
     if (view === "settings") {
       return 0;
     }
 
-    return notes.filter((note) => !note.isDeleted).length;
+    return notes.filter((note) => !note.isDeleted && !note.isArchived).length;
   };
 
   useEffect(() => {

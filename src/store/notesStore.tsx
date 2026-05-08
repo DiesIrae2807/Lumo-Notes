@@ -45,6 +45,8 @@ type NotesContextValue = {
   updateSelectedNote: (changes: Partial<Pick<Note, "title" | "content" | "preview">>) => void;
   toggleFavorite: (id: string) => void;
   togglePinned: (id: string) => void;
+  archiveNote: (id: string) => void;
+  unarchiveNote: (id: string) => void;
   moveToTrash: (id: string) => void;
   restoreNote: (id: string) => void;
   permanentlyDeleteNote: (id: string) => void;
@@ -137,6 +139,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
   const [isSearchLoading, setIsSearchLoading] = useState(false);
   const [searchResults, setSearchResults] = useState<{
     includeDeleted: boolean;
+    includeArchived: boolean;
     query: string;
     results: database.SearchResult[];
   } | null>(null);
@@ -325,6 +328,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
               note.folderName,
               note.tags.join(","),
               note.isDeleted,
+              note.isArchived,
               note.updatedAt,
             ].join(":"),
           )
@@ -346,13 +350,14 @@ export function NotesProvider({ children }: { children: ReactNode }) {
 
     let isStale = false;
     const includeDeleted = activeView === "trash";
+    const includeArchived = activeView === "archive";
     setIsSearchLoading(true);
     const timer = window.setTimeout(() => {
       database
-        .searchNotes(query, includeDeleted)
+        .searchNotes(query, includeDeleted, includeArchived)
         .then((results) => {
           if (isStale) return;
-          setSearchResults({ includeDeleted, query, results });
+          setSearchResults({ includeDeleted, includeArchived, query, results });
           setIsSearchLoading(false);
         })
         .catch(() => {
@@ -376,7 +381,11 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         return note.isDeleted;
       }
 
-      return !note.isDeleted;
+      if (activeView === "archive") {
+        return note.isArchived && !note.isDeleted;
+      }
+
+      return !note.isDeleted && !note.isArchived;
     });
 
     if (activeView === "favorites") {
@@ -398,7 +407,8 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     const activeSearchResults =
       query &&
       searchResults?.query.toLowerCase() === query &&
-      searchResults.includeDeleted === (activeView === "trash")
+      searchResults.includeDeleted === (activeView === "trash") &&
+      searchResults.includeArchived === (activeView === "archive")
         ? searchResults.results
         : null;
 
@@ -429,7 +439,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       });
     }
 
-    return activeView === "recent" || activeView === "trash"
+    return activeView === "recent" || activeView === "trash" || activeView === "archive"
       ? sortByUpdated(next)
       : sortPinnedThenUpdated(next);
   }, [activeFolderId, activeTag, activeView, attachments, notes, searchQuery, searchResults]);
@@ -438,7 +448,8 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     if (
       !searchResults ||
       searchResults.query !== searchQuery.trim() ||
-      searchResults.includeDeleted !== (activeView === "trash")
+      searchResults.includeDeleted !== (activeView === "trash") ||
+      searchResults.includeArchived !== (activeView === "archive")
     ) {
       return {};
     }
@@ -472,6 +483,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       isPinned: false,
       isFavorite: false,
       isDeleted: false,
+      isArchived: false,
       createdAt: now,
       updatedAt: now,
     };
@@ -533,6 +545,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
           isPinned: item.isPinned,
           isFavorite: item.isFavorite,
           isDeleted: false,
+          isArchived: false,
           createdAt,
           updatedAt,
         } satisfies Note;
@@ -614,6 +627,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
           folderName: folder.name,
           preview: incoming.preview || getPlainTextPreview(incoming.content),
           tags: uniqueByLower([...incoming.tags, ...relationshipTags]),
+          isArchived: incoming.isArchived ?? false,
         } satisfies Note;
       });
       const tagsToCreate = uniqueByLower([
@@ -784,6 +798,51 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       void database.togglePinned(id, isPinned, updatedAt).catch((error) => {
         setDatabaseError(error instanceof Error ? error.message : String(error));
       });
+    },
+    [flushNoteSave, notes, updateNoteById],
+  );
+
+  const archiveNote = useCallback(
+    (id: string) => {
+      flushNoteSave(id);
+      const target = notes.find((note) => note.id === id);
+      if (!target || target.isDeleted) return;
+
+      const updatedAt = new Date().toISOString();
+      updateNoteById(id, (note) => ({
+        ...note,
+        isArchived: true,
+        isPinned: false,
+        updatedAt,
+      }));
+      void database.archiveNote(id, updatedAt).catch((error) => {
+        setDatabaseError(error instanceof Error ? error.message : String(error));
+      });
+      setActiveViewState("archive");
+      setActiveFolderIdState(null);
+      setActiveTagState(null);
+    },
+    [flushNoteSave, notes, updateNoteById],
+  );
+
+  const unarchiveNote = useCallback(
+    (id: string) => {
+      flushNoteSave(id);
+      const target = notes.find((note) => note.id === id);
+      if (!target) return;
+
+      const updatedAt = new Date().toISOString();
+      updateNoteById(id, (note) => ({
+        ...note,
+        isArchived: false,
+        updatedAt,
+      }));
+      void database.unarchiveNote(id, updatedAt).catch((error) => {
+        setDatabaseError(error instanceof Error ? error.message : String(error));
+      });
+      setActiveViewState("all");
+      setActiveFolderIdState(null);
+      setActiveTagState(null);
     },
     [flushNoteSave, notes, updateNoteById],
   );
@@ -1148,6 +1207,8 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       updateSelectedNote,
       toggleFavorite,
       togglePinned,
+      archiveNote,
+      unarchiveNote,
       moveToTrash,
       restoreNote,
       permanentlyDeleteNote,
@@ -1171,6 +1232,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       activeFolderId,
       activeTag,
       activeView,
+      archiveNote,
       attachments,
       availableTags,
       attachFileToSelectedNote,
@@ -1210,6 +1272,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       setActiveView,
       toggleFavorite,
       togglePinned,
+      unarchiveNote,
       updateSelectedNote,
     ],
   );

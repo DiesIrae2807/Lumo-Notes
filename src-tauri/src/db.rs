@@ -34,6 +34,7 @@ pub struct NoteDto {
     pub is_pinned: bool,
     pub is_favorite: bool,
     pub is_deleted: bool,
+    pub is_archived: bool,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -113,6 +114,7 @@ fn create_schema(connection: &Connection) -> Result<(), String> {
                 is_pinned INTEGER NOT NULL DEFAULT 0,
                 is_favorite INTEGER NOT NULL DEFAULT 0,
                 is_deleted INTEGER NOT NULL DEFAULT 0,
+                is_archived INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 FOREIGN KEY(folder_id) REFERENCES folders(id)
@@ -152,7 +154,39 @@ fn create_schema(connection: &Connection) -> Result<(), String> {
             );
             ",
         )
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+
+    migrate_schema(connection)
+}
+
+fn column_exists(connection: &Connection, table: &str, column: &str) -> Result<bool, String> {
+    let mut statement = connection
+        .prepare(&format!("PRAGMA table_info({})", table))
+        .map_err(|error| error.to_string())?;
+    let columns = statement
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(|error| error.to_string())?;
+
+    for item in columns {
+        if item.map_err(|error| error.to_string())? == column {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
+}
+
+fn migrate_schema(connection: &Connection) -> Result<(), String> {
+    if !column_exists(connection, "notes", "is_archived")? {
+        connection
+            .execute(
+                "ALTER TABLE notes ADD COLUMN is_archived INTEGER NOT NULL DEFAULT 0",
+                [],
+            )
+            .map_err(|error| error.to_string())?;
+    }
+
+    Ok(())
 }
 
 fn create_search_schema(connection: &Connection) -> Result<(), String> {
@@ -216,9 +250,9 @@ fn insert_note(connection: &Connection, note: &NoteDto) -> Result<(), String> {
         .execute(
             "INSERT INTO notes (
                 id, title, content, preview, folder_id, folder_name,
-                is_pinned, is_favorite, is_deleted, created_at, updated_at
+                is_pinned, is_favorite, is_deleted, is_archived, created_at, updated_at
              )
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
             params![
                 note.id,
                 note.title,
@@ -229,6 +263,7 @@ fn insert_note(connection: &Connection, note: &NoteDto) -> Result<(), String> {
                 note.is_pinned as i64,
                 note.is_favorite as i64,
                 note.is_deleted as i64,
+                note.is_archived as i64,
                 note.created_at,
                 note.updated_at
             ],
@@ -295,7 +330,7 @@ fn get_notes_from_connection(connection: &Connection) -> Result<Vec<NoteDto>, St
             "
             SELECT
                 id, title, content, preview, folder_id, folder_name,
-                is_pinned, is_favorite, is_deleted, created_at, updated_at
+                is_pinned, is_favorite, is_deleted, is_archived, created_at, updated_at
             FROM notes
             ORDER BY updated_at DESC
             ",
@@ -317,8 +352,9 @@ fn get_notes_from_connection(connection: &Connection) -> Result<Vec<NoteDto>, St
                 is_pinned: row.get::<_, i64>(6)? != 0,
                 is_favorite: row.get::<_, i64>(7)? != 0,
                 is_deleted: row.get::<_, i64>(8)? != 0,
-                created_at: row.get(9)?,
-                updated_at: row.get(10)?,
+                is_archived: row.get::<_, i64>(9)? != 0,
+                created_at: row.get(10)?,
+                updated_at: row.get(11)?,
                 tags,
             })
         })
@@ -770,6 +806,7 @@ pub fn search_notes(
     state: tauri::State<'_, DbState>,
     query: String,
     include_deleted: bool,
+    include_archived: bool,
 ) -> Result<Vec<SearchResultDto>, String> {
     let normalized = fts_query(&query);
     if normalized.is_empty() {
@@ -796,13 +833,14 @@ pub fn search_notes(
             INNER JOIN notes ON notes.id = notes_fts.note_id
             WHERE notes_fts MATCH ?1
               AND notes.is_deleted = ?2
+              AND (?2 = 1 OR notes.is_archived = ?3)
             ORDER BY rank_score ASC, notes.is_pinned DESC, notes.updated_at DESC
             LIMIT 100
             ",
         )
         .map_err(|error| error.to_string())?;
     let rows = statement
-        .query_map(params![normalized, include_deleted as i64], |row| {
+        .query_map(params![normalized, include_deleted as i64, include_archived as i64], |row| {
             let note_id: String = row.get(0)?;
             let title: String = row.get(1)?;
             let preview: String = row.get(2)?;
@@ -1080,7 +1118,7 @@ pub fn update_note(state: tauri::State<'_, DbState>, note: NoteDto) -> Result<()
         .execute(
             "UPDATE notes
              SET title = ?2, content = ?3, preview = ?4, folder_id = ?5, folder_name = ?6,
-                 is_pinned = ?7, is_favorite = ?8, is_deleted = ?9, updated_at = ?10
+                 is_pinned = ?7, is_favorite = ?8, is_deleted = ?9, is_archived = ?10, updated_at = ?11
              WHERE id = ?1",
             params![
                 note.id,
@@ -1092,6 +1130,7 @@ pub fn update_note(state: tauri::State<'_, DbState>, note: NoteDto) -> Result<()
                 note.is_pinned as i64,
                 note.is_favorite as i64,
                 note.is_deleted as i64,
+                note.is_archived as i64,
                 note.updated_at
             ],
         )
@@ -1131,6 +1170,42 @@ pub fn restore_note(
     connection
         .execute(
             "UPDATE notes SET is_deleted = 0, updated_at = ?2 WHERE id = ?1",
+            params![id, updated_at],
+        )
+        .map_err(|error| error.to_string())?;
+    let _ = upsert_search_index_note(&connection, &id);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn archive_note(
+    state: tauri::State<'_, DbState>,
+    id: String,
+    updated_at: String,
+) -> Result<(), String> {
+    let connection = connect(&state.path)?;
+    connection
+        .execute(
+            "UPDATE notes
+             SET is_archived = 1, is_pinned = 0, updated_at = ?2
+             WHERE id = ?1 AND is_deleted = 0",
+            params![id, updated_at],
+        )
+        .map_err(|error| error.to_string())?;
+    let _ = upsert_search_index_note(&connection, &id);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn unarchive_note(
+    state: tauri::State<'_, DbState>,
+    id: String,
+    updated_at: String,
+) -> Result<(), String> {
+    let connection = connect(&state.path)?;
+    connection
+        .execute(
+            "UPDATE notes SET is_archived = 0, updated_at = ?2 WHERE id = ?1",
             params![id, updated_at],
         )
         .map_err(|error| error.to_string())?;
@@ -1474,6 +1549,7 @@ fn seed_notes() -> Vec<NoteDto> {
             is_pinned: true,
             is_favorite: true,
             is_deleted: false,
+            is_archived: false,
             created_at: "2026-04-25T10:00:00.000Z".into(),
             updated_at: "2026-05-04T21:58:00.000Z".into(),
         },
@@ -1488,6 +1564,7 @@ fn seed_notes() -> Vec<NoteDto> {
             is_pinned: true,
             is_favorite: false,
             is_deleted: false,
+            is_archived: false,
             created_at: "2026-04-29T10:00:00.000Z".into(),
             updated_at: "2026-05-04T21:00:00.000Z".into(),
         },
@@ -1502,6 +1579,7 @@ fn seed_notes() -> Vec<NoteDto> {
             is_pinned: false,
             is_favorite: false,
             is_deleted: false,
+            is_archived: false,
             created_at: "2026-05-01T10:00:00.000Z".into(),
             updated_at: "2026-05-04T18:00:00.000Z".into(),
         },
@@ -1516,6 +1594,7 @@ fn seed_notes() -> Vec<NoteDto> {
             is_pinned: false,
             is_favorite: true,
             is_deleted: false,
+            is_archived: false,
             created_at: "2026-05-02T10:00:00.000Z".into(),
             updated_at: "2026-05-04T16:00:00.000Z".into(),
         },
@@ -1530,6 +1609,7 @@ fn seed_notes() -> Vec<NoteDto> {
             is_pinned: false,
             is_favorite: false,
             is_deleted: false,
+            is_archived: false,
             created_at: "2026-04-30T10:00:00.000Z".into(),
             updated_at: "2026-05-03T10:00:00.000Z".into(),
         },

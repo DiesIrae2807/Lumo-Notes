@@ -106,6 +106,7 @@ export function Editor({
 }) {
   const {
     addTagToSelectedNote,
+    archiveNote,
     attachFileToSelectedNote,
     availableTags,
     activeView,
@@ -127,6 +128,7 @@ export function Editor({
     saveStatus,
     toggleFavorite,
     togglePinned,
+    unarchiveNote,
     updateSelectedNote,
   } = useNotes();
   const { settings } = useSettings();
@@ -374,7 +376,7 @@ export function Editor({
   };
 
   const openInternalLink = async (title: string) => {
-    const linkedNote = resolveInternalLink(title, notes, activeView === "trash");
+    const linkedNote = resolveInternalLink(title, notes, activeView === "trash", activeView === "archive");
 
     if (linkedNote) {
       selectNote(linkedNote.id);
@@ -393,7 +395,7 @@ export function Editor({
   };
 
   const isInternalLinkResolved = (title: string) =>
-    Boolean(resolveInternalLink(title, notes, activeView === "trash"));
+    Boolean(resolveInternalLink(title, notes, activeView === "trash", activeView === "archive"));
 
   const exportSelectedNote = async () => {
     const filename = `${sanitizeFilename(selectedNote.title)}.md`;
@@ -552,6 +554,27 @@ export function Editor({
           >
             <PinIcon active={selectedNote.isPinned} />
           </button>
+          {!selectedNote.isDeleted ? (
+            <button
+              className={`rounded-lg px-2.5 py-1.5 text-xs transition hover:bg-white/[0.05] active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-lumo-violet/60 ${
+                selectedNote.isArchived ? "text-lumo-teal" : "text-slate-500 hover:text-slate-200"
+              }`}
+              onClick={() => {
+                if (selectedNote.isArchived) {
+                  unarchiveNote(selectedNote.id);
+                  notify({ kind: "success", title: "Note unarchived" });
+                } else {
+                  archiveNote(selectedNote.id);
+                  notify({ kind: "info", title: "Note archived" });
+                }
+              }}
+              title={selectedNote.isArchived ? "Unarchive note" : "Archive note"}
+              aria-label={selectedNote.isArchived ? "Unarchive note" : "Archive note"}
+              aria-pressed={selectedNote.isArchived}
+            >
+              {selectedNote.isArchived ? "Unarchive" : "Archive"}
+            </button>
+          ) : null}
           <button
             className={`grid h-8 w-8 place-items-center rounded-lg transition duration-150 hover:bg-white/[0.05] active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-lumo-violet/60 ${
               isFocusMode ? "text-lumo-violet" : "text-slate-500 hover:text-lumo-violet"

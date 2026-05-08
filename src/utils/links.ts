@@ -55,6 +55,7 @@ export function resolveInternalLink(
   targetTitle: string,
   notes: Note[],
   includeDeleted = false,
+  includeArchived = false,
 ) {
   const normalizedTarget = normalizeInternalLinkTitle(targetTitle);
   if (!normalizedTarget) {
@@ -64,6 +65,7 @@ export function resolveInternalLink(
   return (
     notes
       .filter((note) => includeDeleted || !note.isDeleted)
+      .filter((note) => includeArchived || !note.isArchived)
       .filter((note) => normalizeInternalLinkTitle(note.title) === normalizedTarget)
       .sort(
         (a, b) =>
@@ -76,10 +78,11 @@ export function resolveInternalLinks(
   links: InternalLink[],
   notes: Note[],
   includeDeleted = false,
+  includeArchived = false,
 ): ResolvedInternalLink[] {
   return links.map((link) => ({
     ...link,
-    targetNote: resolveInternalLink(link.targetTitle, notes, includeDeleted),
+    targetNote: resolveInternalLink(link.targetTitle, notes, includeDeleted, includeArchived),
   }));
 }
 

@@ -18,6 +18,8 @@ pub fn run() {
             db::update_note,
             db::soft_delete_note,
             db::restore_note,
+            db::archive_note,
+            db::unarchive_note,
             db::permanently_delete_note,
             db::permanently_delete_trashed_notes,
             db::toggle_favorite,

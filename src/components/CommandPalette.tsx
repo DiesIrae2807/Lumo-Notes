@@ -28,6 +28,7 @@ const viewCommands: Array<{ title: string; view: SidebarView; keywords: string }
   { title: "Open All Notes", view: "all", keywords: "all notes home" },
   { title: "Open Favorites", view: "favorites", keywords: "favorites starred" },
   { title: "Open Recent", view: "recent", keywords: "recent updated" },
+  { title: "Open Archive", view: "archive", keywords: "archive archived hidden" },
   { title: "Open Trash", view: "trash", keywords: "trash deleted" },
   { title: "Open Graph", view: "graph", keywords: "graph links backlinks map" },
   { title: "Open Settings", view: "settings", keywords: "settings preferences appearance editor behavior" },

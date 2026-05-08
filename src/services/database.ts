@@ -46,6 +46,14 @@ export async function restoreNote(id: string, updatedAt: string) {
   return invoke<void>("restore_note", { id, updatedAt });
 }
 
+export async function archiveNote(id: string, updatedAt: string) {
+  return invoke<void>("archive_note", { id, updatedAt });
+}
+
+export async function unarchiveNote(id: string, updatedAt: string) {
+  return invoke<void>("unarchive_note", { id, updatedAt });
+}
+
 export async function permanentlyDeleteNote(id: string) {
   return invoke<void>("permanently_delete_note", { id });
 }
@@ -108,8 +116,8 @@ export async function removeTagFromNote(noteId: string, tagName: string, updated
   return invoke<void>("remove_tag_from_note", { noteId, tagName, updatedAt });
 }
 
-export async function searchNotes(query: string, includeDeleted: boolean) {
-  return invoke<SearchResult[]>("search_notes", { query, includeDeleted });
+export async function searchNotes(query: string, includeDeleted: boolean, includeArchived: boolean) {
+  return invoke<SearchResult[]>("search_notes", { query, includeDeleted, includeArchived });
 }
 
 export async function rebuildSearchIndex() {

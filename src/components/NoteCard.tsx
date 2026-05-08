@@ -142,6 +142,8 @@ export function NoteCard({
             </span>
             {note.isDeleted ? (
               <span className="text-[11px] font-medium text-rose-300">Trash</span>
+            ) : note.isArchived ? (
+              <span className="text-[11px] font-medium text-slate-400">Archived</span>
             ) : null}
           </div>
         </div>

@@ -84,6 +84,7 @@ export function NotesList() {
     activeView,
     activeFolderId,
     activeTag,
+    archiveNote,
     createNote,
     filteredNotes,
     folders,
@@ -101,6 +102,7 @@ export function NotesList() {
     setSearchQuery,
     toggleFavorite,
     togglePinned,
+    unarchiveNote,
   } = useNotes();
   const { settings } = useSettings();
   const [contextMenu, setContextMenu] = useState<{
@@ -109,7 +111,7 @@ export function NotesList() {
     top: number;
   } | null>(null);
 
-  const pinned = filteredNotes.filter((note) => note.isPinned && !note.isDeleted);
+  const pinned = filteredNotes.filter((note) => note.isPinned && !note.isDeleted && !note.isArchived);
   const unpinned = filteredNotes.filter((note) => !note.isPinned || note.isDeleted);
   const today = unpinned.filter((note) => isToday(note.updatedAt));
   const yesterday = unpinned.filter((note) => isYesterday(note.updatedAt));
@@ -120,7 +122,11 @@ export function NotesList() {
     (note) =>
       !isToday(note.updatedAt) && !isYesterday(note.updatedAt) && !isThisWeek(note.updatedAt),
   );
-  const hasAnyNotes = notes.some((note) => (activeView === "trash" ? note.isDeleted : !note.isDeleted));
+  const hasAnyNotes = notes.some((note) => {
+    if (activeView === "trash") return note.isDeleted;
+    if (activeView === "archive") return note.isArchived && !note.isDeleted;
+    return !note.isDeleted && !note.isArchived;
+  });
   const hasSearch = searchQuery.trim().length > 0;
   const trashedCount = notes.filter((note) => note.isDeleted).length;
   const activeFolderName = folders.find((folder) => folder.id === activeFolderId)?.name;
@@ -167,7 +173,7 @@ export function NotesList() {
     event.preventDefault();
     event.stopPropagation();
     const menuWidth = 190;
-    const menuHeight = note.isDeleted ? 136 : 112;
+    const menuHeight = note.isDeleted ? 136 : 144;
     setContextMenu({
       left: Math.min(event.clientX, window.innerWidth - menuWidth - 10),
       note,
@@ -239,6 +245,13 @@ export function NotesList() {
       return {
         title: "Trash is empty",
         body: "Deleted notes will appear here before permanent removal.",
+      };
+    }
+
+    if (activeView === "archive") {
+      return {
+        title: "No archived notes",
+        body: "Archive notes you want out of active views without deleting them.",
       };
     }
 
@@ -417,7 +430,23 @@ export function NotesList() {
             >
               Restore
             </button>
-          ) : null}
+          ) : (
+            <button
+              className="w-full rounded-lg px-3 py-2 text-left text-slate-200 transition hover:bg-white/[0.06] hover:text-white"
+              onClick={() => {
+                if (contextMenu.note.isArchived) {
+                  unarchiveNote(contextMenu.note.id);
+                  notify({ kind: "success", title: "Note unarchived" });
+                } else {
+                  archiveNote(contextMenu.note.id);
+                  notify({ kind: "info", title: "Note archived" });
+                }
+                setContextMenu(null);
+              }}
+            >
+              {contextMenu.note.isArchived ? "Unarchive" : "Archive"}
+            </button>
+          )}
           <button
             className="w-full rounded-lg px-3 py-2 text-left text-rose-300 transition hover:bg-rose-400/10 hover:text-rose-100"
             onClick={() => {
