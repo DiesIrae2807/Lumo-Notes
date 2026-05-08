@@ -68,6 +68,10 @@ type AttachmentPopover = FloatingPosition & {
   y: number;
 };
 
+type TextContextMenu = FloatingPosition & {
+  selectedText: string;
+};
+
 type SlashCommand = {
   action: () => void;
   label: string;
@@ -212,6 +216,7 @@ export function RichTextEditor({
   const [linkPopover, setLinkPopover] = useState<LinkPopover | null>(null);
   const [attachmentPopover, setAttachmentPopover] = useState<AttachmentPopover | null>(null);
   const [slashPosition, setSlashPosition] = useState<FloatingPosition | null>(null);
+  const [textContextMenu, setTextContextMenu] = useState<TextContextMenu | null>(null);
   const [findOpen, setFindOpen] = useState(false);
   const [findQuery, setFindQuery] = useState("");
   const [findIndex, setFindIndex] = useState(0);
@@ -235,6 +240,7 @@ export function RichTextEditor({
     setLinkPopover(null);
     setAttachmentPopover(null);
     setSlashPosition(null);
+    setTextContextMenu(null);
     selectedImageRef.current = null;
   }, []);
 
@@ -455,13 +461,37 @@ export function RichTextEditor({
         contextmenu: (view, event) => {
           const target = event.target as HTMLElement | null;
           const image = target?.closest("img");
-          if (!image) return false;
-          const pos = view.posAtDOM(image, 0);
-          if (openImagePopover(image as HTMLImageElement, pos)) {
-            event.preventDefault();
-            return true;
+          if (image) {
+            const pos = view.posAtDOM(image, 0);
+            if (openImagePopover(image as HTMLImageElement, pos)) {
+              event.preventDefault();
+              return true;
+            }
+            return false;
           }
-          return false;
+
+          const { from, to } = view.state.selection;
+          const text = view.state.doc.textBetween(from, to, " ").trim();
+          if (!(view.state.selection instanceof TextSelection) || from === to || !text) {
+            setTextContextMenu(null);
+            return false;
+          }
+          const clickedPos = view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos;
+          if (!clickedPos || clickedPos < from || clickedPos > to) {
+            setTextContextMenu(null);
+            return false;
+          }
+
+          event.preventDefault();
+          setBubblePosition(null);
+          setLinkPopover(null);
+          setAttachmentPopover(null);
+          setSlashPosition(null);
+          setTextContextMenu({
+            ...positionFromCoords(shellRef.current, { left: event.clientX, top: event.clientY }, 8, 12),
+            selectedText: text,
+          });
+          return true;
         },
         mousedown: (view, event) => {
           const target = event.target as HTMLElement | null;
@@ -633,6 +663,78 @@ export function RichTextEditor({
       window.removeEventListener("lumo-editor-redo", redo);
     };
   }, [editor]);
+
+  useEffect(() => {
+    if (!textContextMenu) return;
+
+    const close = () => setTextContextMenu(null);
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") close();
+    };
+
+    window.addEventListener("click", close);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      window.removeEventListener("click", close);
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [textContextMenu]);
+
+  const copySelectedText = useCallback(async () => {
+    if (!editor) return;
+    const text = selectedText(editor);
+    if (!text.trim()) return;
+    await navigator.clipboard?.writeText(text).catch(() => {
+      document.execCommand("copy");
+    });
+    setTextContextMenu(null);
+    editor.commands.focus();
+  }, [editor]);
+
+  const cutSelectedText = useCallback(async () => {
+    if (!editor) return;
+    const text = selectedText(editor);
+    if (!text.trim()) return;
+    await navigator.clipboard?.writeText(text).catch(() => {
+      document.execCommand("copy");
+    });
+    editor.chain().focus().deleteSelection().run();
+    setTextContextMenu(null);
+  }, [editor]);
+
+  const pasteIntoEditor = useCallback(async () => {
+    if (!editor) return;
+    const text = await navigator.clipboard?.readText().catch(() => "");
+    if (text) {
+      editor.chain().focus().insertContent(text).run();
+    } else {
+      editor.commands.focus();
+      document.execCommand("paste");
+    }
+    setTextContextMenu(null);
+  }, [editor]);
+
+  const undoEditorChange = useCallback(() => {
+    editor?.chain().focus().undo().run();
+    setTextContextMenu(null);
+  }, [editor]);
+
+  const redoEditorChange = useCallback(() => {
+    editor?.chain().focus().redo().run();
+    setTextContextMenu(null);
+  }, [editor]);
+
+  const searchSelectedTextOnInternet = useCallback(() => {
+    const query = (textContextMenu?.selectedText || "").trim();
+    if (!query) return;
+    window.open(`https://www.google.com/search?q=${encodeURIComponent(query)}`, "_blank", "noopener,noreferrer");
+    setTextContextMenu(null);
+    editor?.commands.focus();
+  }, [editor, textContextMenu]);
 
   useEffect(() => {
     if (!editor) return;
@@ -954,6 +1056,44 @@ export function RichTextEditor({
               <Icon size={15} />
             </button>
           ))}
+        </div>
+      ) : null}
+      {textContextMenu ? (
+        <div
+          className="rich-editor-popover rich-editor-text-context-menu"
+          style={{ left: textContextMenu.left, top: textContextMenu.top }}
+          onClick={(event) => event.stopPropagation()}
+          onContextMenu={(event) => event.preventDefault()}
+          onMouseDown={(event) => event.preventDefault()}
+        >
+          <button className="rich-editor-context-item" onClick={() => void copySelectedText()}>
+            Copy
+          </button>
+          <button className="rich-editor-context-item" onClick={() => void cutSelectedText()}>
+            Cut
+          </button>
+          <button className="rich-editor-context-item" onClick={() => void pasteIntoEditor()}>
+            Paste
+          </button>
+          <span className="rich-editor-context-separator" />
+          <button
+            className="rich-editor-context-item"
+            disabled={!editor?.can().undo()}
+            onClick={undoEditorChange}
+          >
+            Undo
+          </button>
+          <button
+            className="rich-editor-context-item"
+            disabled={!editor?.can().redo()}
+            onClick={redoEditorChange}
+          >
+            Redo
+          </button>
+          <span className="rich-editor-context-separator" />
+          <button className="rich-editor-context-item" onClick={searchSelectedTextOnInternet}>
+            Search on the internet
+          </button>
         </div>
       ) : null}
       {slashPosition ? (
