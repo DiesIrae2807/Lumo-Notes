@@ -1,6 +1,6 @@
 import { useSettings } from "../store/settingsStore";
 import type { AppSettings } from "../types/settings";
-import { useState, type ReactNode } from "react";
+import { useState, type CSSProperties, type ReactNode } from "react";
 import { rebuildSearchIndex } from "../services/database";
 import { notify, notifyError } from "../utils/toast";
 
@@ -18,12 +18,128 @@ const shortcuts = [
   ["Escape", "Close menu/palette or exit focus mode"],
 ];
 
+const themeOptions: Array<{
+  description: string;
+  label: string;
+  value: AppSettings["theme"];
+}> = [
+  { description: "Deep navy workspace", label: "Dark", value: "dark" },
+  { description: "Bright local workspace", label: "Light", value: "light" },
+  { description: "Follow Windows", label: "System", value: "system" },
+];
+
+const accentOptions: Array<{
+  colors: [string, string];
+  description: string;
+  label: string;
+  value: AppSettings["accent"];
+}> = [
+  { colors: ["#9c7cf4", "#59d5ca"], description: "Default", label: "Violet / Teal", value: "teal" },
+  { colors: ["#9c7cf4", "#7fb2ff"], description: "Cool blue", label: "Blue", value: "blue" },
+  { colors: ["#9c7cf4", "#5ee6a8"], description: "Fresh green", label: "Green", value: "green" },
+  { colors: ["#9c7cf4", "#ff6f91"], description: "Soft rose", label: "Rose", value: "rose" },
+  { colors: ["#9c7cf4", "#f6c85f"], description: "Warm amber", label: "Amber", value: "amber" },
+];
+
 function SettingsCard({ children, title }: { children: ReactNode; title: string }) {
   return (
     <section className="rounded-2xl border border-white/10 bg-white/[0.035] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
       <h2 className="text-sm font-semibold text-white">{title}</h2>
       <div className="mt-4 space-y-4">{children}</div>
     </section>
+  );
+}
+
+function ThemePicker() {
+  const { settings, updateSetting } = useSettings();
+
+  return (
+    <div>
+      <div className="mb-3">
+        <span className="block text-sm font-medium text-slate-200">Theme</span>
+        <span className="mt-1 block text-xs text-slate-500">Choose how Lumo Notes should blend with your desktop.</span>
+      </div>
+      <div className="appearance-option-grid">
+        {themeOptions.map((option) => {
+          const selected = settings.theme === option.value;
+
+          return (
+            <button
+              key={option.value}
+              type="button"
+              aria-pressed={selected}
+              className={`appearance-option theme-choice theme-choice-${option.value} ${
+                selected ? "appearance-option-selected" : ""
+              }`}
+              onClick={() => updateSetting("theme", option.value)}
+            >
+              <span className="theme-preview" aria-hidden="true">
+                <span className="theme-preview-sidebar" />
+                <span className="theme-preview-content">
+                  <span />
+                  <span />
+                </span>
+              </span>
+              <span className="appearance-option-copy">
+                <span className="appearance-option-title">
+                  {option.label}
+                  {selected ? <span className="appearance-option-check" aria-hidden="true">✓</span> : null}
+                </span>
+                <span className="appearance-option-description">{option.description}</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function AccentPicker() {
+  const { settings, updateSetting } = useSettings();
+
+  return (
+    <div>
+      <div className="mb-3">
+        <span className="block text-sm font-medium text-slate-200">Accent</span>
+        <span className="mt-1 block text-xs text-slate-500">Preview and apply the secondary Lumo accent.</span>
+      </div>
+      <div className="appearance-option-grid accent-option-grid">
+        {accentOptions.map((option) => {
+          const selected = settings.accent === option.value;
+          const style = {
+            "--swatch-a": option.colors[0],
+            "--swatch-b": option.colors[1],
+          } as CSSProperties;
+
+          return (
+            <button
+              key={option.value}
+              type="button"
+              aria-pressed={selected}
+              className={`appearance-option accent-choice ${selected ? "appearance-option-selected" : ""}`}
+              style={style}
+              onClick={() => updateSetting("accent", option.value)}
+            >
+              <span className="accent-preview" aria-hidden="true">
+                <span className="accent-preview-gradient" />
+                <span className="accent-preview-dots">
+                  <span />
+                  <span />
+                </span>
+              </span>
+              <span className="appearance-option-copy">
+                <span className="appearance-option-title">
+                  {option.label}
+                  {selected ? <span className="appearance-option-check" aria-hidden="true">✓</span> : null}
+                </span>
+                <span className="appearance-option-description">{option.description}</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -130,27 +246,8 @@ export function SettingsScreen() {
 
           <div className="grid gap-5">
             <SettingsCard title="Appearance">
-              <SettingSelect
-                label="Theme"
-                name="theme"
-                options={[
-                  { label: "Dark", value: "dark" },
-                  { label: "Light", value: "light" },
-                  { label: "System", value: "system" },
-                ]}
-              />
-              <SettingSelect
-                label="Accent"
-                name="accent"
-                options={[
-                  { label: "Violet / Teal", value: "teal" },
-                  { label: "Violet / Blue", value: "blue" },
-                  { label: "Violet / Green", value: "green" },
-                  { label: "Violet / Rose", value: "rose" },
-                  { label: "Violet / Amber", value: "amber" },
-                  { label: "Violet / Indigo", value: "indigo" },
-                ]}
-              />
+              <ThemePicker />
+              <AccentPicker />
             </SettingsCard>
 
             <SettingsCard title="Editor">

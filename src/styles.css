@@ -9,6 +9,14 @@
     --lumo-teal: #59d5ca;
     --lumo-blue: #7fb2ff;
     --lumo-secondary: #59d5ca;
+    --accent: var(--lumo-secondary);
+    --accent-secondary: var(--lumo-secondary);
+    --accent-soft: color-mix(in srgb, var(--lumo-secondary) 14%, transparent);
+    --accent-strong: color-mix(in srgb, var(--lumo-secondary) 78%, white);
+    --accent-border: color-mix(in srgb, var(--lumo-secondary) 34%, transparent);
+    --accent-glow: color-mix(in srgb, var(--lumo-secondary) 24%, transparent);
+    --accent-text: var(--lumo-secondary);
+    --accent-gradient: linear-gradient(90deg, rgba(156, 124, 244, 0.36), color-mix(in srgb, var(--lumo-secondary) 28%, transparent));
     --editor-font-size: 16px;
     --editor-line-height: 2rem;
     font-family: Outfit, Geist, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -24,36 +32,42 @@
     --lumo-secondary: #59d5ca;
     --lumo-teal: #59d5ca;
     --lumo-blue: #7fb2ff;
+    --accent-gradient: linear-gradient(90deg, rgba(156, 124, 244, 0.36), rgba(89, 213, 202, 0.24));
   }
 
   :root[data-lumo-accent="blue"] {
     --lumo-secondary: #7fb2ff;
     --lumo-teal: #7fb2ff;
     --lumo-blue: #75d8ff;
+    --accent-gradient: linear-gradient(90deg, rgba(156, 124, 244, 0.34), rgba(127, 178, 255, 0.24));
   }
 
   :root[data-lumo-accent="green"] {
     --lumo-secondary: #5ee6a8;
     --lumo-teal: #5ee6a8;
     --lumo-blue: #91f0c1;
+    --accent-gradient: linear-gradient(90deg, rgba(156, 124, 244, 0.34), rgba(94, 230, 168, 0.22));
   }
 
   :root[data-lumo-accent="rose"] {
     --lumo-secondary: #ff6f91;
     --lumo-teal: #ff6f91;
     --lumo-blue: #ffadc1;
+    --accent-gradient: linear-gradient(90deg, rgba(156, 124, 244, 0.34), rgba(255, 111, 145, 0.22));
   }
 
   :root[data-lumo-accent="amber"] {
     --lumo-secondary: #f6c85f;
     --lumo-teal: #f6c85f;
     --lumo-blue: #f6c85f;
+    --accent-gradient: linear-gradient(90deg, rgba(156, 124, 244, 0.34), rgba(246, 200, 95, 0.24));
   }
 
   :root[data-lumo-accent="indigo"] {
     --lumo-secondary: #7c83ff;
     --lumo-teal: #7c83ff;
     --lumo-blue: #9aa2ff;
+    --accent-gradient: linear-gradient(90deg, rgba(156, 124, 244, 0.34), rgba(124, 131, 255, 0.24));
   }
 
   :root[data-editor-size="small"] {
@@ -111,6 +125,238 @@
 }
 
 @layer components {
+  .appearance-option-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 0.75rem;
+  }
+
+  .accent-option-grid {
+    grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
+  }
+
+  .appearance-option {
+    position: relative;
+    display: flex;
+    min-height: 6.5rem;
+    gap: 0.75rem;
+    align-items: center;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 1rem;
+    background:
+      radial-gradient(circle at 18% 12%, rgba(156, 124, 244, 0.08), transparent 42%),
+      rgba(255, 255, 255, 0.028);
+    padding: 0.85rem;
+    color: #d9e0ee;
+    text-align: left;
+    transition:
+      background-color 160ms ease,
+      border-color 160ms ease,
+      box-shadow 160ms ease,
+      transform 120ms ease;
+  }
+
+  .appearance-option:hover {
+    border-color: var(--accent-border);
+    background:
+      radial-gradient(circle at 18% 12%, color-mix(in srgb, var(--lumo-secondary) 12%, transparent), transparent 42%),
+      rgba(255, 255, 255, 0.045);
+  }
+
+  .appearance-option:active {
+    transform: scale(0.985);
+  }
+
+  .appearance-option:focus-visible {
+    outline: none;
+    border-color: color-mix(in srgb, var(--lumo-secondary) 60%, transparent);
+    box-shadow:
+      0 0 0 2px color-mix(in srgb, var(--lumo-secondary) 18%, transparent),
+      0 0 22px var(--accent-glow);
+  }
+
+  .appearance-option-selected {
+    border-color: color-mix(in srgb, var(--lumo-secondary) 44%, transparent);
+    background:
+      radial-gradient(circle at 18% 12%, color-mix(in srgb, var(--lumo-secondary) 18%, transparent), transparent 44%),
+      var(--accent-gradient),
+      rgba(255, 255, 255, 0.045);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.06),
+      0 18px 56px -46px var(--accent-glow);
+  }
+
+  .appearance-option-copy {
+    min-width: 0;
+  }
+
+  .appearance-option-title {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    color: #eef3ff;
+    font-size: 0.875rem;
+    font-weight: 650;
+    line-height: 1.2;
+  }
+
+  .appearance-option-description {
+    display: block;
+    margin-top: 0.25rem;
+    color: #7f8aa3;
+    font-size: 0.72rem;
+    line-height: 1.25;
+  }
+
+  .appearance-option-check {
+    display: inline-grid;
+    width: 1rem;
+    height: 1rem;
+    place-items: center;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--lumo-secondary) 22%, rgba(255, 255, 255, 0.06));
+    color: var(--lumo-secondary);
+    font-size: 0.68rem;
+    box-shadow: 0 0 14px var(--accent-glow);
+  }
+
+  .theme-preview {
+    display: grid;
+    flex: 0 0 auto;
+    width: 3.4rem;
+    height: 3.4rem;
+    grid-template-columns: 0.9rem 1fr;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.11);
+    border-radius: 0.85rem;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  }
+
+  .theme-preview-sidebar {
+    background: rgba(156, 124, 244, 0.22);
+  }
+
+  .theme-preview-content {
+    display: flex;
+    flex-direction: column;
+    gap: 0.38rem;
+    justify-content: center;
+    padding: 0.5rem;
+  }
+
+  .theme-preview-content span {
+    display: block;
+    height: 0.35rem;
+    border-radius: 999px;
+  }
+
+  .theme-preview-content span:first-child {
+    width: 80%;
+  }
+
+  .theme-preview-content span:last-child {
+    width: 55%;
+  }
+
+  .theme-choice-dark .theme-preview {
+    background: #050a12;
+  }
+
+  .theme-choice-dark .theme-preview-content span {
+    background: rgba(238, 243, 255, 0.72);
+  }
+
+  .theme-choice-light .theme-preview {
+    background: #edf3fb;
+  }
+
+  .theme-choice-light .theme-preview-sidebar {
+    background: rgba(156, 124, 244, 0.18);
+  }
+
+  .theme-choice-light .theme-preview-content span {
+    background: rgba(22, 31, 46, 0.7);
+  }
+
+  .theme-choice-system .theme-preview {
+    background: linear-gradient(135deg, #050a12 0 50%, #edf3fb 50% 100%);
+  }
+
+  .theme-choice-system .theme-preview-content span:first-child {
+    background: rgba(238, 243, 255, 0.75);
+  }
+
+  .theme-choice-system .theme-preview-content span:last-child {
+    background: rgba(22, 31, 46, 0.68);
+  }
+
+  .accent-preview {
+    position: relative;
+    display: grid;
+    flex: 0 0 auto;
+    width: 3.6rem;
+    height: 3.6rem;
+    place-items: center;
+  }
+
+  .accent-preview-gradient {
+    position: absolute;
+    inset: 0.1rem;
+    border-radius: 1rem;
+    background:
+      radial-gradient(circle at 28% 28%, var(--swatch-a), transparent 34%),
+      radial-gradient(circle at 72% 70%, var(--swatch-b), transparent 38%),
+      linear-gradient(135deg, color-mix(in srgb, var(--swatch-a) 72%, #050a12), color-mix(in srgb, var(--swatch-b) 62%, #050a12));
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, 0.14),
+      0 0 22px color-mix(in srgb, var(--swatch-b) 22%, transparent);
+  }
+
+  .accent-preview-dots {
+    position: relative;
+    display: flex;
+    gap: 0.28rem;
+  }
+
+  .accent-preview-dots span {
+    width: 0.78rem;
+    height: 0.78rem;
+    border: 1px solid rgba(255, 255, 255, 0.24);
+    border-radius: 999px;
+    box-shadow: 0 0 14px rgba(0, 0, 0, 0.24);
+  }
+
+  .accent-preview-dots span:first-child {
+    background: var(--swatch-a);
+  }
+
+  .accent-preview-dots span:last-child {
+    background: var(--swatch-b);
+  }
+
+  :root[data-lumo-theme="light"] .appearance-option {
+    border-color: rgba(18, 31, 50, 0.12);
+    background:
+      radial-gradient(circle at 18% 12%, rgba(156, 124, 244, 0.08), transparent 42%),
+      rgba(255, 255, 255, 0.68);
+    color: #162033;
+  }
+
+  :root[data-lumo-theme="light"] .appearance-option-title {
+    color: #111827;
+  }
+
+  :root[data-lumo-theme="light"] .appearance-option-description {
+    color: #647086;
+  }
+
+  :root[data-lumo-theme="light"] .appearance-option-selected {
+    border-color: color-mix(in srgb, var(--lumo-secondary) 42%, rgba(22, 31, 46, 0.14));
+    background:
+      radial-gradient(circle at 18% 12%, color-mix(in srgb, var(--lumo-secondary) 14%, transparent), transparent 44%),
+      linear-gradient(90deg, rgba(156, 124, 244, 0.12), color-mix(in srgb, var(--lumo-secondary) 14%, rgba(255, 255, 255, 0.76)));
+  }
+
   .search-highlight {
     border-radius: 0.25rem;
     background: rgba(114, 79, 12, 0.52);
