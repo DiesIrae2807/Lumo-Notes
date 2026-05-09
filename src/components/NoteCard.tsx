@@ -78,12 +78,12 @@ export function NoteCard({
           onSelect();
         }
       }}
-      className={`group w-full cursor-pointer rounded-xl border p-3 text-left transition duration-300 active:scale-[0.99] focus-visible:outline focus-visible:outline-2 focus-visible:outline-lumo-violet/60 ${
+      className={`note-card group w-full cursor-pointer rounded-xl px-3 py-2.5 text-left transition duration-300 active:scale-[0.99] focus-visible:outline focus-visible:outline-2 focus-visible:outline-lumo-violet/60 ${
         isActive
-          ? "border-lumo-violet/40 bg-lumo-violet/[0.09] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
+          ? "note-card-active"
           : note.isDeleted
-            ? "border-rose-400/15 bg-rose-400/[0.035] hover:border-rose-300/25 hover:bg-rose-400/[0.055]"
-            : "border-white/10 bg-white/[0.035] hover:border-lumo-teal/25 hover:bg-white/[0.055]"
+            ? "bg-rose-400/[0.035] hover:bg-rose-400/[0.055]"
+            : "bg-white/[0.035] hover:bg-white/[0.055]"
       }`}
     >
       <div className="flex items-start gap-3">
@@ -99,7 +99,7 @@ export function NoteCard({
               <span className="text-xs text-slate-500">{formatRelativeTime(note.updatedAt)}</span>
               <button
                 type="button"
-                className={`grid h-7 w-7 place-items-center rounded-lg transition duration-150 hover:bg-white/[0.06] active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#FF8A9A]/60 ${
+                className={`grid h-6 w-6 place-items-center rounded-lg transition duration-150 hover:bg-white/[0.06] active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#FF8A9A]/60 ${
                   note.isFavorite
                     ? "text-[#FF4D6D] opacity-100"
                     : "text-slate-600 opacity-0 hover:text-[#FF8A9A] group-hover:opacity-100 focus:opacity-100"
@@ -116,7 +116,7 @@ export function NoteCard({
               </button>
               <button
                 type="button"
-                className={`grid h-7 w-7 place-items-center rounded-lg transition duration-150 hover:bg-white/[0.06] active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-lumo-teal/60 ${
+                className={`grid h-6 w-6 place-items-center rounded-lg transition duration-150 hover:bg-white/[0.06] active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-lumo-teal/60 ${
                   note.isPinned
                     ? "text-lumo-teal opacity-100"
                     : "text-slate-600 opacity-0 hover:text-lumo-teal group-hover:opacity-100 focus:opacity-100"
@@ -136,8 +136,8 @@ export function NoteCard({
           <p className="mt-1 line-clamp-1 text-xs leading-5 text-slate-400">
             <HighlightedText query={searchQuery} text={preview || "No content yet"} />
           </p>
-          <div className="mt-3 flex items-center gap-2 overflow-hidden">
-            <span className="inline-flex max-w-[9rem] truncate rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-[11px] text-slate-300">
+          <div className="mt-2 flex items-center gap-2 overflow-hidden">
+            <span className="inline-flex max-w-[9rem] truncate rounded-md bg-white/[0.05] px-2 py-0.5 text-[11px] text-slate-300">
               {primaryChip}
             </span>
             {note.isDeleted ? (
