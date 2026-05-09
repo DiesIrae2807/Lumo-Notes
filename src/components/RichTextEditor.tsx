@@ -1030,6 +1030,7 @@ export function RichTextEditor({
       className={`rich-editor-shell ${isFocusMode ? "rich-editor-shell-focus" : "rich-editor-shell-open"}`}
       data-attachment-labels={insertAttachmentLabel() ?? undefined}
       data-empty={content.trim() ? undefined : "true"}
+      onContextMenu={(event) => event.preventDefault()}
     >
       <EditorContent editor={editor} />
       {bubblePosition ? (

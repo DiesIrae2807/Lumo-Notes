@@ -361,7 +361,7 @@ export function Sidebar() {
 
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <SectionHeader title="Views" />
+          <SectionHeader title="Folders" />
           <button
             className="rounded-lg px-2 py-1 text-xs text-slate-400 transition hover:bg-white/[0.05] hover:text-white"
             onClick={addFolder}

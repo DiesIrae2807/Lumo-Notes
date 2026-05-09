@@ -114,6 +114,20 @@ function AppShortcuts() {
   const { createNote, forceSaveSelectedNote, moveToTrash, selectedNote } = useNotes();
 
   useEffect(() => {
+    const suppressBrowserContextMenu = (event: globalThis.MouseEvent) => {
+      if ((event.target as HTMLElement | null)?.closest(".rich-editor-shell")) {
+        return;
+      }
+      event.preventDefault();
+    };
+
+    document.addEventListener("contextmenu", suppressBrowserContextMenu, { capture: true });
+    return () => {
+      document.removeEventListener("contextmenu", suppressBrowserContextMenu, { capture: true });
+    };
+  }, []);
+
+  useEffect(() => {
     const isTypingTarget = (target: EventTarget | null) => {
       if (!(target instanceof HTMLElement)) {
         return false;
