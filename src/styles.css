@@ -1047,52 +1047,58 @@
     box-shadow:
       inset 0 1px 0 rgba(255, 255, 255, 0.06),
       inset 0 0 80px color-mix(in srgb, var(--lumo-teal) 3.5%, transparent);
+    background:
+      radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--lumo-violet) 4%, transparent), transparent 65%),
+      rgba(6, 10, 20, 0.35);
   }
 
   .graph-edge {
-    stroke: rgba(148, 163, 184, 0.28);
-    stroke-width: 1.4;
-    transition: stroke 160ms ease, stroke-width 160ms ease, opacity 160ms ease;
+    stroke: rgba(148, 163, 184, 0.16);
+    stroke-width: 1;
+    transition: stroke 200ms ease, stroke-width 200ms ease, opacity 200ms ease;
   }
 
   .graph-edge-active {
     stroke: color-mix(in srgb, var(--lumo-teal) 70%, transparent);
-    stroke-width: 2.2;
+    stroke-width: 1.8;
+  }
+
+  .graph-edge-dimmed {
+    opacity: 0.08;
   }
 
   .graph-node {
     cursor: pointer;
-    transition: opacity 160ms ease;
+    transition: opacity 200ms ease;
   }
 
   .graph-node-dimmed {
-    opacity: 0.32;
+    opacity: 0.18;
   }
 
   .graph-node-halo {
-    fill: url("#nodeGlow");
-    opacity: 0.55;
-    transition: opacity 160ms ease;
+    opacity: 0.35;
+    transition: opacity 200ms ease, r 200ms ease;
   }
 
   .graph-node-core {
     fill: rgba(18, 25, 45, 0.94);
     stroke: color-mix(in srgb, var(--lumo-violet) 55%, transparent);
-    stroke-width: 1.4;
-    filter: drop-shadow(0 0 16px color-mix(in srgb, var(--lumo-violet) 22%, transparent));
-    transition: fill 160ms ease, stroke 160ms ease, stroke-width 160ms ease;
+    stroke-width: 1.2;
+    filter: drop-shadow(0 0 8px color-mix(in srgb, var(--lumo-violet) 18%, transparent));
+    transition: fill 200ms ease, stroke 200ms ease, stroke-width 200ms ease, r 200ms ease;
   }
 
   .graph-node:hover .graph-node-core,
   .graph-node-selected .graph-node-core {
     fill: rgba(31, 42, 72, 0.96);
     stroke: color-mix(in srgb, var(--lumo-teal) 85%, transparent);
-    stroke-width: 2;
+    stroke-width: 1.8;
   }
 
   .graph-node:hover .graph-node-halo,
   .graph-node-selected .graph-node-halo {
-    opacity: 0.95;
+    opacity: 0.85;
   }
 
   .graph-node-pin {
@@ -1105,15 +1111,79 @@
 
   .graph-node-label {
     fill: rgb(241 245 249);
-    font-size: 13px;
-    font-weight: 650;
+    font-size: 11px;
+    font-weight: 600;
     letter-spacing: 0;
     pointer-events: none;
+    transition: opacity 200ms ease;
+  }
+
+  .graph-node-label-fade {
+    opacity: 0.7;
+  }
+
+  .graph-node-label-visible {
+    opacity: 1;
   }
 
   .graph-node-meta {
     fill: rgb(100 116 139);
-    font-size: 10px;
+    font-size: 9px;
+    pointer-events: none;
+    opacity: 0.8;
+  }
+
+  /* Zoom controls */
+  .graph-zoom-controls {
+    position: absolute;
+    bottom: 1rem;
+    right: 1rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 0.75rem;
+    background: rgba(8, 13, 25, 0.85);
+    padding: 0.25rem;
+    backdrop-filter: blur(12px);
+  }
+
+  .graph-zoom-controls button {
+    display: grid;
+    width: 2rem;
+    height: 2rem;
+    place-items: center;
+    border: 0;
+    border-radius: 0.5rem;
+    background: transparent;
+    color: rgb(148 163 184);
+    font-size: 0.68rem;
+    cursor: pointer;
+    transition: background 150ms ease, color 150ms ease;
+  }
+
+  .graph-zoom-controls button:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: white;
+  }
+
+  .graph-zoom-label {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Info badge */
+  .graph-info-badge {
+    position: absolute;
+    bottom: 1rem;
+    left: 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 0.5rem;
+    background: rgba(8, 13, 25, 0.75);
+    padding: 0.3rem 0.6rem;
+    color: rgb(100 116 139);
+    font-size: 0.68rem;
+    backdrop-filter: blur(12px);
     pointer-events: none;
   }
 
