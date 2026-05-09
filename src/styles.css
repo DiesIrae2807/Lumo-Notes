@@ -332,6 +332,22 @@
     accent-color: var(--lumo-secondary);
   }
 
+  .accent-heading-toolbar-button {
+    color: var(--lumo-secondary) !important;
+    background: transparent !important;
+    text-shadow: 0 0 12px color-mix(in srgb, var(--lumo-secondary) 45%, transparent);
+  }
+
+  .accent-heading-toolbar-button:hover,
+  .accent-heading-toolbar-button-active {
+    color: var(--lumo-secondary) !important;
+    background: transparent !important;
+    box-shadow: none;
+    text-shadow:
+      0 0 10px color-mix(in srgb, var(--lumo-secondary) 60%, transparent),
+      0 0 22px color-mix(in srgb, var(--lumo-secondary) 28%, transparent);
+  }
+
   .rich-editor-typewriter {
     padding-top: min(18vh, 140px);
     padding-bottom: min(22vh, 180px);

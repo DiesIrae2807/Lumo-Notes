@@ -813,7 +813,13 @@ export function Editor({
                 key={tool.action}
                 className={`grid h-8 w-8 place-items-center rounded-lg text-slate-400 transition hover:bg-white/[0.05] hover:text-white active:scale-95 ${
                   richToolbarState[tool.action] ? "bg-lumo-violet/20 text-white" : ""
-                } ${tool.action === "accentHeading" ? "text-[var(--secondary-accent)]" : ""}`}
+                } ${
+                  tool.action === "accentHeading"
+                    ? `accent-heading-toolbar-button ${
+                        richToolbarState.accentHeading ? "accent-heading-toolbar-button-active" : ""
+                      }`
+                    : ""
+                }`}
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => insertMarkdown(tool.action)}
                 aria-label={tool.label}
