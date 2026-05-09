@@ -1016,6 +1016,37 @@ pub fn open_attachment(state: tauri::State<'_, DbState>, id: String) -> Result<(
 }
 
 #[tauri::command]
+pub fn open_external_url(url: String) -> Result<(), String> {
+    if !(url.starts_with("https://") || url.starts_with("http://")) {
+        return Err("Only http and https URLs can be opened.".to_string());
+    }
+
+    #[cfg(target_os = "windows")]
+    let status = Command::new("cmd")
+        .args(["/C", "start", "", &url])
+        .status()
+        .map_err(|error| error.to_string())?;
+
+    #[cfg(target_os = "macos")]
+    let status = Command::new("open")
+        .arg(&url)
+        .status()
+        .map_err(|error| error.to_string())?;
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let status = Command::new("xdg-open")
+        .arg(&url)
+        .status()
+        .map_err(|error| error.to_string())?;
+
+    if status.success() {
+        Ok(())
+    } else {
+        Err("Could not open the URL with the default browser.".to_string())
+    }
+}
+
+#[tauri::command]
 pub fn save_attachment_as(state: tauri::State<'_, DbState>, id: String) -> Result<Option<String>, String> {
     let connection = connect(&state.path)?;
     create_schema(&connection)?;

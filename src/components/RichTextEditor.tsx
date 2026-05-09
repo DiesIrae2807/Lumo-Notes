@@ -4,7 +4,7 @@ import type { EditorView } from "@tiptap/pm/view";
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import type { Attachment } from "../types/note";
 import { editorHtmlToMarkdown, markdownToEditorHtml } from "../utils/richTextMarkdown";
-import { getAttachmentDataUrl } from "../services/database";
+import { getAttachmentDataUrl, openExternalUrl } from "../services/database";
 import { findHighlightPluginKey, richTextExtensions, type FindHighlightMeta } from "./editorExtensions";
 import {
   BoldIcon,
@@ -471,15 +471,20 @@ export function RichTextEditor({
           }
 
           const { from, to } = view.state.selection;
-          const text = view.state.doc.textBetween(from, to, " ").trim();
-          if (!(view.state.selection instanceof TextSelection) || from === to || !text) {
-            setTextContextMenu(null);
-            return false;
-          }
           const clickedPos = view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos;
-          if (!clickedPos || clickedPos < from || clickedPos > to) {
-            setTextContextMenu(null);
-            return false;
+          const text =
+            view.state.selection instanceof TextSelection && from !== to
+              ? view.state.doc.textBetween(from, to, " ").trim()
+              : "";
+          const clickedInsideSelection =
+            Boolean(clickedPos) &&
+            view.state.selection instanceof TextSelection &&
+            from !== to &&
+            clickedPos! >= from &&
+            clickedPos! <= to;
+
+          if (clickedPos && !clickedInsideSelection) {
+            view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, clickedPos)));
           }
 
           event.preventDefault();
@@ -489,7 +494,7 @@ export function RichTextEditor({
           setSlashPosition(null);
           setTextContextMenu({
             ...positionFromCoords(shellRef.current, { left: event.clientX, top: event.clientY }, 8, 12),
-            selectedText: text,
+            selectedText: clickedInsideSelection ? text : "",
           });
           return true;
         },
@@ -728,10 +733,12 @@ export function RichTextEditor({
     setTextContextMenu(null);
   }, [editor]);
 
-  const searchSelectedTextOnInternet = useCallback(() => {
+  const searchSelectedTextOnInternet = useCallback(async () => {
     const query = (textContextMenu?.selectedText || "").trim();
     if (!query) return;
-    window.open(`https://www.google.com/search?q=${encodeURIComponent(query)}`, "_blank", "noopener,noreferrer");
+    await openExternalUrl(`https://www.google.com/search?q=${encodeURIComponent(query)}`).catch(() => {
+      window.location.href = `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+    });
     setTextContextMenu(null);
     editor?.commands.focus();
   }, [editor, textContextMenu]);
@@ -1067,10 +1074,18 @@ export function RichTextEditor({
           onContextMenu={(event) => event.preventDefault()}
           onMouseDown={(event) => event.preventDefault()}
         >
-          <button className="rich-editor-context-item" onClick={() => void copySelectedText()}>
+          <button
+            className="rich-editor-context-item"
+            disabled={!textContextMenu.selectedText.trim()}
+            onClick={() => void copySelectedText()}
+          >
             Copy
           </button>
-          <button className="rich-editor-context-item" onClick={() => void cutSelectedText()}>
+          <button
+            className="rich-editor-context-item"
+            disabled={!textContextMenu.selectedText.trim()}
+            onClick={() => void cutSelectedText()}
+          >
             Cut
           </button>
           <button className="rich-editor-context-item" onClick={() => void pasteIntoEditor()}>
@@ -1092,7 +1107,11 @@ export function RichTextEditor({
             Redo
           </button>
           <span className="rich-editor-context-separator" />
-          <button className="rich-editor-context-item" onClick={searchSelectedTextOnInternet}>
+          <button
+            className="rich-editor-context-item"
+            disabled={!textContextMenu.selectedText.trim()}
+            onClick={() => void searchSelectedTextOnInternet()}
+          >
             Search on the internet
           </button>
         </div>
