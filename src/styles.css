@@ -1610,3 +1610,480 @@
 :root[data-lumo-theme="light"] .scroll-area {
   scrollbar-color: rgba(71, 85, 105, 0.34) transparent;
 }
+
+:root[data-lumo-theme="light"] body {
+  background:
+    radial-gradient(circle at 12% 24%, color-mix(in srgb, var(--lumo-violet) 10%, transparent), transparent 34%),
+    radial-gradient(circle at 83% 20%, color-mix(in srgb, var(--lumo-secondary) 16%, transparent), transparent 36%),
+    linear-gradient(180deg, #f7f9fe 0%, #edf3fa 100%);
+}
+
+:root[data-lumo-theme="light"] .window-shell {
+  background: #eef3fa;
+}
+
+:root[data-lumo-theme="light"] .custom-titlebar {
+  border-bottom-color: rgba(31, 42, 68, 0.12);
+  background:
+    linear-gradient(90deg, rgba(156, 124, 244, 0.13), rgba(156, 124, 244, 0.05) 48%, rgba(247, 250, 255, 0.92)),
+    rgba(247, 250, 255, 0.94);
+  color: #1b2638;
+}
+
+:root[data-lumo-theme="light"] .workspace-grid {
+  background:
+    radial-gradient(circle at 68% 26%, color-mix(in srgb, var(--lumo-secondary) 12%, transparent), transparent 34%),
+    radial-gradient(circle at 44% 8%, rgba(156, 124, 244, 0.12), transparent 31%),
+    #eef3fa;
+}
+
+:root[data-lumo-theme="light"] .column-panel {
+  border-color: rgba(31, 42, 68, 0.12);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.68), rgba(244, 248, 253, 0.52)),
+    rgba(244, 248, 253, 0.74);
+}
+
+:root[data-lumo-theme="light"] .editor-glow,
+:root[data-lumo-theme="light"] .focus-editor {
+  border-color: rgba(31, 42, 68, 0.12);
+  background:
+    radial-gradient(circle at 80% 18%, color-mix(in srgb, var(--lumo-secondary) 13%, transparent), transparent 36%),
+    radial-gradient(circle at 19% 8%, rgba(156, 124, 244, 0.11), transparent 32%),
+    linear-gradient(180deg, rgba(249, 252, 255, 0.86), rgba(239, 245, 252, 0.92));
+}
+
+:root[data-lumo-theme="light"] .panel,
+:root[data-lumo-theme="light"] .insight-card,
+:root[data-lumo-theme="light"] .graph-canvas,
+:root[data-lumo-theme="light"] .rich-editor-popover,
+:root[data-lumo-theme="light"] .rich-editor-find-panel {
+  border-color: rgba(31, 42, 68, 0.13);
+  background:
+    radial-gradient(circle at 90% 0%, color-mix(in srgb, var(--lumo-secondary) 7%, transparent), transparent 40%),
+    rgba(255, 255, 255, 0.84);
+  color: #1b2638;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.78),
+    0 18px 50px -42px rgba(32, 44, 70, 0.34);
+}
+
+:root[data-lumo-theme="light"] .sidebar-new-note {
+  color: #172033;
+  background:
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, #9c7cf4 18%, rgba(255, 255, 255, 0.78)) 0%,
+      rgba(255, 255, 255, 0.72) 54%,
+      rgba(255, 255, 255, 0.28) 100%
+    );
+  box-shadow:
+    inset 0 0 0 1px rgba(156, 124, 244, 0.2),
+    0 12px 36px -30px rgba(156, 124, 244, 0.45);
+}
+
+:root[data-lumo-theme="light"] .sidebar-new-note:hover {
+  background:
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, #9c7cf4 24%, rgba(255, 255, 255, 0.78)) 0%,
+      rgba(255, 255, 255, 0.76) 54%,
+      rgba(255, 255, 255, 0.34) 100%
+    );
+}
+
+:root[data-lumo-theme="light"] .sidebar-nav-item {
+  color: #263349;
+}
+
+:root[data-lumo-theme="light"] .sidebar-nav-item:hover {
+  color: #111827;
+  background:
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--lumo-secondary) 9%, rgba(255, 255, 255, 0.8)),
+      rgba(255, 255, 255, 0.16)
+    );
+}
+
+:root[data-lumo-theme="light"] .sidebar-nav-item-active {
+  color: #111827 !important;
+  background:
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--lumo-secondary) 20%, rgba(255, 255, 255, 0.82)) 0%,
+      color-mix(in srgb, var(--lumo-secondary) 8%, rgba(255, 255, 255, 0.58)) 50%,
+      rgba(255, 255, 255, 0.1) 100%
+    ) !important;
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--lumo-secondary) 18%, transparent),
+    0 14px 36px -32px color-mix(in srgb, var(--lumo-secondary) 42%, transparent);
+}
+
+:root[data-lumo-theme="light"] .note-card {
+  color: #1b2638;
+  background: rgba(255, 255, 255, 0.52) !important;
+}
+
+:root[data-lumo-theme="light"] .note-card:hover {
+  background: rgba(255, 255, 255, 0.72) !important;
+}
+
+:root[data-lumo-theme="light"] .note-card-active {
+  background:
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, #9c7cf4 18%, rgba(255, 255, 255, 0.78)) 0%,
+      rgba(255, 255, 255, 0.66) 50%,
+      rgba(255, 255, 255, 0.08) 100%
+    ) !important;
+  box-shadow:
+    inset 0 0 0 1px rgba(156, 124, 244, 0.22),
+    0 16px 42px -34px rgba(156, 124, 244, 0.45);
+}
+
+:root[data-lumo-theme="light"] .rich-editor-shell {
+  color: #172033;
+}
+
+:root[data-lumo-theme="light"] .rich-editor-prose {
+  color: #172033;
+}
+
+:root[data-lumo-theme="light"] .rich-editor-prose h1,
+:root[data-lumo-theme="light"] .rich-editor-prose h2,
+:root[data-lumo-theme="light"] .rich-editor-prose h3,
+:root[data-lumo-theme="light"] .rich-editor-prose strong {
+  color: #101827;
+}
+
+:root[data-lumo-theme="light"] .rich-editor-prose h1[data-accent-heading="true"],
+:root[data-lumo-theme="light"] .rich-editor-prose h2[data-accent-heading="true"],
+:root[data-lumo-theme="light"] .rich-editor-prose h3[data-accent-heading="true"] {
+  color: color-mix(in srgb, var(--lumo-secondary) 82%, #0f172a);
+}
+
+:root[data-lumo-theme="light"] .rich-editor-prose blockquote {
+  background: rgba(255, 255, 255, 0.58);
+  color: #243044;
+}
+
+:root[data-lumo-theme="light"] .rich-editor-prose code {
+  border-color: color-mix(in srgb, var(--lumo-secondary) 24%, rgba(31, 42, 68, 0.08));
+  background: color-mix(in srgb, var(--lumo-secondary) 10%, rgba(255, 255, 255, 0.72));
+  color: #155e63;
+}
+
+:root[data-lumo-theme="light"] .rich-editor-prose pre {
+  border-color: rgba(31, 42, 68, 0.12);
+  background: rgba(235, 241, 249, 0.88);
+}
+
+:root[data-lumo-theme="light"] .rich-editor-prose pre code {
+  color: #172033;
+}
+
+:root[data-lumo-theme="light"] .rich-editor-prose mark {
+  background: color-mix(in srgb, var(--lumo-secondary) 20%, rgba(255, 255, 255, 0.72));
+  color: #172033;
+}
+
+:root[data-lumo-theme="light"] .rich-editor-prose a,
+:root[data-lumo-theme="light"] .markdown-internal-link {
+  color: color-mix(in srgb, var(--lumo-secondary) 84%, #0f172a);
+}
+
+:root[data-lumo-theme="light"] .rich-editor-shell[data-empty="true"] .rich-editor-prose::before {
+  color: #7a879b;
+}
+
+:root[data-lumo-theme="light"] .rich-editor-image {
+  border-color: rgba(31, 42, 68, 0.16);
+}
+
+:root[data-lumo-theme="light"] input.border-none,
+:root[data-lumo-theme="light"] .editor-glow article input.border-none {
+  background: transparent !important;
+}
+
+:root[data-lumo-theme="light"] input,
+:root[data-lumo-theme="light"] select,
+:root[data-lumo-theme="light"] textarea {
+  border-color: rgba(31, 42, 68, 0.13) !important;
+  background-color: rgba(255, 255, 255, 0.72) !important;
+  color: #172033 !important;
+}
+
+:root[data-lumo-theme="light"] input::placeholder,
+:root[data-lumo-theme="light"] textarea::placeholder {
+  color: #8390a5 !important;
+}
+
+:root[data-lumo-theme="light"] .rich-editor-find-panel input,
+:root[data-lumo-theme="light"] .rich-editor-popover input {
+  background: rgba(244, 248, 253, 0.86) !important;
+}
+
+:root[data-lumo-theme="light"] .rich-editor-context-item,
+:root[data-lumo-theme="light"] .rich-editor-popover-button,
+:root[data-lumo-theme="light"] .rich-editor-command-item,
+:root[data-lumo-theme="light"] .rich-editor-find-panel button {
+  color: #344056;
+}
+
+:root[data-lumo-theme="light"] .rich-editor-context-item:hover:not(:disabled),
+:root[data-lumo-theme="light"] .rich-editor-popover-button:hover,
+:root[data-lumo-theme="light"] .rich-editor-command-item:hover,
+:root[data-lumo-theme="light"] .rich-editor-find-panel button:hover {
+  background: rgba(31, 42, 68, 0.07);
+  color: #111827;
+}
+
+:root[data-lumo-theme="light"] .rich-editor-context-separator {
+  background: rgba(31, 42, 68, 0.1);
+}
+
+:root[data-lumo-theme="light"] .markdown-preview,
+:root[data-lumo-theme="light"] .rich-editor-preview-shell {
+  background: rgba(255, 255, 255, 0.44);
+  color: #172033;
+}
+
+:root[data-lumo-theme="light"] .window-control {
+  color: #344056;
+}
+
+:root[data-lumo-theme="light"] .window-control:hover {
+  background: rgba(31, 42, 68, 0.07);
+  color: #111827;
+}
+
+:root[data-lumo-theme="light"] .border-t,
+:root[data-lumo-theme="light"] .border-b,
+:root[data-lumo-theme="light"] .border-r,
+:root[data-lumo-theme="light"] .border-l {
+  border-color: rgba(31, 42, 68, 0.12) !important;
+}
+
+:root[data-lumo-theme="light"] .search-highlight,
+:root[data-lumo-theme="light"] .rich-editor-find-hit {
+  background: rgba(150, 109, 23, 0.2);
+  color: #4d3510;
+}
+
+:root[data-lumo-theme="light"] .rich-editor-find-hit-active {
+  background: rgba(150, 109, 23, 0.28);
+  color: #2f210c;
+}
+
+/* Final light-mode polish: warm, calm surfaces without touching dark mode. */
+:root[data-lumo-theme="light"] {
+  --light-bg: #f3efe7;
+  --light-bg-soft: #f6f2ec;
+  --light-lavender: #f0edf8;
+  --light-teal: #e8f5f1;
+  --light-surface: rgba(252, 249, 244, 0.78);
+  --light-surface-strong: rgba(250, 247, 241, 0.92);
+  --light-surface-muted: rgba(238, 236, 232, 0.64);
+  --light-border: rgba(112, 122, 150, 0.18);
+  --light-border-strong: rgba(96, 108, 138, 0.25);
+  --light-text: #172033;
+  --light-secondary: #5f6c82;
+  --light-muted: #8792a5;
+  --light-shadow: 0 14px 34px rgba(34, 44, 72, 0.07);
+  --light-shadow-soft: 0 10px 26px rgba(34, 44, 72, 0.045);
+}
+
+:root[data-lumo-theme="light"] body,
+:root[data-lumo-theme="light"] .app-root {
+  background:
+    radial-gradient(circle at 18% 12%, rgba(155, 108, 255, 0.11), transparent 32%),
+    radial-gradient(circle at 82% 18%, color-mix(in srgb, var(--lumo-secondary) 12%, transparent), transparent 34%),
+    linear-gradient(135deg, var(--light-bg-soft) 0%, var(--light-lavender) 48%, var(--light-teal) 100%);
+  color: var(--light-text);
+}
+
+:root[data-lumo-theme="light"] .window-shell {
+  background:
+    radial-gradient(circle at 28% 0%, rgba(155, 108, 255, 0.08), transparent 34%),
+    linear-gradient(135deg, rgba(246, 242, 236, 0.94), rgba(238, 244, 244, 0.92));
+}
+
+:root[data-lumo-theme="light"] .custom-titlebar {
+  background: rgba(247, 243, 237, 0.82);
+  border-bottom-color: rgba(108, 116, 148, 0.18);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.72) inset;
+  backdrop-filter: blur(18px);
+}
+
+:root[data-lumo-theme="light"] .workspace-grid {
+  background:
+    radial-gradient(circle at 74% 18%, color-mix(in srgb, var(--lumo-secondary) 11%, transparent), transparent 33%),
+    radial-gradient(circle at 36% 4%, rgba(155, 108, 255, 0.1), transparent 35%),
+    linear-gradient(135deg, #f4efe7 0%, #f0edf7 48%, #e9f4f1 100%);
+}
+
+:root[data-lumo-theme="light"] .column-panel {
+  background:
+    linear-gradient(180deg, rgba(252, 249, 244, 0.86), rgba(242, 240, 237, 0.76)),
+    radial-gradient(circle at 100% 0%, color-mix(in srgb, var(--lumo-secondary) 8%, transparent), transparent 36%);
+  border-color: var(--light-border);
+  box-shadow: var(--light-shadow-soft);
+}
+
+:root[data-lumo-theme="light"] .editor-glow,
+:root[data-lumo-theme="light"] .focus-editor {
+  background:
+    radial-gradient(circle at 72% 4%, color-mix(in srgb, var(--lumo-secondary) 12%, transparent), transparent 34%),
+    radial-gradient(circle at 30% 6%, rgba(155, 108, 255, 0.1), transparent 36%),
+    linear-gradient(135deg, rgba(246, 241, 233, 0.8), rgba(238, 241, 246, 0.72) 48%, rgba(232, 244, 241, 0.78));
+}
+
+:root[data-lumo-theme="light"] .editor-glow > .border-t,
+:root[data-lumo-theme="light"] .focus-editor > .border-t {
+  background: rgba(248, 245, 239, 0.86);
+  border-top-color: var(--light-border);
+  box-shadow: 0 -12px 30px rgba(34, 44, 72, 0.055);
+  backdrop-filter: blur(18px);
+}
+
+:root[data-lumo-theme="light"] .panel,
+:root[data-lumo-theme="light"] .insight-card,
+:root[data-lumo-theme="light"] .graph-canvas,
+:root[data-lumo-theme="light"] .rich-editor-popover,
+:root[data-lumo-theme="light"] .rich-editor-find-panel,
+:root[data-lumo-theme="light"] .rich-editor-link-popover,
+:root[data-lumo-theme="light"] .rich-editor-attachment-popover,
+:root[data-lumo-theme="light"] .rich-editor-text-context-menu,
+:root[data-lumo-theme="light"] [data-command-palette="true"],
+:root[data-lumo-theme="light"] [data-menu-root="true"] [class*="bg-night-"] {
+  background: var(--light-surface-strong) !important;
+  border-color: var(--light-border) !important;
+  box-shadow: var(--light-shadow) !important;
+  color: var(--light-text);
+}
+
+:root[data-lumo-theme="light"] section.rounded-2xl,
+:root[data-lumo-theme="light"] .settings-card,
+:root[data-lumo-theme="light"] .attachment-card {
+  background:
+    linear-gradient(135deg, rgba(252, 249, 244, 0.88), rgba(238, 243, 242, 0.74)) !important;
+  border-color: var(--light-border) !important;
+  box-shadow: var(--light-shadow-soft);
+}
+
+:root[data-lumo-theme="light"] .text-white,
+:root[data-lumo-theme="light"] .text-slate-100,
+:root[data-lumo-theme="light"] .text-slate-200,
+:root[data-lumo-theme="light"] .text-slate-300 {
+  color: var(--light-text) !important;
+}
+
+:root[data-lumo-theme="light"] .text-slate-400,
+:root[data-lumo-theme="light"] .text-slate-500,
+:root[data-lumo-theme="light"] .text-slate-600 {
+  color: var(--light-secondary) !important;
+}
+
+:root[data-lumo-theme="light"] input,
+:root[data-lumo-theme="light"] textarea,
+:root[data-lumo-theme="light"] select,
+:root[data-lumo-theme="light"] .search-input {
+  background: rgba(252, 249, 244, 0.78) !important;
+  border-color: var(--light-border) !important;
+  color: var(--light-text) !important;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.75) inset;
+}
+
+:root[data-lumo-theme="light"] input::placeholder,
+:root[data-lumo-theme="light"] textarea::placeholder,
+:root[data-lumo-theme="light"] .rich-editor-empty::before {
+  color: var(--light-muted) !important;
+}
+
+:root[data-lumo-theme="light"] .sidebar-new-note {
+  background:
+    linear-gradient(90deg, rgba(139, 103, 220, 0.2) 0%, rgba(139, 103, 220, 0.12) 44%, rgba(246, 242, 236, 0.36) 100%) !important;
+  border-color: rgba(139, 103, 220, 0.22) !important;
+  box-shadow: 0 10px 26px rgba(91, 64, 148, 0.09);
+}
+
+:root[data-lumo-theme="light"] .sidebar-nav-item:hover,
+:root[data-lumo-theme="light"] .sidebar-folder-row:hover,
+:root[data-lumo-theme="light"] .sidebar-tag-pill:hover {
+  background: rgba(255, 255, 255, 0.42);
+}
+
+:root[data-lumo-theme="light"] .sidebar-nav-item-active {
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--lumo-secondary) 18%, transparent) 0%, color-mix(in srgb, var(--lumo-secondary) 10%, transparent) 46%, rgba(246, 242, 236, 0.08) 100%) !important;
+  border-color: color-mix(in srgb, var(--lumo-secondary) 24%, transparent) !important;
+  box-shadow: 0 10px 24px color-mix(in srgb, var(--lumo-secondary) 10%, transparent);
+}
+
+:root[data-lumo-theme="light"] .note-card {
+  background:
+    linear-gradient(135deg, rgba(250, 247, 242, 0.74), rgba(239, 243, 242, 0.58)) !important;
+  border-color: transparent !important;
+  box-shadow: 0 10px 28px rgba(34, 44, 72, 0.055);
+}
+
+:root[data-lumo-theme="light"] .note-card:hover {
+  background:
+    linear-gradient(135deg, rgba(252, 249, 244, 0.88), rgba(236, 242, 241, 0.72)) !important;
+  box-shadow: 0 16px 34px rgba(34, 44, 72, 0.075);
+}
+
+:root[data-lumo-theme="light"] .note-card-active {
+  background:
+    linear-gradient(90deg, rgba(139, 103, 220, 0.2) 0%, rgba(139, 103, 220, 0.11) 48%, rgba(246, 242, 236, 0.04) 100%) !important;
+  border-color: rgba(139, 103, 220, 0.2) !important;
+  box-shadow: 0 12px 30px rgba(91, 64, 148, 0.09);
+}
+
+:root[data-lumo-theme="light"] .rich-editor-prose,
+:root[data-lumo-theme="light"] .rich-editor-prose p,
+:root[data-lumo-theme="light"] .rich-editor-prose li {
+  color: var(--light-text);
+}
+
+:root[data-lumo-theme="light"] .rich-editor-prose blockquote {
+  background: rgba(255, 255, 255, 0.42);
+  border-left-color: color-mix(in srgb, var(--lumo-secondary) 55%, var(--lumo-primary));
+  color: var(--light-text);
+}
+
+:root[data-lumo-theme="light"] .rich-editor-prose code,
+:root[data-lumo-theme="light"] .rich-editor-prose pre {
+  background: rgba(225, 229, 236, 0.72);
+  color: #263149;
+  border-color: rgba(112, 122, 150, 0.16);
+}
+
+:root[data-lumo-theme="light"] .rich-editor-prose mark,
+:root[data-lumo-theme="light"] .rich-editor-highlight {
+  background: rgba(180, 132, 34, 0.22);
+  color: #3c2a0c;
+}
+
+:root[data-lumo-theme="light"] .rich-editor-image-lightbox {
+  background: rgba(20, 25, 38, 0.42);
+}
+
+:root[data-lumo-theme="light"] .rich-editor-image-lightbox-bar {
+  background: rgba(250, 247, 241, 0.94);
+  border-color: var(--light-border);
+  color: var(--light-text);
+}
+
+:root[data-lumo-theme="light"] .search-highlight,
+:root[data-lumo-theme="light"] .rich-editor-find-hit {
+  background: rgba(139, 103, 20, 0.22);
+  color: #412d0d;
+  box-shadow: 0 0 0 1px rgba(139, 103, 20, 0.08);
+}
+
+:root[data-lumo-theme="light"] .rich-editor-find-hit-active {
+  background: rgba(139, 103, 20, 0.32);
+  color: #281c09;
+}
