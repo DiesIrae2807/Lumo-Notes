@@ -1,8 +1,15 @@
 import { useSettings } from "../store/settingsStore";
-import type { AppSettings } from "../types/settings";
-import { useState, type CSSProperties, type ReactNode } from "react";
+import {
+  defaultCustomThemeDark,
+  defaultCustomThemeLight,
+  defaultSettings,
+  type AppSettings,
+  type CustomThemeColors,
+} from "../types/settings";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { rebuildSearchIndex } from "../services/database";
 import { notify, notifyError } from "../utils/toast";
+import { confirmDialog } from "../utils/confirm";
 
 const shortcuts = [
   ["Ctrl+K", "Command palette"],
@@ -32,7 +39,7 @@ const accentOptions: Array<{
   colors: [string, string];
   description: string;
   label: string;
-  value: AppSettings["accent"];
+  value: Exclude<AppSettings["accent"], "custom">;
 }> = [
   { colors: ["#9c7cf4", "#59d5ca"], description: "Default", label: "Violet / Teal", value: "teal" },
   { colors: ["#9c7cf4", "#7fb2ff"], description: "Cool blue", label: "Blue", value: "blue" },
@@ -40,6 +47,132 @@ const accentOptions: Array<{
   { colors: ["#9c7cf4", "#ff6f91"], description: "Soft rose", label: "Rose", value: "rose" },
   { colors: ["#9c7cf4", "#f6c85f"], description: "Warm amber", label: "Amber", value: "amber" },
 ];
+
+const themeColorFields: Array<{
+  helper: string;
+  key: keyof CustomThemeColors;
+  label: string;
+}> = [
+  { helper: "Outer app surface", key: "appBg", label: "App background" },
+  { helper: "Main writing workspace", key: "workspaceBg", label: "Workspace background" },
+  { helper: "Left navigation and list panels", key: "sidebarBg", label: "Sidebar background" },
+  { helper: "Settings, menus, and popovers", key: "panelBg", label: "Panel background" },
+  { helper: "Note cards and compact surfaces", key: "cardBg", label: "Card background" },
+  { helper: "Main readable text", key: "textPrimary", label: "Primary text" },
+  { helper: "Metadata and helper text", key: "textSecondary", label: "Secondary text" },
+  { helper: "Subtle dividers and outlines", key: "border", label: "Border color" },
+];
+
+const hexPattern = /^#[0-9a-fA-F]{6}$/;
+
+function isHexColor(value: string) {
+  return hexPattern.test(value.trim());
+}
+
+function normalizeHex(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  return trimmed.startsWith("#") ? trimmed : `#${trimmed}`;
+}
+
+function hexToRgb(hex: string) {
+  if (!isHexColor(hex)) return null;
+  const value = hex.slice(1);
+  return {
+    b: Number.parseInt(value.slice(4, 6), 16),
+    g: Number.parseInt(value.slice(2, 4), 16),
+    r: Number.parseInt(value.slice(0, 2), 16),
+  };
+}
+
+function relativeLuminance(hex: string) {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return 0;
+  const normalize = (channel: number) => {
+    const value = channel / 255;
+    return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * normalize(rgb.r) + 0.7152 * normalize(rgb.g) + 0.0722 * normalize(rgb.b);
+}
+
+function contrastRatio(a: string, b: string) {
+  const light = Math.max(relativeLuminance(a), relativeLuminance(b));
+  const dark = Math.min(relativeLuminance(a), relativeLuminance(b));
+  return (light + 0.05) / (dark + 0.05);
+}
+
+function getEffectiveTheme(theme: AppSettings["theme"]) {
+  if (theme !== "system") return theme;
+  if (typeof window === "undefined") return "dark";
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+function ColorField({
+  defaultValue,
+  helper,
+  label,
+  onChange,
+  onReset,
+  value,
+}: {
+  defaultValue: string;
+  helper?: string;
+  label: string;
+  onChange: (value: string) => void;
+  onReset?: () => void;
+  value: string;
+}) {
+  const [draft, setDraft] = useState(value);
+  const valid = isHexColor(draft);
+  const safeValue = isHexColor(value) ? value : defaultValue;
+
+  useEffect(() => {
+    setDraft(value);
+  }, [value]);
+
+  const commit = (nextValue: string) => {
+    const normalized = normalizeHex(nextValue);
+    setDraft(normalized);
+    if (isHexColor(normalized)) onChange(normalized);
+  };
+
+  return (
+    <label className="color-field">
+      <span className="color-field-copy">
+        <span className="color-field-title">{label}</span>
+        {helper ? <span className="color-field-helper">{helper}</span> : null}
+      </span>
+      <span className="color-field-controls">
+        <input
+          aria-label={`${label} color`}
+          className="color-field-native"
+          type="color"
+          value={safeValue}
+          onChange={(event) => commit(event.target.value)}
+        />
+        <input
+          aria-label={`${label} hex value`}
+          className={`color-field-hex ${valid ? "" : "color-field-hex-invalid"}`}
+          value={draft}
+          onBlur={() => {
+            if (!isHexColor(draft)) setDraft(value);
+          }}
+          onChange={(event) => {
+            const normalized = normalizeHex(event.target.value);
+            setDraft(normalized);
+            if (isHexColor(normalized)) onChange(normalized);
+          }}
+          spellCheck={false}
+        />
+        {onReset ? (
+          <button className="color-field-reset" type="button" onClick={onReset}>
+            Reset
+          </button>
+        ) : null}
+      </span>
+    </label>
+  );
+}
 
 function SettingsCard({ children, title }: { children: ReactNode; title: string }) {
   return (
@@ -97,6 +230,11 @@ function ThemePicker() {
 
 function AccentPicker() {
   const { settings, updateSetting } = useSettings();
+  const customSelected = settings.accent === "custom";
+  const customAccentStyle = {
+    "--swatch-a": settings.customAccentPrimary,
+    "--swatch-b": settings.customAccentSecondary,
+  } as CSSProperties;
 
   return (
     <div>
@@ -138,6 +276,157 @@ function AccentPicker() {
             </button>
           );
         })}
+        <button
+          type="button"
+          aria-pressed={customSelected}
+          className={`appearance-option accent-choice ${customSelected ? "appearance-option-selected" : ""}`}
+          style={customAccentStyle}
+          onClick={() => updateSetting("accent", "custom")}
+        >
+          <span className="accent-preview" aria-hidden="true">
+            <span className="accent-preview-gradient" />
+            <span className="accent-preview-dots">
+              <span />
+              <span />
+            </span>
+          </span>
+          <span className="appearance-option-copy">
+            <span className="appearance-option-title">
+              Custom
+              {customSelected ? <span className="appearance-option-check" aria-hidden="true">✓</span> : null}
+            </span>
+            <span className="appearance-option-description">Your colors</span>
+          </span>
+        </button>
+      </div>
+      {customSelected ? (
+        <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.025] p-4">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-slate-200">Custom Accent</p>
+              <p className="mt-1 text-xs text-slate-500">Primary drives violet surfaces; secondary drives active states.</p>
+            </div>
+            <button
+              className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-medium text-slate-300 transition hover:bg-white/[0.07] hover:text-white"
+              type="button"
+              onClick={() => {
+                updateSetting("customAccentPrimary", defaultSettings.customAccentPrimary);
+                updateSetting("customAccentSecondary", defaultSettings.customAccentSecondary);
+              }}
+            >
+              Reset accent
+            </button>
+          </div>
+          <div className="custom-color-grid">
+            <ColorField
+              defaultValue={defaultSettings.customAccentPrimary}
+              helper="Primary glow and brand accent"
+              label="Primary accent"
+              value={settings.customAccentPrimary}
+              onChange={(value) => updateSetting("customAccentPrimary", value)}
+              onReset={() => updateSetting("customAccentPrimary", defaultSettings.customAccentPrimary)}
+            />
+            <ColorField
+              defaultValue={defaultSettings.customAccentSecondary}
+              helper="Sidebar, links, graph, and active controls"
+              label="Secondary accent"
+              value={settings.customAccentSecondary}
+              onChange={(value) => updateSetting("customAccentSecondary", value)}
+              onReset={() => updateSetting("customAccentSecondary", defaultSettings.customAccentSecondary)}
+            />
+          </div>
+          <div className="mt-4 rounded-2xl border border-white/10 p-4" style={customAccentStyle}>
+            <div className="h-2 rounded-full bg-[linear-gradient(90deg,var(--swatch-a),var(--swatch-b))]" />
+            <div className="mt-4 flex flex-wrap items-center gap-3 text-sm">
+              <span className="rounded-xl px-3 py-2 text-white" style={{ background: settings.customAccentPrimary }}>
+                Primary
+              </span>
+              <span className="rounded-xl px-3 py-2 text-night-950" style={{ background: settings.customAccentSecondary }}>
+                Secondary
+              </span>
+              <span className="text-xs text-slate-500">Live preview applies across the app.</span>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function AdvancedThemeColors() {
+  const { settings, updateSetting } = useSettings();
+  const effectiveTheme = getEffectiveTheme(settings.theme);
+  const settingKey = effectiveTheme === "light" ? "customThemeLight" : "customThemeDark";
+  const defaults = effectiveTheme === "light" ? defaultCustomThemeLight : defaultCustomThemeDark;
+  const colors = settings[settingKey];
+  const appContrast = contrastRatio(colors.textPrimary, colors.appBg);
+  const panelContrast = contrastRatio(colors.textPrimary, colors.panelBg);
+  const hasContrastWarning = appContrast < 4.5 || panelContrast < 4.5;
+
+  const updateThemeColor = (key: keyof CustomThemeColors, value: string) => {
+    updateSetting(settingKey, { ...colors, [key]: value });
+  };
+
+  const resetAllAppearance = async () => {
+    const confirmed = await confirmDialog({
+      confirmLabel: "Reset",
+      message: "Reset theme, accent, and all custom appearance colors to the Lumo defaults?",
+      title: "Reset appearance settings",
+    });
+    if (!confirmed) return;
+    updateSetting("theme", defaultSettings.theme);
+    updateSetting("accent", defaultSettings.accent);
+    updateSetting("customAccentPrimary", defaultSettings.customAccentPrimary);
+    updateSetting("customAccentSecondary", defaultSettings.customAccentSecondary);
+    updateSetting("customThemeDark", defaultCustomThemeDark);
+    updateSetting("customThemeLight", defaultCustomThemeLight);
+  };
+
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.025] p-4">
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-slate-200">Advanced Theme Colors</p>
+          <p className="mt-1 text-xs text-slate-500">
+            Editing {effectiveTheme === "light" ? "light" : "dark"} theme colors. Presets stay available.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-medium text-slate-300 transition hover:bg-white/[0.07] hover:text-white"
+            type="button"
+            onClick={() => updateSetting(settingKey, defaults)}
+          >
+            Reset current theme
+          </button>
+          <button
+            className="rounded-xl border border-rose-400/20 bg-rose-500/10 px-3 py-2 text-xs font-medium text-rose-200 transition hover:bg-rose-500/15"
+            type="button"
+            onClick={() => void resetAllAppearance()}
+          >
+            Reset all appearance
+          </button>
+        </div>
+      </div>
+
+      {hasContrastWarning ? (
+        <div className="mb-4 rounded-xl border border-amber-300/20 bg-amber-300/10 px-3 py-2 text-xs text-amber-100">
+          Low contrast warning: text may be hard to read with the current background colors.
+        </div>
+      ) : null}
+
+      <div className="custom-color-grid">
+        {themeColorFields.map((field) => (
+          <ColorField
+            key={field.key}
+            defaultValue={defaults[field.key]}
+            helper={field.helper}
+            label={field.label}
+            value={colors[field.key]}
+            onChange={(value) => updateThemeColor(field.key, value)}
+            onReset={() => updateThemeColor(field.key, defaults[field.key])}
+          />
+        ))}
       </div>
     </div>
   );
@@ -248,6 +537,7 @@ export function SettingsScreen() {
             <SettingsCard title="Appearance">
               <ThemePicker />
               <AccentPicker />
+              <AdvancedThemeColors />
             </SettingsCard>
 
             <SettingsCard title="Editor">

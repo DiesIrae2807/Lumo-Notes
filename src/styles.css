@@ -2198,3 +2198,201 @@
     inset 0 0 0 1px rgba(139, 103, 220, 0.18),
     0 12px 30px rgba(91, 64, 148, 0.09) !important;
 }
+
+.custom-color-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 0.75rem;
+}
+
+.color-field {
+  display: grid;
+  gap: 0.65rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.025);
+  padding: 0.85rem;
+}
+
+.color-field-title {
+  display: block;
+  color: #dbe4f3;
+  font-size: 0.82rem;
+  font-weight: 650;
+}
+
+.color-field-helper {
+  display: block;
+  margin-top: 0.2rem;
+  color: #6f7a91;
+  font-size: 0.72rem;
+}
+
+.color-field-controls {
+  display: grid;
+  grid-template-columns: 2.5rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.color-field-native {
+  width: 2.5rem !important;
+  height: 2.25rem !important;
+  padding: 0.15rem !important;
+  overflow: hidden;
+  border-radius: 0.75rem !important;
+  cursor: pointer;
+}
+
+.color-field-hex {
+  height: 2.25rem !important;
+  min-width: 0;
+  border-radius: 0.75rem !important;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 0.78rem !important;
+}
+
+.color-field-hex-invalid {
+  border-color: rgba(255, 77, 109, 0.7) !important;
+  box-shadow: 0 0 0 1px rgba(255, 77, 109, 0.18);
+}
+
+.color-field-reset {
+  height: 2.25rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.75rem;
+  background: rgba(255, 255, 255, 0.04);
+  padding: 0 0.7rem;
+  color: #a8b0c3;
+  font-size: 0.74rem;
+  font-weight: 650;
+  transition: background 160ms ease, color 160ms ease, border-color 160ms ease;
+}
+
+.color-field-reset:hover {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: #f8fafc;
+}
+
+:root[data-lumo-theme="light"] .color-field {
+  border-color: rgba(112, 122, 150, 0.16);
+  background: rgba(255, 255, 255, 0.42);
+}
+
+:root[data-lumo-theme="light"] .color-field-title {
+  color: #172033;
+}
+
+:root[data-lumo-theme="light"] .color-field-helper {
+  color: #647084;
+}
+
+:root[data-lumo-theme="light"] .color-field-reset {
+  border-color: rgba(112, 122, 150, 0.16);
+  background: rgba(255, 255, 255, 0.54);
+  color: #647084;
+}
+
+:root[data-lumo-theme="light"] .color-field-reset:hover {
+  background: color-mix(in srgb, var(--lumo-secondary) 10%, rgba(255, 255, 255, 0.72));
+  color: #172033;
+}
+
+:root[data-lumo-accent="custom"] {
+  --accent-gradient: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--lumo-violet) 36%, transparent),
+    color-mix(in srgb, var(--lumo-secondary) 28%, transparent)
+  );
+}
+
+:root[data-lumo-custom-theme="true"] body,
+:root[data-lumo-custom-theme="true"] .app-root,
+:root[data-lumo-custom-theme="true"] .window-shell {
+  background: var(--custom-app-bg) !important;
+  color: var(--custom-text-primary) !important;
+}
+
+:root[data-lumo-custom-theme="true"] .workspace-grid,
+:root[data-lumo-custom-theme="true"] .editor-glow,
+:root[data-lumo-custom-theme="true"] .focus-editor {
+  background:
+    radial-gradient(circle at 74% 18%, color-mix(in srgb, var(--lumo-secondary) 10%, transparent), transparent 34%),
+    radial-gradient(circle at 36% 4%, color-mix(in srgb, var(--lumo-violet) 10%, transparent), transparent 35%),
+    var(--custom-workspace-bg) !important;
+  color: var(--custom-text-primary) !important;
+}
+
+:root[data-lumo-custom-theme="true"] .custom-titlebar {
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--lumo-violet) 14%, transparent), transparent 62%),
+    var(--custom-app-bg) !important;
+  border-bottom-color: var(--custom-border) !important;
+  color: var(--custom-text-primary) !important;
+}
+
+:root[data-lumo-custom-theme="true"] .column-panel {
+  background:
+    radial-gradient(circle at 100% 0%, color-mix(in srgb, var(--lumo-secondary) 8%, transparent), transparent 36%),
+    var(--custom-sidebar-bg) !important;
+  border-color: var(--custom-border) !important;
+  color: var(--custom-text-primary) !important;
+}
+
+:root[data-lumo-custom-theme="true"] .panel,
+:root[data-lumo-custom-theme="true"] .insight-card,
+:root[data-lumo-custom-theme="true"] .graph-canvas,
+:root[data-lumo-custom-theme="true"] .rich-editor-popover,
+:root[data-lumo-custom-theme="true"] .rich-editor-link-popover,
+:root[data-lumo-custom-theme="true"] .rich-editor-attachment-popover,
+:root[data-lumo-custom-theme="true"] .rich-editor-text-context-menu,
+:root[data-lumo-custom-theme="true"] section.rounded-2xl,
+:root[data-lumo-custom-theme="true"] [data-command-palette="true"],
+:root[data-lumo-custom-theme="true"] [data-menu-root="true"] [class*="bg-night-"] {
+  background:
+    radial-gradient(circle at 92% 0%, color-mix(in srgb, var(--lumo-secondary) 7%, transparent), transparent 40%),
+    var(--custom-panel-bg) !important;
+  border-color: var(--custom-border) !important;
+  color: var(--custom-text-primary) !important;
+}
+
+:root[data-lumo-custom-theme="true"] .note-card {
+  background: var(--custom-card-bg) !important;
+  color: var(--custom-text-primary) !important;
+}
+
+:root[data-lumo-custom-theme="true"] input,
+:root[data-lumo-custom-theme="true"] textarea,
+:root[data-lumo-custom-theme="true"] select,
+:root[data-lumo-custom-theme="true"] .search-input {
+  border-color: var(--custom-border) !important;
+  background: color-mix(in srgb, var(--custom-panel-bg) 88%, transparent) !important;
+  color: var(--custom-text-primary) !important;
+}
+
+:root[data-lumo-custom-theme="true"] .text-white,
+:root[data-lumo-custom-theme="true"] .text-slate-100,
+:root[data-lumo-custom-theme="true"] .text-slate-200,
+:root[data-lumo-custom-theme="true"] .text-slate-300,
+:root[data-lumo-custom-theme="true"] .rich-editor-prose,
+:root[data-lumo-custom-theme="true"] .rich-editor-prose p,
+:root[data-lumo-custom-theme="true"] .rich-editor-prose li {
+  color: var(--custom-text-primary) !important;
+}
+
+:root[data-lumo-custom-theme="true"] .text-slate-400,
+:root[data-lumo-custom-theme="true"] .text-slate-500,
+:root[data-lumo-custom-theme="true"] .text-slate-600,
+:root[data-lumo-custom-theme="true"] .appearance-option-description,
+:root[data-lumo-custom-theme="true"] .color-field-helper {
+  color: var(--custom-text-secondary) !important;
+}
+
+:root[data-lumo-custom-theme="true"] .border-t,
+:root[data-lumo-custom-theme="true"] .border-b,
+:root[data-lumo-custom-theme="true"] .border-r,
+:root[data-lumo-custom-theme="true"] .border-l,
+:root[data-lumo-custom-theme="true"] [class*="border-white/"] {
+  border-color: var(--custom-border) !important;
+}
