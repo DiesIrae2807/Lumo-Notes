@@ -811,8 +811,8 @@ export function Editor({
             return (
               <button
                 key={tool.action}
-                className={`grid h-8 w-8 place-items-center rounded-lg text-slate-400 transition hover:bg-white/[0.05] hover:text-white active:scale-95 ${
-                  richToolbarState[tool.action] ? "bg-lumo-violet/20 text-white" : ""
+                className={`editor-toolbar-button grid h-8 w-8 place-items-center rounded-lg active:scale-95 ${
+                  richToolbarState[tool.action] ? "editor-toolbar-button-active" : ""
                 } ${
                   tool.action === "accentHeading"
                     ? `accent-heading-toolbar-button ${
@@ -830,7 +830,7 @@ export function Editor({
             );
           })}
           <button
-            className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 transition hover:bg-white/[0.05] hover:text-white active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
+            className="editor-toolbar-button grid h-8 w-8 place-items-center rounded-lg active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
             disabled={isAttachmentBusy}
             onClick={() => void attachFile()}
             aria-label={isAttachmentBusy ? "Adding attachment" : "Attach file"}
