@@ -562,19 +562,51 @@
   .rich-editor-task-list {
     list-style: none !important;
     padding-left: 0 !important;
+    margin: 0.7rem 0 1rem !important;
   }
 
-  .rich-editor-task-list li {
+  .rich-editor-task-list li,
+  .rich-editor-prose li[data-type="taskItem"] {
     display: flex;
-    gap: 0.65rem;
-    padding-left: 0;
+    align-items: flex-start;
+    gap: 0.6rem;
+    margin: 0.42rem 0;
+    padding-left: 0 !important;
   }
 
-  .rich-editor-task-list label {
-    padding-top: 0.15rem;
+  .rich-editor-task-list label,
+  .rich-editor-prose li[data-type="taskItem"] > label {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    width: 1.1rem;
+    margin: 0;
+    padding-top: calc((var(--editor-line-height) - 0.9rem) / 2);
+    user-select: none;
   }
 
-  .rich-editor-task-list input {
+  .rich-editor-task-list li > div,
+  .rich-editor-prose li[data-type="taskItem"] > div {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding-top: 0;
+  }
+
+  .rich-editor-task-list li > div > p,
+  .rich-editor-prose li[data-type="taskItem"] > div > p {
+    min-height: 0;
+    margin: 0;
+    line-height: var(--editor-line-height);
+  }
+
+  .rich-editor-task-list input,
+  .rich-editor-prose li[data-type="taskItem"] input[type="checkbox"] {
+    display: block;
+    width: 0.9rem;
+    height: 0.9rem;
+    margin: 0;
+    flex: 0 0 auto;
     accent-color: var(--lumo-secondary);
   }
 
