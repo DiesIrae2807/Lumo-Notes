@@ -13,6 +13,7 @@ import * as database from "../services/database";
 import { useSettings } from "./settingsStore";
 import type { LumoBackup, ParsedMarkdownNote } from "../services/fileTransfer";
 import type { Attachment, Folder, Note, SidebarView } from "../types/note";
+import { normalizeFolderColor } from "../utils/folderColor";
 import { getPlainTextPreview, markdownToPlainText } from "../utils/markdown";
 import { notify, notifyError } from "../utils/toast";
 
@@ -52,8 +53,8 @@ type NotesContextValue = {
   permanentlyDeleteNote: (id: string) => void;
   permanentlyDeleteSelectedNote: () => void;
   permanentlyDeleteTrashedNotes: () => void;
-  createFolder: (name: string) => void;
-  renameFolder: (id: string, name: string) => void;
+  createFolder: (name: string, colorClass?: string) => void;
+  renameFolder: (id: string, name: string, colorClass?: string) => void;
   deleteFolder: (id: string) => void;
   setSelectedNoteFolder: (folderId: string) => void;
   createTag: (name: string) => void;
@@ -950,16 +951,17 @@ export function NotesProvider({ children }: { children: ReactNode }) {
   }, [notes, selectedNoteId]);
 
   const createFolder = useCallback(
-    (rawName: string) => {
+    (rawName: string, rawColorClass?: string) => {
       const name = rawName.trim();
       if (!name) return;
       if (folders.some((folder) => folder.name.toLowerCase() === name.toLowerCase())) return;
 
       const now = new Date().toISOString();
+      const defaultColor = nextFolderColor(folders.length);
       const folder: Folder = {
         id: slugify(name) || `folder-${crypto.randomUUID()}`,
         name,
-        colorClass: nextFolderColor(folders.length),
+        colorClass: rawColorClass ? normalizeFolderColor(rawColorClass, defaultColor) : defaultColor,
       };
 
       setFolders((current) => [...current, folder]);
@@ -971,24 +973,27 @@ export function NotesProvider({ children }: { children: ReactNode }) {
   );
 
   const renameFolder = useCallback(
-    (id: string, rawName: string) => {
+    (id: string, rawName: string, rawColorClass?: string) => {
       const name = rawName.trim();
       if (!name) return;
       if (folders.some((folder) => folder.id !== id && folder.name.toLowerCase() === name.toLowerCase())) return;
 
       const existing = folders.find((folder) => folder.id === id);
       if (!existing) return;
+      const colorClass = rawColorClass
+        ? normalizeFolderColor(rawColorClass, existing.colorClass)
+        : existing.colorClass;
       const updatedAt = new Date().toISOString();
 
       setFolders((current) =>
-        current.map((folder) => (folder.id === id ? { ...folder, name } : folder)),
+        current.map((folder) => (folder.id === id ? { ...folder, colorClass, name } : folder)),
       );
       setNotes((current) =>
         current.map((note) =>
           note.folderId === id ? { ...note, folderName: name, updatedAt } : note,
         ),
       );
-      void database.updateFolder(id, name, existing.colorClass, updatedAt).catch((error) => {
+      void database.updateFolder(id, name, colorClass, updatedAt).catch((error) => {
         setDatabaseError(error instanceof Error ? error.message : String(error));
       });
     },

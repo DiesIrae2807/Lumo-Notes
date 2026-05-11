@@ -5,6 +5,7 @@ import { useNotes } from "../store/notesStore";
 import type { SidebarView } from "../types/note";
 import { notify } from "../utils/toast";
 import { confirmDialog } from "../utils/confirm";
+import { getFolderDotProps, normalizeFolderColor } from "../utils/folderColor";
 import {
   AllNotesIcon,
   ArchiveIcon,
@@ -136,6 +137,7 @@ function ActionIconButton({
 type NameDialogState =
   | {
       description: string;
+      initialColor?: string;
       initialValue: string;
       isOpen: true;
       label: string;
@@ -152,6 +154,7 @@ type NameDialogState =
 export function Sidebar() {
   const [tagMenu, setTagMenu] = useState<{ tag: string; x: number; y: number } | null>(null);
   const [nameDialog, setNameDialog] = useState<NameDialogState>({ isOpen: false });
+  const [nameDialogColor, setNameDialogColor] = useState("#9B6CFF");
   const [nameDialogValue, setNameDialogValue] = useState("");
   const nameDialogInputRef = useRef<HTMLInputElement | null>(null);
   const {
@@ -200,6 +203,9 @@ export function Sidebar() {
   useEffect(() => {
     if (!nameDialog.isOpen) return;
     setNameDialogValue(nameDialog.initialValue);
+    if (nameDialog.type === "create-folder" || nameDialog.type === "rename-folder") {
+      setNameDialogColor(normalizeFolderColor(nameDialog.initialColor));
+    }
     window.setTimeout(() => {
       nameDialogInputRef.current?.focus();
       nameDialogInputRef.current?.select();
@@ -213,6 +219,7 @@ export function Sidebar() {
 
   const closeNameDialog = () => {
     setNameDialog({ isOpen: false });
+    setNameDialogColor("#9B6CFF");
     setNameDialogValue("");
   };
 
@@ -222,11 +229,11 @@ export function Sidebar() {
     if (!name) return;
 
     if (nameDialog.type === "create-folder") {
-      createFolder(name);
+      createFolder(name, nameDialogColor);
     }
 
     if (nameDialog.type === "rename-folder" && nameDialog.targetId) {
-      renameFolder(nameDialog.targetId, name);
+      renameFolder(nameDialog.targetId, name, nameDialogColor);
     }
 
     if (nameDialog.type === "create-tag") {
@@ -243,6 +250,7 @@ export function Sidebar() {
   const addFolder = () => {
     openNameDialog({
       description: "Create a collection for grouping local notes.",
+      initialColor: "#9B6CFF",
       initialValue: "",
       isOpen: true,
       label: "Folder name",
@@ -252,9 +260,10 @@ export function Sidebar() {
     });
   };
 
-  const editFolder = (folderId: string, currentName: string) => {
+  const editFolder = (folderId: string, currentName: string, currentColor: string) => {
     openNameDialog({
       description: "Rename this folder. Notes assigned to it will keep their folder.",
+      initialColor: currentColor,
       initialValue: currentName,
       isOpen: true,
       label: "Folder name",
@@ -375,6 +384,7 @@ export function Sidebar() {
           ) : null}
           {folders.map((collection) => {
             const isSelected = activeFolderId === collection.id;
+            const dotProps = getFolderDotProps(collection.colorClass);
 
             return (
             <div
@@ -392,11 +402,11 @@ export function Sidebar() {
                 isSelected ? "sidebar-nav-item-active text-white" : "text-slate-300"
               }`}
             >
-              <span className={`h-2.5 w-2.5 rounded ${collection.colorClass}`} />
+              <span className={dotProps.className} style={dotProps.style} />
               <span className="flex-1 text-left">{collection.name}</span>
               <ActionIconButton
                 label="Rename"
-                onClick={() => editFolder(collection.id, collection.name)}
+                onClick={() => editFolder(collection.id, collection.name, collection.colorClass)}
                 visible={isSelected}
               >
                 <PencilIcon />
@@ -549,6 +559,32 @@ export function Sidebar() {
                 placeholder={nameDialog.placeholder}
               />
             </label>
+            {nameDialog.type === "create-folder" || nameDialog.type === "rename-folder" ? (
+              <label className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2.5">
+                <span>
+                  <span className="block text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
+                    Folder color
+                  </span>
+                  <span className="mt-1 block text-xs text-slate-500">
+                    Used for sidebar dots and note folder chips.
+                  </span>
+                </span>
+                <span className="flex items-center gap-2">
+                  <span
+                    className="h-5 w-5 rounded-full border border-white/15 shadow-[0_0_18px_rgba(94,230,214,0.24)]"
+                    style={{ backgroundColor: nameDialogColor }}
+                    aria-hidden="true"
+                  />
+                  <input
+                    type="color"
+                    className="h-8 w-10 cursor-pointer rounded-lg border border-white/10 bg-transparent p-0"
+                    value={nameDialogColor}
+                    onChange={(event) => setNameDialogColor(event.target.value)}
+                    aria-label="Folder color"
+                  />
+                </span>
+              </label>
+            ) : null}
             <div className="mt-5 flex justify-end gap-2">
               <button
                 type="button"

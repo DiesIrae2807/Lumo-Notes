@@ -3,7 +3,7 @@ import { NoteCard } from "./NoteCard";
 import { SectionHeader } from "./SectionHeader";
 import { useNotes } from "../store/notesStore";
 import { useSettings } from "../store/settingsStore";
-import type { Note } from "../types/note";
+import type { Folder, Note } from "../types/note";
 import { formatRelativeTime, isSameDay, isThisWeek, isYesterday } from "../utils/date";
 import { confirmDialog } from "../utils/confirm";
 import { noteToMarkdown, sanitizeFilename, saveTextFile } from "../services/fileTransfer";
@@ -55,6 +55,7 @@ function EmptyState({
 
 function renderCards(
   notes: Note[],
+  folders: Folder[],
   selectedNoteId: string | null,
   selectNote: (id: string) => void,
   toggleFavorite: (id: string) => void,
@@ -63,9 +64,12 @@ function renderCards(
   searchSnippets: Record<string, string>,
   onContextMenu: (event: MouseEvent<HTMLElement>, note: Note) => void,
 ) {
+  const folderColors = new Map(folders.map((folder) => [folder.id, folder.colorClass]));
+
   return notes.map((note) => (
     <NoteCard
       key={note.id}
+      folderColorClass={folderColors.get(note.folderId)}
       isActive={note.id === selectedNoteId}
       note={note}
       onContextMenu={(event) => onContextMenu(event, note)}
@@ -363,31 +367,31 @@ export function NotesList() {
           <>
             {pinned.length > 0 ? (
               <NoteGroup title="Pinned">
-                {renderCards(pinned, selectedNoteId, selectNote, toggleFavorite, togglePinned, searchQuery, searchSnippets, openContextMenu)}
+                {renderCards(pinned, folders, selectedNoteId, selectNote, toggleFavorite, togglePinned, searchQuery, searchSnippets, openContextMenu)}
               </NoteGroup>
             ) : null}
 
             {today.length > 0 ? (
               <NoteGroup title="Today">
-                {renderCards(today, selectedNoteId, selectNote, toggleFavorite, togglePinned, searchQuery, searchSnippets, openContextMenu)}
+                {renderCards(today, folders, selectedNoteId, selectNote, toggleFavorite, togglePinned, searchQuery, searchSnippets, openContextMenu)}
               </NoteGroup>
             ) : null}
 
             {yesterday.length > 0 ? (
               <NoteGroup title="Yesterday">
-                {renderCards(yesterday, selectedNoteId, selectNote, toggleFavorite, togglePinned, searchQuery, searchSnippets, openContextMenu)}
+                {renderCards(yesterday, folders, selectedNoteId, selectNote, toggleFavorite, togglePinned, searchQuery, searchSnippets, openContextMenu)}
               </NoteGroup>
             ) : null}
 
             {thisWeek.length > 0 ? (
               <NoteGroup title="This Week">
-                {renderCards(thisWeek, selectedNoteId, selectNote, toggleFavorite, togglePinned, searchQuery, searchSnippets, openContextMenu)}
+                {renderCards(thisWeek, folders, selectedNoteId, selectNote, toggleFavorite, togglePinned, searchQuery, searchSnippets, openContextMenu)}
               </NoteGroup>
             ) : null}
 
             {older.length > 0 ? (
               <NoteGroup title="Older">
-                {renderCards(older, selectedNoteId, selectNote, toggleFavorite, togglePinned, searchQuery, searchSnippets, openContextMenu)}
+                {renderCards(older, folders, selectedNoteId, selectNote, toggleFavorite, togglePinned, searchQuery, searchSnippets, openContextMenu)}
               </NoteGroup>
             ) : null}
           </>

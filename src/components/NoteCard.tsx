@@ -3,6 +3,7 @@ import type { MouseEvent } from "react";
 import { FavoriteHeartIcon } from "./icons/FavoriteHeartIcon";
 import { PinIcon } from "./icons/PinIcon";
 import { formatRelativeTime } from "../utils/date";
+import { getFolderChipStyle } from "../utils/folderColor";
 import { getPlainTextPreview } from "../utils/markdown";
 
 const accentClasses = [
@@ -46,6 +47,7 @@ function HighlightedText({ query, text }: { query?: string; text: string }) {
 
 export function NoteCard({
   isActive,
+  folderColorClass,
   note,
   onContextMenu,
   onSelect,
@@ -55,6 +57,7 @@ export function NoteCard({
   searchSnippet,
 }: {
   isActive: boolean;
+  folderColorClass?: string;
   note: Note;
   onContextMenu?: (event: MouseEvent<HTMLElement>) => void;
   onSelect: () => void;
@@ -64,7 +67,7 @@ export function NoteCard({
   searchSnippet?: string;
 }) {
   const preview = searchSnippet || getPlainTextPreview(note.preview || note.content, 110);
-  const primaryChip = note.tags[0] ?? note.folderName ?? "Uncategorized";
+  const folderChip = note.folderName ?? "Uncategorized";
 
   return (
     <article
@@ -137,8 +140,11 @@ export function NoteCard({
             <HighlightedText query={searchQuery} text={preview || "No content yet"} />
           </p>
           <div className="mt-2 flex items-center gap-2 overflow-hidden">
-            <span className="inline-flex max-w-[9rem] truncate rounded-md bg-white/[0.05] px-2 py-0.5 text-[11px] text-slate-300">
-              {primaryChip}
+            <span
+              className="inline-flex max-w-[9rem] truncate rounded-md border px-2 py-0.5 text-[11px]"
+              style={getFolderChipStyle(folderColorClass)}
+            >
+              {folderChip}
             </span>
             {note.isDeleted ? (
               <span className="text-[11px] font-medium text-rose-300">Trash</span>
