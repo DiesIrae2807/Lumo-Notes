@@ -465,11 +465,11 @@ export function Sidebar() {
 
       <div className="mt-4 flex items-center gap-3 border-t border-white/10 pt-4">
         <div className="grid h-9 w-9 place-items-center rounded-full bg-lumo-violet text-sm font-semibold text-white">
-          AS
+          H
         </div>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-white">Alex Smith</p>
-          <p className="truncate text-xs text-slate-500">alex@lumonotes.app</p>
+          <p className="truncate text-sm font-medium text-white">Hamza</p>
+          <p className="truncate text-xs text-slate-500"></p>
         </div>
         <div>
           <button

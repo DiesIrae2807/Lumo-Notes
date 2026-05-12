@@ -273,7 +273,7 @@ export function NotesList() {
         title: `${activeFolderName} is empty`,
         body: "Create a note or move an existing note into this folder.",
         actionLabel: "New Note",
-        onAction: createNote,
+        onAction: () => createNote(undefined, { folderId: activeFolderId, keepCurrentView: true }),
       };
     }
 

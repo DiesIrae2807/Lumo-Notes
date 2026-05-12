@@ -35,7 +35,7 @@ type NotesContextValue = {
   saveStatus: "idle" | "dirty" | "saving" | "saved" | "error";
   isSearchLoading: boolean;
   searchSnippets: Record<string, string>;
-  createNote: (title?: string) => void;
+  createNote: (title?: string, options?: { folderId?: string | null; keepCurrentView?: boolean }) => void;
   importMarkdownNotes: (imports: ParsedMarkdownNote[]) => Promise<number>;
   restoreBackupMerge: (backup: LumoBackup) => Promise<number>;
   attachFileToSelectedNote: () => Promise<Attachment | null>;
@@ -464,10 +464,16 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     );
   }, [activeView, searchQuery, searchResults]);
 
-  const createNote = useCallback((title = "Untitled Note") => {
+  const createNote = useCallback((title = "Untitled Note", options?: { folderId?: string | null; keepCurrentView?: boolean }) => {
     flushNoteSave(selectedNoteId);
     const now = new Date().toISOString();
-    const defaultFolder = folders[0];
+    const defaultFolder =
+      folders.find((folder) => folder.id === "uncategorized") ??
+      folders.find((folder) => folder.name.toLowerCase() === "uncategorized") ??
+      uncategorizedFolder;
+    const targetFolder = options?.folderId
+      ? folders.find((folder) => folder.id === options.folderId) ?? defaultFolder
+      : defaultFolder;
     const defaultTitle =
       settings.newNoteTitleBehavior === "dateTime"
         ? new Intl.DateTimeFormat(undefined, {
@@ -481,8 +487,8 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       title: noteTitle,
       content: "",
       preview: "",
-      folderId: defaultFolder.id,
-      folderName: defaultFolder.name,
+      folderId: targetFolder.id,
+      folderName: targetFolder.name,
       tags: [],
       isPinned: false,
       isFavorite: false,
@@ -498,9 +504,15 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     });
     setNotes((current) => [newNote, ...current]);
     setSelectedNoteId(newNote.id);
-    setActiveViewState("all");
-    setActiveFolderIdState(null);
-    setActiveTagState(null);
+    if (options?.keepCurrentView && options.folderId) {
+      setActiveViewState("all");
+      setActiveFolderIdState(targetFolder.id);
+      setActiveTagState(null);
+    } else {
+      setActiveViewState("all");
+      setActiveFolderIdState(null);
+      setActiveTagState(null);
+    }
     setSearchQuery("");
   }, [flushNoteSave, folders, selectedNoteId, settings.newNoteTitleBehavior]);
 
@@ -854,6 +866,8 @@ export function NotesProvider({ children }: { children: ReactNode }) {
   const moveToTrash = useCallback(
     (id: string) => {
       flushNoteSave(id);
+      const currentVisibleNotes = filteredNotes.filter((note) => note.id !== id);
+      const nextSelectedNote = currentVisibleNotes[0] ?? null;
       const updatedAt = new Date().toISOString();
       updateNoteById(id, (note) => ({
         ...note,
@@ -861,12 +875,14 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         isPinned: false,
         updatedAt,
       }));
+      if (selectedNoteId === id) {
+        setSelectedNoteId(nextSelectedNote?.id ?? null);
+      }
       void database.softDeleteNote(id, updatedAt).catch((error) => {
         setDatabaseError(error instanceof Error ? error.message : String(error));
       });
-      setActiveViewState("trash");
     },
-    [flushNoteSave, updateNoteById],
+    [filteredNotes, flushNoteSave, selectedNoteId, updateNoteById],
   );
 
   const restoreNote = useCallback(
