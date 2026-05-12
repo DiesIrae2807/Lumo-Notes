@@ -16,6 +16,10 @@ export function notify(toast: LumoToast) {
 }
 
 export function notifyError(title: string, error: unknown) {
+  if (import.meta.env.DEV) {
+    console.error(`[Lumo Notes] ${title}`, error);
+  }
+
   notify({
     kind: "error",
     title,

@@ -29,7 +29,18 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
-    "icon": ["icons/icon.ico"]
+    "targets": ["nsis"],
+    "publisher": "DiesIrae2807",
+    "copyright": "Copyright (c) 2026 Lumo Notes. All rights reserved.",
+    "shortDescription": "Local-first note-taking app",
+    "longDescription": "Lumo Notes is a local-first note-taking app for Windows. Notes, attachments, settings, and app data stay on this device unless you export them.",
+    "icon": ["icons/icon.ico"],
+    "windows": {
+      "nsis": {
+        "installerIcon": "icons/icon.ico",
+        "installMode": "currentUser",
+        "displayLanguageSelector": false
+      }
+    }
   }
 }

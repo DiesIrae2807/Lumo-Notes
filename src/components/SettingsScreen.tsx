@@ -625,7 +625,9 @@ export function SettingsScreen() {
                 <p><span className="text-slate-500">App:</span> Lumo Notes</p>
                 <p><span className="text-slate-500">Tagline:</span> Thoughts. Organized. Illuminated.</p>
                 <p><span className="text-slate-500">Version:</span> 0.1.0</p>
-                <p className="text-slate-500">Your notes are stored locally on this device.</p>
+                <p className="text-slate-500">
+                  Your notes are stored locally on this device. Use Export Backup to keep a safe copy.
+                </p>
                 <div className="flex flex-wrap items-center gap-3 pt-3">
                   <button
                     className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-medium text-slate-200 transition hover:bg-white/[0.07] hover:text-white disabled:cursor-not-allowed disabled:opacity-60"

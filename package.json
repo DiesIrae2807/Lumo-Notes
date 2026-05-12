@@ -2,12 +2,18 @@
   "name": "lumo-notes",
   "private": true,
   "version": "0.1.0",
+  "description": "Local-first note-taking app",
+  "author": "Lumo Notes Publisher",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "build:frontend": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",
