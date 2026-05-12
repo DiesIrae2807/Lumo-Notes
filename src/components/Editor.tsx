@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ComponentType } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import {
   RichTextEditor,
   insertInternalRichTextLink,
@@ -32,6 +32,7 @@ import { formatMetadataDate } from "../utils/date";
 import { resolveInternalLink } from "../utils/links";
 import { notify, notifyError } from "../utils/toast";
 import { confirmDialog } from "../utils/confirm";
+import { getFolderDotProps } from "../utils/folderColor";
 
 type MarkdownAction =
   RichTextAction;
@@ -152,19 +153,33 @@ export function Editor({
   const { settings } = useSettings();
   const [tagInput, setTagInput] = useState("");
   const [isAttachmentBusy, setIsAttachmentBusy] = useState(false);
+  const [isFolderMenuOpen, setIsFolderMenuOpen] = useState(false);
   const [isMetadataOpen, setIsMetadataOpen] = useState(false);
   const [isOverflowOpen, setIsOverflowOpen] = useState(false);
+  const [isTagMenuOpen, setIsTagMenuOpen] = useState(false);
   const [linkDialog, setLinkDialog] = useState<{
     displayText: string;
     isOpen: boolean;
     title: string;
   }>({ displayText: "", isOpen: false, title: "" });
   const richEditorRef = useRef<TiptapEditor | null>(null);
+  const folderMenuRef = useRef<HTMLDivElement | null>(null);
   const linkTitleInputRef = useRef<HTMLInputElement | null>(null);
+  const tagMenuRef = useRef<HTMLDivElement | null>(null);
   const historiesRef = useRef(new Map<string, EditorHistory>());
   const forceHistoryCheckpointRef = useRef(false);
   const [richToolbarState, setRichToolbarState] = useState<Record<string, boolean>>({});
   const titleInputRef = useRef<HTMLInputElement | null>(null);
+  const trimmedTagInput = tagInput.trim();
+  const tagSuggestions = useMemo(() => {
+    const query = trimmedTagInput.toLowerCase();
+    return availableTags
+      .filter((tag) => !selectedNote?.tags.some((noteTag) => noteTag.toLowerCase() === tag.toLowerCase()))
+      .filter((tag) => !query || tag.toLowerCase().includes(query));
+  }, [availableTags, selectedNote?.tags, trimmedTagInput]);
+  const canCreateTag =
+    trimmedTagInput.length > 0 &&
+    !availableTags.some((tag) => tag.toLowerCase() === trimmedTagInput.toLowerCase());
 
   const publishHistoryState = useCallback((history: EditorHistory | null) => {
     window.dispatchEvent(
@@ -175,6 +190,23 @@ export function Editor({
         },
       }),
     );
+  }, []);
+
+  useEffect(() => {
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+
+      if (folderMenuRef.current && !folderMenuRef.current.contains(target)) {
+        setIsFolderMenuOpen(false);
+      }
+
+      if (tagMenuRef.current && !tagMenuRef.current.contains(target)) {
+        setIsTagMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
   }, []);
 
   const ensureHistory = useCallback(
@@ -706,22 +738,61 @@ export function Editor({
 
             {isMetadataOpen ? (
               <div className="mt-3 grid gap-3 rounded-xl bg-white/[0.025] p-3 md:grid-cols-[220px_1fr]">
-                <label className="space-y-2">
+                <div className="space-y-2" ref={folderMenuRef}>
                   <span className="text-xs font-medium uppercase tracking-[0.16em] text-slate-500">
                     Folder
                   </span>
-                  <select
-                    className="h-10 w-full rounded-lg border border-white/10 bg-night-950/70 px-3 text-sm text-slate-200 outline-none focus:border-lumo-teal/40"
-                    value={selectedNote.folderId}
-                    onChange={(event) => setSelectedNoteFolder(event.target.value)}
-                  >
-                    {folders.map((folder) => (
-                      <option key={folder.id} value={folder.id}>
-                        {folder.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                  <div className="relative">
+                    <button
+                      type="button"
+                      className="flex h-10 w-full items-center justify-between gap-3 rounded-lg border border-white/10 bg-night-950/70 px-3 text-left text-sm text-slate-200 outline-none transition hover:border-lumo-teal/30 hover:bg-white/[0.04] focus-visible:border-lumo-teal/50 focus-visible:ring-2 focus-visible:ring-lumo-teal/10"
+                      onClick={() => setIsFolderMenuOpen((current) => !current)}
+                    >
+                      <span className="flex min-w-0 items-center gap-2">
+                        {(() => {
+                          const folder = folders.find((item) => item.id === selectedNote.folderId);
+                          const dot = getFolderDotProps(folder?.colorClass);
+                          return <span className={dot.className} style={dot.style} />;
+                        })()}
+                        <span className="truncate">{selectedNote.folderName || "Uncategorized"}</span>
+                      </span>
+                      <svg
+                        aria-hidden="true"
+                        className={`h-4 w-4 shrink-0 text-slate-500 transition ${isFolderMenuOpen ? "rotate-180" : ""}`}
+                        viewBox="0 0 20 20"
+                        fill="none"
+                      >
+                        <path d="M5 7.5L10 12.5L15 7.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </button>
+                    {isFolderMenuOpen ? (
+                      <div className="absolute left-0 right-0 top-11 z-40 max-h-60 overflow-y-auto rounded-xl border border-white/10 bg-night-900/95 p-1.5 shadow-2xl shadow-black/30 backdrop-blur-xl">
+                        {folders.map((folder) => {
+                          const dot = getFolderDotProps(folder.colorClass);
+                          const isSelected = folder.id === selectedNote.folderId;
+                          return (
+                            <button
+                              key={folder.id}
+                              type="button"
+                              className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm transition ${
+                                isSelected
+                                  ? "bg-lumo-teal/12 text-white"
+                                  : "text-slate-300 hover:bg-white/[0.06] hover:text-white"
+                              }`}
+                              onClick={() => {
+                                setSelectedNoteFolder(folder.id);
+                                setIsFolderMenuOpen(false);
+                              }}
+                            >
+                              <span className={dot.className} style={dot.style} />
+                              <span className="truncate">{folder.name}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
 
                 <div className="space-y-2">
                   <span className="text-xs font-medium uppercase tracking-[0.16em] text-slate-500">
@@ -749,27 +820,68 @@ export function Editor({
                     ))}
                   </div>
                   <div className="flex gap-2">
-                    <input
-                      className="h-9 flex-1 rounded-lg border border-white/10 bg-night-950/70 px-3 text-sm text-slate-200 outline-none placeholder:text-slate-600 focus:border-lumo-teal/40"
-                      value={tagInput}
-                      onChange={(event) => setTagInput(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          event.preventDefault();
-                          submitTag();
-                        }
-                      }}
-                      list="lumo-note-tags"
-                      placeholder="Add tag"
-                    />
-                    <datalist id="lumo-note-tags">
-                      {availableTags.map((tag) => (
-                        <option key={tag} value={tag} />
-                      ))}
-                    </datalist>
+                    <div className="relative flex-1" ref={tagMenuRef}>
+                      <input
+                        className="h-9 w-full rounded-lg border border-white/10 bg-night-950/70 px-3 text-sm text-slate-200 outline-none placeholder:text-slate-600 focus:border-lumo-teal/40"
+                        value={tagInput}
+                        onChange={(event) => {
+                          setTagInput(event.target.value);
+                          setIsTagMenuOpen(true);
+                        }}
+                        onFocus={() => setIsTagMenuOpen(true)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            submitTag();
+                            setIsTagMenuOpen(false);
+                          }
+                          if (event.key === "Escape") {
+                            setIsTagMenuOpen(false);
+                          }
+                        }}
+                        placeholder="Add tag"
+                      />
+                      {isTagMenuOpen && (tagSuggestions.length > 0 || canCreateTag) ? (
+                        <div
+                          className="absolute left-0 right-0 top-10 z-40 max-h-56 overflow-y-auto rounded-xl border border-white/10 bg-night-900/95 p-1.5 shadow-2xl shadow-black/30 backdrop-blur-xl"
+                          onMouseDown={(event) => event.preventDefault()}
+                        >
+                          {canCreateTag ? (
+                            <button
+                              type="button"
+                              className="flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left text-sm text-lumo-teal transition hover:bg-white/[0.06]"
+                              onClick={() => {
+                                submitTag();
+                                setIsTagMenuOpen(false);
+                              }}
+                            >
+                              <span>Create "{trimmedTagInput}"</span>
+                              <span className="text-xs text-slate-500">New tag</span>
+                            </button>
+                          ) : null}
+                          {tagSuggestions.map((tag) => (
+                            <button
+                              key={tag}
+                              type="button"
+                              className="flex w-full items-center rounded-lg px-2.5 py-2 text-left text-sm text-slate-300 transition hover:bg-white/[0.06] hover:text-white"
+                              onClick={() => {
+                                addTagToSelectedNote(tag);
+                                setTagInput("");
+                                setIsTagMenuOpen(false);
+                              }}
+                            >
+                              {tag}
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
                     <button
                       className="rounded-lg border border-white/10 px-3 text-sm text-slate-300 transition hover:border-lumo-teal/30 hover:text-white"
-                      onClick={submitTag}
+                      onClick={() => {
+                        submitTag();
+                        setIsTagMenuOpen(false);
+                      }}
                     >
                       Add
                     </button>

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ComponentType } from "react";
+import { useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import { BrandMark } from "./BrandMark";
 import { SectionHeader } from "./SectionHeader";
 import { useNotes } from "../store/notesStore";
@@ -6,6 +6,7 @@ import type { SidebarView } from "../types/note";
 import { notify } from "../utils/toast";
 import { confirmDialog } from "../utils/confirm";
 import { getFolderDotProps, normalizeFolderColor } from "../utils/folderColor";
+import { useSettings } from "../store/settingsStore";
 import {
   AllNotesIcon,
   ArchiveIcon,
@@ -97,6 +98,10 @@ function CogIcon() {
   );
 }
 
+function ProfileEditIcon() {
+  return <PencilIcon />;
+}
+
 function ActionIconButton({
   children,
   danger = false,
@@ -156,7 +161,12 @@ export function Sidebar() {
   const [nameDialog, setNameDialog] = useState<NameDialogState>({ isOpen: false });
   const [nameDialogColor, setNameDialogColor] = useState("#9B6CFF");
   const [nameDialogValue, setNameDialogValue] = useState("");
+  const [isProfileDialogOpen, setIsProfileDialogOpen] = useState(false);
+  const [profileDraftName, setProfileDraftName] = useState("");
+  const [profileDraftImage, setProfileDraftImage] = useState("");
   const nameDialogInputRef = useRef<HTMLInputElement | null>(null);
+  const profileInputRef = useRef<HTMLInputElement | null>(null);
+  const { settings, updateSetting } = useSettings();
   const {
     activeFolderId,
     activeTag,
@@ -175,6 +185,11 @@ export function Sidebar() {
     setActiveTag,
     setActiveView,
   } = useNotes();
+  const profileInitials = useMemo(() => {
+    const words = settings.profileName.trim().split(/\s+/).filter(Boolean);
+    if (words.length === 0) return "LN";
+    return words.slice(0, 2).map((word) => word[0]?.toUpperCase()).join("");
+  }, [settings.profileName]);
 
   const countForView = (view: SidebarView) => {
     if (view === "trash") {
@@ -332,6 +347,42 @@ export function Sidebar() {
     setTagMenu({ tag, x: event.clientX, y: event.clientY });
   };
 
+  const openProfileDialog = () => {
+    setProfileDraftName(settings.profileName);
+    setProfileDraftImage(settings.profileImageDataUrl);
+    setIsProfileDialogOpen(true);
+    window.setTimeout(() => profileInputRef.current?.focus(), 0);
+  };
+
+  const closeProfileDialog = () => {
+    setIsProfileDialogOpen(false);
+    setProfileDraftName("");
+    setProfileDraftImage("");
+  };
+
+  const saveProfileDialog = () => {
+    const name = profileDraftName.trim() || "Lumo User";
+    updateSetting("profileName", name);
+    updateSetting("profileImageDataUrl", profileDraftImage);
+    closeProfileDialog();
+  };
+
+  const loadProfileImage = (file: File | undefined) => {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      notify({ kind: "error", title: "Profile image must be an image file" });
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        setProfileDraftImage(reader.result);
+      }
+    };
+    reader.onerror = () => notify({ kind: "error", title: "Could not read profile image" });
+    reader.readAsDataURL(file);
+  };
+
   return (
     <aside className="column-panel scroll-area hidden min-h-0 flex-col overflow-y-auto overflow-x-hidden p-3 lg:flex">
       <button
@@ -464,14 +515,31 @@ export function Sidebar() {
       </div>
 
       <div className="mt-4 flex items-center gap-3 border-t border-white/10 pt-4">
-        <div className="grid h-9 w-9 place-items-center rounded-full bg-lumo-violet text-sm font-semibold text-white">
-          H
+        <div className="grid h-9 w-9 place-items-center overflow-hidden rounded-full bg-lumo-violet text-sm font-semibold text-white">
+          {settings.profileImageDataUrl ? (
+            <img
+              src={settings.profileImageDataUrl}
+              alt=""
+              className="h-full w-full object-cover"
+              draggable={false}
+            />
+          ) : (
+            profileInitials
+          )}
         </div>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-white">Hamza</p>
+          <p className="truncate text-sm font-medium text-white">{settings.profileName}</p>
           <p className="truncate text-xs text-slate-500"></p>
         </div>
-        <div>
+        <div className="flex items-center gap-1">
+          <button
+            className="grid h-8 w-8 place-items-center rounded-lg border border-white/10 text-slate-400 transition active:scale-95 hover:border-lumo-violet/30 hover:bg-white/[0.05] hover:text-white"
+            onClick={openProfileDialog}
+            aria-label="Edit profile"
+            title="Edit profile"
+          >
+            <ProfileEditIcon />
+          </button>
           <button
             className={`grid h-8 w-8 place-items-center rounded-lg border border-white/10 transition active:scale-95 ${
               activeView === "settings"
@@ -486,6 +554,87 @@ export function Sidebar() {
           </button>
         </div>
       </div>
+      {isProfileDialogOpen ? (
+        <div
+          className="fixed inset-0 z-[70] grid place-items-center bg-night-950/55 px-4 backdrop-blur-sm"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) closeProfileDialog();
+          }}
+        >
+          <form
+            className="w-full max-w-md rounded-2xl border border-white/10 bg-night-900/95 p-4 shadow-[0_24px_80px_rgba(0,0,0,0.45)]"
+            onSubmit={(event) => {
+              event.preventDefault();
+              saveProfileDialog();
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.preventDefault();
+                closeProfileDialog();
+              }
+            }}
+          >
+            <div className="mb-4">
+              <p className="text-sm font-semibold text-white">Edit profile</p>
+              <p className="mt-1 text-xs text-slate-500">Change the local profile shown in the sidebar.</p>
+            </div>
+            <div className="mb-4 flex items-center gap-3">
+              <div className="grid h-14 w-14 place-items-center overflow-hidden rounded-full bg-lumo-violet text-base font-semibold text-white">
+                {profileDraftImage ? (
+                  <img src={profileDraftImage} alt="" className="h-full w-full object-cover" draggable={false} />
+                ) : (
+                  profileInitials
+                )}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <label className="cursor-pointer rounded-lg border border-white/10 px-3 py-2 text-sm text-slate-300 transition hover:border-lumo-teal/30 hover:text-white">
+                  Choose picture
+                  <input
+                    className="hidden"
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/gif"
+                    onChange={(event) => loadProfileImage(event.target.files?.[0])}
+                  />
+                </label>
+                {profileDraftImage ? (
+                  <button
+                    type="button"
+                    className="rounded-lg px-3 py-2 text-sm text-slate-400 transition hover:bg-white/[0.05] hover:text-white"
+                    onClick={() => setProfileDraftImage("")}
+                  >
+                    Remove
+                  </button>
+                ) : null}
+              </div>
+            </div>
+            <label className="block space-y-2">
+              <span className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">Display name</span>
+              <input
+                ref={profileInputRef}
+                className="h-10 w-full rounded-lg border border-white/10 bg-night-950/80 px-3 text-sm text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-lumo-teal/50 focus:ring-2 focus:ring-lumo-teal/10"
+                value={profileDraftName}
+                onChange={(event) => setProfileDraftName(event.target.value)}
+                placeholder="Your name"
+              />
+            </label>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                className="rounded-lg px-3 py-2 text-sm text-slate-400 transition hover:bg-white/[0.05] hover:text-white"
+                onClick={closeProfileDialog}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="rounded-lg bg-lumo-violet px-3 py-2 text-sm font-medium text-white transition hover:bg-lumo-violet/90"
+              >
+                Save
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
       {tagMenu ? (
         <div
           className="fixed inset-0 z-40"

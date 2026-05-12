@@ -36,6 +36,8 @@ export type AppSettings = {
   markdownExportFrontmatter: boolean;
   backupIncludeTrash: boolean;
   defaultExportAction: DefaultExportAction;
+  profileName: string;
+  profileImageDataUrl: string;
 };
 
 export const defaultCustomThemeDark: CustomThemeColors = {
@@ -75,6 +77,8 @@ export const defaultSettings: AppSettings = {
   editorLineHeight: "comfortable",
   markdownExportFrontmatter: true,
   newNoteTitleBehavior: "untitled",
+  profileImageDataUrl: "",
+  profileName: "Hamza",
   startupBehavior: "lastNote",
   theme: "dark",
 };
