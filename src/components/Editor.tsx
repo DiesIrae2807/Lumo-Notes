@@ -693,7 +693,7 @@ export function Editor({
           <div className="mb-7 pt-1">
             <input
               ref={titleInputRef}
-              className="w-full border-none bg-transparent pb-1 text-3xl font-semibold leading-[1.18] tracking-tight text-white outline-none placeholder:text-slate-600 md:text-4xl"
+              className="editor-title-input w-full border-none bg-transparent pb-1 text-3xl font-semibold leading-[1.18] tracking-tight text-white outline-none placeholder:text-slate-600 md:text-4xl"
               value={selectedNote.title}
               onChange={(event) => applyEditorChange({ title: event.target.value }, "typing")}
               onBlur={() => {
@@ -710,7 +710,7 @@ export function Editor({
               placeholder="Untitled Note"
             />
             <input
-              className="mt-3 w-full border-none bg-transparent text-base text-slate-300 outline-none placeholder:text-slate-600"
+              className="editor-subtitle-input mt-3 w-full border-none bg-transparent text-base text-slate-300 outline-none placeholder:text-slate-600"
               value={selectedNote.preview}
               onChange={(event) => applyEditorChange({ preview: event.target.value }, "typing")}
               onBlur={() => {

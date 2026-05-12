@@ -1868,6 +1868,15 @@
   background: transparent !important;
 }
 
+.editor-title-input,
+.editor-subtitle-input,
+:root[data-lumo-theme="light"] .editor-title-input,
+:root[data-lumo-theme="light"] .editor-subtitle-input {
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
 :root[data-lumo-theme="light"] input,
 :root[data-lumo-theme="light"] select,
 :root[data-lumo-theme="light"] textarea {
