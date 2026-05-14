@@ -3,7 +3,7 @@ name = "lumo-notes"
 version = "0.1.0"
 description = "Local-first note-taking app"
 authors = ["DiesIrae2807"]
-edition = "2026"
+edition = "2021"
 
 [lib]
 name = "lumo_notes_lib"
