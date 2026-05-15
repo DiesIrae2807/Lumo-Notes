@@ -471,9 +471,13 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       folders.find((folder) => folder.id === "uncategorized") ??
       folders.find((folder) => folder.name.toLowerCase() === "uncategorized") ??
       uncategorizedFolder;
-    const targetFolder = options?.folderId
-      ? folders.find((folder) => folder.id === options.folderId) ?? defaultFolder
+    const requestedFolderId = options?.folderId ?? activeFolderId;
+    const targetFolder = requestedFolderId
+      ? folders.find((folder) => folder.id === requestedFolderId) ?? defaultFolder
       : defaultFolder;
+    const shouldKeepFolderView =
+      Boolean(requestedFolderId) &&
+      (options?.keepCurrentView === true || requestedFolderId === activeFolderId);
     const defaultTitle =
       settings.newNoteTitleBehavior === "dateTime"
         ? new Intl.DateTimeFormat(undefined, {
@@ -504,7 +508,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     });
     setNotes((current) => [newNote, ...current]);
     setSelectedNoteId(newNote.id);
-    if (options?.keepCurrentView && options.folderId) {
+    if (shouldKeepFolderView) {
       setActiveViewState("all");
       setActiveFolderIdState(targetFolder.id);
       setActiveTagState(null);
@@ -514,7 +518,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       setActiveTagState(null);
     }
     setSearchQuery("");
-  }, [flushNoteSave, folders, selectedNoteId, settings.newNoteTitleBehavior]);
+  }, [activeFolderId, flushNoteSave, folders, selectedNoteId, settings.newNoteTitleBehavior]);
 
   const importMarkdownNotes = useCallback(
     async (imports: ParsedMarkdownNote[]) => {
