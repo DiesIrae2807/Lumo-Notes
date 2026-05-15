@@ -34,6 +34,9 @@ export type Attachment = {
   storedPath: string;
   mimeType: string;
   fileSize: number;
+  isEncrypted: boolean;
+  encryptionNonce?: string | null;
+  encryptedAt?: string | null;
   createdAt: string;
 };
 

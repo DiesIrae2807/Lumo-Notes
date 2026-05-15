@@ -484,7 +484,7 @@ export function Editor({
     if (selectedNote.isLocked) {
       const confirmed = await confirmDialog({
         confirmLabel: "Export Plaintext",
-        message: "Exported Markdown will be plaintext.",
+        message: "This export will write note text and attachments as plaintext.",
         title: "Export unlocked locked note",
       });
       if (!confirmed) return;
@@ -972,6 +972,7 @@ export function Editor({
           </div>
 
           <RichTextEditor
+            key={selectedNote.id}
             attachments={selectedNoteAttachments}
             content={selectedNote.content}
             isFocusMode={isFocusMode}

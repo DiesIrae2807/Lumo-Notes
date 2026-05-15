@@ -1,4 +1,4 @@
-import { useEffect, useState, type MouseEvent } from "react";
+import { Component, useEffect, useState, type MouseEvent, type ReactNode } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Editor } from "./components/Editor";
 import { InsightsPanel } from "./components/InsightsPanel";
@@ -18,6 +18,45 @@ import { useNotes } from "./store/notesStore";
 import { confirmDialog } from "./utils/confirm";
 
 const appWindow = getCurrentWindow();
+
+class AppErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+  state: { error: Error | null } = { error: null };
+
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+
+  componentDidCatch(error: Error) {
+    console.error("Lumo Notes UI error", error);
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="grid min-h-[100dvh] place-items-center bg-night-950 px-6 text-center text-slate-100">
+          <div className="max-w-md rounded-2xl border border-white/10 bg-white/[0.04] p-6">
+            <h1 className="text-lg font-semibold text-white">Something went wrong</h1>
+            <p className="mt-3 text-sm leading-6 text-slate-400">
+              The interface hit an unexpected error. Your local notes remain in storage.
+            </p>
+            <p className="mt-3 break-words rounded-xl bg-black/20 px-3 py-2 text-left text-xs text-slate-500">
+              {this.state.error.message}
+            </p>
+            <button
+              className="mt-5 rounded-xl bg-lumo-violet px-4 py-2 text-sm font-medium text-white transition hover:bg-lumo-violet/90"
+              type="button"
+              onClick={() => window.location.reload()}
+            >
+              Reload Lumo Notes
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
 
 function WindowTitleBar() {
   const startDragging = (event: MouseEvent<HTMLElement>) => {
@@ -203,9 +242,11 @@ export default function App() {
       <ConfirmProvider>
         <SettingsProvider>
           <NotesProvider>
-            <AppShortcuts />
-            <CommandPalette />
-            <Workspace />
+            <AppErrorBoundary>
+              <AppShortcuts />
+              <CommandPalette />
+              <Workspace />
+            </AppErrorBoundary>
           </NotesProvider>
         </SettingsProvider>
       </ConfirmProvider>

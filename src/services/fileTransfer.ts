@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { Attachment, Folder, Note } from "../types/note";
 import type { LockBackupMetadata } from "./database";
+import type { AttachmentBackupPayload } from "./database";
 import { getPlainTextPreview } from "../utils/markdown";
 
 export type ExportFile = {
@@ -24,7 +25,7 @@ export type LumoBackup = {
   folders: Folder[];
   tags: string[];
   noteTags: Array<{ noteId: string; tag: string }>;
-  attachments?: Attachment[];
+  attachments?: AttachmentBackupPayload[];
   lockMetadata?: LockBackupMetadata | null;
 };
 
@@ -110,7 +111,7 @@ export function createBackup(
   folders: Folder[],
   tags: string[],
   includeTrash = true,
-  attachments: Attachment[] = [],
+  attachments: AttachmentBackupPayload[] = [],
   lockMetadata: LockBackupMetadata | null = null,
 ): LumoBackup {
   const backupNotes = notes

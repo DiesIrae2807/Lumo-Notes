@@ -14,7 +14,7 @@ import {
 } from "../services/fileTransfer";
 import { notify, notifyError } from "../utils/toast";
 import { confirmDialog } from "../utils/confirm";
-import { getLockBackupMetadata, getNotes } from "../services/database";
+import { getAttachmentBackupPayloads, getLockBackupMetadata, getNotes } from "../services/database";
 
 type MenuName = "file" | "edit";
 
@@ -49,7 +49,6 @@ export function TopMenuBar({ onExit }: { onExit: () => void }) {
   const {
     archiveNote,
     availableTags,
-    attachments,
     attachFileToSelectedNote,
     createNote,
     folders,
@@ -144,7 +143,7 @@ export function TopMenuBar({ onExit }: { onExit: () => void }) {
       if (selectedNote.isLocked) {
         const confirmed = await confirmDialog({
           confirmLabel: "Export Plaintext",
-          message: "Exported Markdown will be plaintext.",
+          message: "This export will write note text and attachments as plaintext.",
           title: "Export unlocked locked note",
         });
         if (!confirmed) return;
@@ -195,7 +194,7 @@ export function TopMenuBar({ onExit }: { onExit: () => void }) {
         folders,
         availableTags,
         settings.backupIncludeTrash,
-        attachments,
+        await getAttachmentBackupPayloads(),
         await getLockBackupMetadata(),
       );
       const path = await saveTextFile(
@@ -317,7 +316,6 @@ export function TopMenuBar({ onExit }: { onExit: () => void }) {
     [
       createNote,
       attachFileToSelectedNote,
-      attachments,
       exportAll,
       exportBackup,
       exportSelected,

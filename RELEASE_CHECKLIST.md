@@ -39,7 +39,7 @@ Generated files:
 - Create or modify notes after the backup.
 - Use Restore Backup.
 - Confirm restored notes are merged and existing notes are not deleted.
-- Confirm attachments listed in the backup do not imply cloud storage; attachment files remain local.
+- Confirm backup JSON includes attachment payloads for restored attachments; no cloud storage is involved.
 
 ## Locked Notes Test
 
@@ -50,8 +50,14 @@ Generated files:
 - Unlock with the correct password, edit the note, wait for autosave, close and reopen, then unlock again.
 - Search for text that only exists inside the locked note body and confirm it does not appear while locked.
 - Export a backup and confirm locked notes are preserved as encrypted payloads, not plaintext body content.
+- Attach a text file containing a unique secret to an unlocked locked note, close/reopen, and search `%APPDATA%\com.lumo.notes\` for the secret. Confirm no plaintext match.
+- Confirm the raw stored attachment under `%APPDATA%\com.lumo.notes\attachments\` cannot be opened as the original file while the note is locked.
+- Unlock the note and confirm image attachments render and generic attachments open.
+- Close locked sessions and confirm temporary decrypted attachment files under the app cache are cleaned up on the next app launch.
+- Change the Lock Password from Settings > Privacy / Locked Notes, confirm the old password fails, and confirm the new password unlocks the note and opens the attachment.
+- Restore a backup containing encrypted locked notes and encrypted attachments, then confirm the same Lock Password unlocks both.
 - Archive, trash, restore, and permanently delete a locked note.
-- Confirm locking a note with attachments warns that attachments are not encrypted yet.
+- Confirm permanently deleting a locked note removes encrypted attachment files and metadata.
 
 ## Fresh Install Test
 
@@ -74,6 +80,7 @@ The installer removes app binaries. Local user data under `%APPDATA%\com.lumo.no
 
 ## Known Limitations
 
-- Local-first only; no cloud sync, authentication, collaboration, telemetry, analytics, AI, mobile app, or locked notes.
+- Local-first only; no cloud sync, authentication, collaboration, telemetry, analytics, AI, or mobile app.
 - Backups are manual and are saved only to the destination selected during Export Backup.
+- Locked attachment filenames remain visible in metadata. Attachment file contents are encrypted for locked notes.
 - The current Windows icon uses `src-tauri/icons/icon.ico` as the production placeholder until a final branded icon set is supplied.

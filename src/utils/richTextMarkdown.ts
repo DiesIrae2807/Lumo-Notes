@@ -10,7 +10,7 @@ const inlineMarkdownToHtml = (value: string, attachmentUrls: Record<string, stri
   next = next.replace(/!\[([^\]]*)\]\((attachment:\/\/[^)]+)\)(?:\{width=(\d+)\})?/g, (_match, alt, src, width) => {
     const id = String(src).slice("attachment://".length);
     const widthAttrs = width ? ` data-width="${width}" style="width: ${width}px;"` : "";
-    return `<img src="${attachmentUrls[id] ?? src}" data-attachment-src="${src}" alt="${alt}"${widthAttrs} />`;
+    return `<img src="${attachmentUrls[id] ?? src}" data-attachment-id="${id}" data-attachment-src="${src}" alt="${alt}"${widthAttrs} />`;
   });
   next = next.replace(/\[([^\]]+)\]\((attachment:\/\/[^)]+)\)/g, '<a href="$2">$1</a>');
   next = next.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
@@ -128,11 +128,25 @@ export function markdownToEditorHtml(markdown: string, attachmentUrls: Record<st
 
 const textContent = (node: Node): string => node.textContent ?? "";
 
-function inlineNodeToMarkdown(node: Node): string {
+function attachmentSourceForImage(node: HTMLElement, attachmentUrls: Record<string, string>) {
+  const attachmentSource = node.getAttribute("data-attachment-src");
+  if (attachmentSource?.startsWith("attachment://")) return attachmentSource;
+
+  const attachmentId = node.getAttribute("data-attachment-id");
+  if (attachmentId) return `attachment://${attachmentId}`;
+
+  const source = node.getAttribute("src") ?? "";
+  if (!source.startsWith("data:")) return source;
+
+  const matchedEntry = Object.entries(attachmentUrls).find(([, url]) => url === source);
+  return matchedEntry ? `attachment://${matchedEntry[0]}` : "";
+}
+
+function inlineNodeToMarkdown(node: Node, attachmentUrls: Record<string, string>): string {
   if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? "";
   if (!(node instanceof HTMLElement)) return "";
 
-  const children = Array.from(node.childNodes).map(inlineNodeToMarkdown).join("");
+  const children = Array.from(node.childNodes).map((child) => inlineNodeToMarkdown(child, attachmentUrls)).join("");
   const tag = node.tagName.toLowerCase();
 
   if (tag === "strong" || tag === "b") return `**${children}**`;
@@ -142,8 +156,8 @@ function inlineNodeToMarkdown(node: Node): string {
   if (tag === "code") return `\`${children}\``;
   if (tag === "br") return "\n";
   if (tag === "img") {
-    const source = node.getAttribute("data-attachment-src") ?? node.getAttribute("src") ?? "";
-    if (source.startsWith("data:")) {
+    const source = attachmentSourceForImage(node, attachmentUrls);
+    if (!source) {
       return "";
     }
     const width = node.getAttribute("data-width") ?? "";
@@ -161,9 +175,9 @@ function inlineNodeToMarkdown(node: Node): string {
   return children;
 }
 
-function blockNodeToMarkdown(node: Element): string {
+function blockNodeToMarkdown(node: Element, attachmentUrls: Record<string, string>): string {
   const tag = node.tagName.toLowerCase();
-  const inline = () => Array.from(node.childNodes).map(inlineNodeToMarkdown).join("").trimEnd();
+  const inline = () => Array.from(node.childNodes).map((child) => inlineNodeToMarkdown(child, attachmentUrls)).join("").trimEnd();
 
   if (/^h[1-6]$/.test(tag)) {
     const content = inline();
@@ -174,7 +188,7 @@ function blockNodeToMarkdown(node: Element): string {
   if (tag === "p") return inline();
   if (tag === "blockquote") {
     return Array.from(node.childNodes)
-      .map((child) => child instanceof Element ? blockNodeToMarkdown(child) : textContent(child))
+      .map((child) => child instanceof Element ? blockNodeToMarkdown(child, attachmentUrls) : textContent(child))
       .join("\n")
       .split("\n")
       .map((line) => `> ${line}`)
@@ -187,7 +201,7 @@ function blockNodeToMarkdown(node: Element): string {
       .map((child) => {
         const text = Array.from(child.childNodes)
           .filter((item) => !(item instanceof HTMLLabelElement))
-          .map(inlineNodeToMarkdown)
+          .map((item) => inlineNodeToMarkdown(item, attachmentUrls))
           .join("")
           .trim();
         if (isTaskList || child.getAttribute("data-type") === "taskItem") {
@@ -199,19 +213,19 @@ function blockNodeToMarkdown(node: Element): string {
   }
   if (tag === "ol") {
     return Array.from(node.children)
-      .map((child, index) => `${index + 1}. ${Array.from(child.childNodes).map(inlineNodeToMarkdown).join("").trim()}`)
+      .map((child, index) => `${index + 1}. ${Array.from(child.childNodes).map((item) => inlineNodeToMarkdown(item, attachmentUrls)).join("").trim()}`)
       .join("\n");
   }
   return inline();
 }
 
-export function editorHtmlToMarkdown(html: string) {
+export function editorHtmlToMarkdown(html: string, attachmentUrls: Record<string, string> = {}) {
   const document = new DOMParser().parseFromString(`<main>${html}</main>`, "text/html");
   const root = document.querySelector("main");
   if (!root) return "";
 
   return Array.from(root.children)
-    .map(blockNodeToMarkdown)
+    .map((node) => blockNodeToMarkdown(node, attachmentUrls))
     .join("\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();

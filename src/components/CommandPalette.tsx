@@ -14,7 +14,7 @@ import type { SidebarView } from "../types/note";
 import { getPlainTextPreview, markdownToPlainText } from "../utils/markdown";
 import { notify, notifyError } from "../utils/toast";
 import { confirmDialog } from "../utils/confirm";
-import { getLockBackupMetadata, getNotes } from "../services/database";
+import { getAttachmentBackupPayloads, getLockBackupMetadata, getNotes } from "../services/database";
 
 type CommandItem = {
   id: string;
@@ -111,7 +111,7 @@ export function CommandPalette() {
     if (selectedNote.isLocked) {
       const confirmed = await confirmDialog({
         confirmLabel: "Export Plaintext",
-        message: "Exported Markdown will be plaintext.",
+        message: "This export will write note text and attachments as plaintext.",
         title: "Export unlocked locked note",
       });
       if (!confirmed) return;
@@ -132,7 +132,7 @@ export function CommandPalette() {
       folders,
       availableTags,
       settings.backupIncludeTrash,
-      attachments,
+      await getAttachmentBackupPayloads(),
       await getLockBackupMetadata(),
     );
     await saveTextFile(

@@ -39,26 +39,43 @@ pub fn verifier_for_key(key: &[u8; 32]) -> String {
 }
 
 pub fn encrypt_string(key: &[u8; 32], plaintext: &str) -> Result<(String, String), String> {
+    let (nonce, ciphertext) = encrypt_bytes(key, plaintext.as_bytes())?;
+    Ok((nonce, STANDARD.encode(ciphertext)))
+}
+
+pub fn decrypt_string(key: &[u8; 32], nonce_b64: &str, ciphertext_b64: &str) -> Result<String, String> {
+    let ciphertext = STANDARD
+        .decode(ciphertext_b64)
+        .map_err(|_| "Invalid encrypted note payload.".to_string())?;
+    let plaintext = decrypt_bytes(key, nonce_b64, &ciphertext)?;
+    String::from_utf8(plaintext).map_err(|_| "Decrypted note is not valid text.".to_string())
+}
+
+pub fn encrypt_bytes(key: &[u8; 32], plaintext: &[u8]) -> Result<(String, Vec<u8>), String> {
     let mut nonce = [0_u8; 24];
     OsRng.fill_bytes(&mut nonce);
     let cipher = XChaCha20Poly1305::new(key.into());
     let ciphertext = cipher
-        .encrypt(XNonce::from_slice(&nonce), plaintext.as_bytes())
-        .map_err(|_| "Could not encrypt note content.".to_string())?;
-    Ok((STANDARD.encode(nonce), STANDARD.encode(ciphertext)))
+        .encrypt(XNonce::from_slice(&nonce), plaintext)
+        .map_err(|_| "Could not encrypt payload.".to_string())?;
+    Ok((STANDARD.encode(nonce), ciphertext))
 }
 
-pub fn decrypt_string(key: &[u8; 32], nonce_b64: &str, ciphertext_b64: &str) -> Result<String, String> {
+pub fn decrypt_bytes(key: &[u8; 32], nonce_b64: &str, ciphertext: &[u8]) -> Result<Vec<u8>, String> {
     let nonce = STANDARD.decode(nonce_b64).map_err(|_| "Invalid encryption nonce.".to_string())?;
     if nonce.len() != 24 {
         return Err("Invalid encryption nonce length.".to_string());
     }
-    let ciphertext = STANDARD
-        .decode(ciphertext_b64)
-        .map_err(|_| "Invalid encrypted note payload.".to_string())?;
     let cipher = XChaCha20Poly1305::new(key.into());
-    let plaintext = cipher
-        .decrypt(XNonce::from_slice(&nonce), ciphertext.as_ref())
-        .map_err(|_| "Could not decrypt note. The password may be wrong or the note is corrupted.".to_string())?;
-    String::from_utf8(plaintext).map_err(|_| "Decrypted note is not valid text.".to_string())
+    cipher
+        .decrypt(XNonce::from_slice(&nonce), ciphertext)
+        .map_err(|_| "Could not decrypt payload. The password may be wrong or the data is corrupted.".to_string())
+}
+
+pub fn base64_encode(bytes: &[u8]) -> String {
+    STANDARD.encode(bytes)
+}
+
+pub fn base64_decode(value: &str) -> Result<Vec<u8>, String> {
+    STANDARD.decode(value).map_err(|_| "Invalid base64 payload.".to_string())
 }

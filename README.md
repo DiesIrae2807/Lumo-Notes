@@ -76,7 +76,7 @@ Do not delete `%APPDATA%\com.lumo.notes\` on a real user's machine unless they e
 ## Production Notes
 
 - App name/product name: `Lumo Notes`
-- Version: `0.1.0`
+- Version: see `package.json` and `src-tauri/tauri.conf.json`
 - Bundle identifier: `com.lumo.notes`
 - Publisher placeholder: `Lumo Notes Publisher`
 - Description: `Local-first note-taking app`
@@ -89,6 +89,8 @@ The app does not include authentication, cloud sync, telemetry, analytics, AI, c
 
 Locked notes use a local Lock Password. The password is not stored directly; Lumo Notes derives an encryption key with Argon2id and encrypts note body text/previews with XChaCha20-Poly1305 in the Tauri backend.
 
-Locked note titles, folders, and tags remain visible. Locked note content and previews are cleared from the plaintext SQLite columns and from the persisted search index. Backups preserve encrypted note payloads and lock metadata so restored locked notes still require the same Lock Password.
+Locked note titles, folders, tags, and attachment filenames remain visible. Locked note content and previews are cleared from the plaintext SQLite columns and from the persisted search index. Backups preserve encrypted note payloads, encrypted attachment payloads, and lock metadata so restored locked notes still require the same Lock Password.
 
-Attachment files are not encrypted in this MVP. Locking a note protects the note text only.
+Attachments on locked notes are encrypted at rest. Opening an encrypted attachment decrypts a temporary copy under the app cache so Windows can hand it to the default application. Temporary decrypted copies are cleared when locked sessions are closed or when the app starts again.
+
+Changing the Lock Password re-encrypts locked note content and encrypted attachments, then closes the current unlocked session. The new password is required to unlock notes afterward.

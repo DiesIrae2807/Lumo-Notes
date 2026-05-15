@@ -98,6 +98,16 @@ const AttachmentImage = Image.extend({
               }
             : {},
       },
+      attachmentId: {
+        default: null,
+        parseHTML: (element) => element.getAttribute("data-attachment-id"),
+        renderHTML: (attributes) =>
+          attributes.attachmentId
+            ? {
+                "data-attachment-id": attributes.attachmentId,
+              }
+            : {},
+      },
     };
   },
 });

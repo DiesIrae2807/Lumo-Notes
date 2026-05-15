@@ -572,7 +572,7 @@
     max-width: 100%;
     max-height: 420px;
     margin: 1rem 0;
-    border: 1px solid rgba(255, 255, 255, 0.12);
+    border: 0;
     border-radius: 0.9rem;
     object-fit: contain;
   }
@@ -1902,10 +1902,6 @@
 
 :root[data-lumo-theme="light"] .rich-editor-shell[data-empty="true"] .rich-editor-prose::before {
   color: #7a879b;
-}
-
-:root[data-lumo-theme="light"] .rich-editor-image {
-  border-color: rgba(31, 42, 68, 0.16);
 }
 
 :root[data-lumo-theme="light"] input.border-none,

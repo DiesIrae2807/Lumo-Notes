@@ -14,12 +14,11 @@ import {
 } from "../services/fileTransfer";
 import { notify, notifyError } from "../utils/toast";
 import { confirmDialog } from "../utils/confirm";
-import { getLockBackupMetadata, getNotes } from "../services/database";
+import { getAttachmentBackupPayloads, getLockBackupMetadata, getNotes } from "../services/database";
 
 export function ImportExportActions({ compact = false }: { compact?: boolean }) {
   const {
     availableTags,
-    attachments,
     folders,
     importMarkdownNotes,
     notes,
@@ -55,7 +54,7 @@ export function ImportExportActions({ compact = false }: { compact?: boolean }) 
       if (selectedNote.isLocked) {
         const confirmed = await confirmDialog({
           confirmLabel: "Export Plaintext",
-          message: "Exported Markdown will be plaintext.",
+          message: "This export will write note text and attachments as plaintext.",
           title: "Export unlocked locked note",
         });
         if (!confirmed) return null;
@@ -95,7 +94,7 @@ export function ImportExportActions({ compact = false }: { compact?: boolean }) 
         folders,
         availableTags,
         settings.backupIncludeTrash,
-        attachments,
+        await getAttachmentBackupPayloads(),
         await getLockBackupMetadata(),
       );
       const path = await saveTextFile(

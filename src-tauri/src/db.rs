@@ -3,6 +3,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
+    io::Write,
     path::{Path, PathBuf},
     process::Command,
     sync::Mutex,
@@ -61,7 +62,34 @@ pub struct AttachmentDto {
     pub stored_path: String,
     pub mime_type: String,
     pub file_size: i64,
+    pub is_encrypted: bool,
+    pub encryption_nonce: Option<String>,
+    pub encrypted_at: Option<String>,
     pub created_at: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AttachmentBackupDto {
+    pub id: String,
+    pub note_id: String,
+    pub filename: String,
+    pub original_path: Option<String>,
+    pub stored_path: String,
+    pub mime_type: String,
+    pub file_size: i64,
+    pub is_encrypted: bool,
+    pub encryption_nonce: Option<String>,
+    pub encrypted_at: Option<String>,
+    pub created_at: String,
+    pub data_base64: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PasswordChangeResultDto {
+    pub changed_notes: usize,
+    pub changed_attachments: usize,
 }
 
 #[derive(Debug, Serialize)]
@@ -186,6 +214,9 @@ fn create_schema(connection: &Connection) -> Result<(), String> {
                 stored_path TEXT NOT NULL,
                 mime_type TEXT NOT NULL,
                 file_size INTEGER NOT NULL,
+                is_encrypted INTEGER NOT NULL DEFAULT 0,
+                encryption_nonce TEXT,
+                encrypted_at TEXT,
                 created_at TEXT NOT NULL,
                 FOREIGN KEY(note_id) REFERENCES notes(id) ON DELETE CASCADE
             );
@@ -253,6 +284,27 @@ fn migrate_schema(connection: &Connection) -> Result<(), String> {
     if !column_exists(connection, "notes", "locked_at")? {
         connection
             .execute("ALTER TABLE notes ADD COLUMN locked_at TEXT", [])
+            .map_err(|error| error.to_string())?;
+    }
+
+    if !column_exists(connection, "attachments", "is_encrypted")? {
+        connection
+            .execute(
+                "ALTER TABLE attachments ADD COLUMN is_encrypted INTEGER NOT NULL DEFAULT 0",
+                [],
+            )
+            .map_err(|error| error.to_string())?;
+    }
+
+    if !column_exists(connection, "attachments", "encryption_nonce")? {
+        connection
+            .execute("ALTER TABLE attachments ADD COLUMN encryption_nonce TEXT", [])
+            .map_err(|error| error.to_string())?;
+    }
+
+    if !column_exists(connection, "attachments", "encrypted_at")? {
+        connection
+            .execute("ALTER TABLE attachments ADD COLUMN encrypted_at TEXT", [])
             .map_err(|error| error.to_string())?;
     }
 
@@ -714,7 +766,8 @@ fn get_attachments_from_connection(connection: &Connection) -> Result<Vec<Attach
     let mut statement = connection
         .prepare(
             "
-            SELECT id, note_id, filename, original_path, stored_path, mime_type, file_size, created_at
+            SELECT id, note_id, filename, original_path, stored_path, mime_type, file_size,
+                   is_encrypted, encryption_nonce, encrypted_at, created_at
             FROM attachments
             ORDER BY created_at DESC
             ",
@@ -730,7 +783,10 @@ fn get_attachments_from_connection(connection: &Connection) -> Result<Vec<Attach
                 stored_path: row.get(4)?,
                 mime_type: row.get(5)?,
                 file_size: row.get(6)?,
-                created_at: row.get(7)?,
+                is_encrypted: row.get::<_, i64>(7)? != 0,
+                encryption_nonce: row.get(8)?,
+                encrypted_at: row.get(9)?,
+                created_at: row.get(10)?,
             })
         })
         .map_err(|error| error.to_string())?;
@@ -743,7 +799,8 @@ fn attachment_by_id(connection: &Connection, id: &str) -> Result<Option<Attachme
     connection
         .query_row(
             "
-            SELECT id, note_id, filename, original_path, stored_path, mime_type, file_size, created_at
+            SELECT id, note_id, filename, original_path, stored_path, mime_type, file_size,
+                   is_encrypted, encryption_nonce, encrypted_at, created_at
             FROM attachments
             WHERE id = ?1
             ",
@@ -757,7 +814,10 @@ fn attachment_by_id(connection: &Connection, id: &str) -> Result<Option<Attachme
                     stored_path: row.get(4)?,
                     mime_type: row.get(5)?,
                     file_size: row.get(6)?,
-                    created_at: row.get(7)?,
+                    is_encrypted: row.get::<_, i64>(7)? != 0,
+                    encryption_nonce: row.get(8)?,
+                    encrypted_at: row.get(9)?,
+                    created_at: row.get(10)?,
                 })
             },
         )
@@ -828,6 +888,83 @@ fn attachments_dir(app: &AppHandle) -> Result<PathBuf, String> {
         .join("attachments");
     fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
     Ok(directory)
+}
+
+fn attachment_temp_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    let directory = app
+        .path()
+        .app_cache_dir()
+        .map_err(|error| error.to_string())?
+        .join("decrypted-attachments");
+    fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
+    Ok(directory)
+}
+
+fn cleanup_attachment_temp_dir(app: &AppHandle) {
+    if let Ok(directory) = app
+        .path()
+        .app_cache_dir()
+        .map(|path| path.join("decrypted-attachments"))
+    {
+        let _ = fs::remove_dir_all(directory);
+    }
+}
+
+fn encrypted_attachment_filename(id: &str, filename: &str) -> String {
+    format!("{}-{}.lumoenc", id, sanitize_file_name(filename))
+}
+
+fn attachment_bytes(
+    attachment: &AttachmentDto,
+    lock_state: &tauri::State<'_, LockState>,
+) -> Result<Vec<u8>, String> {
+    let bytes = fs::read(&attachment.stored_path).map_err(|error| error.to_string())?;
+    if !attachment.is_encrypted {
+        return Ok(bytes);
+    }
+    let nonce = attachment
+        .encryption_nonce
+        .as_deref()
+        .ok_or_else(|| "Encrypted attachment is missing encryption metadata.".to_string())?;
+    let key = current_lock_key(lock_state)?;
+    crypto::decrypt_bytes(&key, nonce, &bytes)
+}
+
+fn encrypt_attachment_file(
+    app: &AppHandle,
+    connection: &Connection,
+    lock_state: &tauri::State<'_, LockState>,
+    attachment: &AttachmentDto,
+    encrypted_at: &str,
+) -> Result<Option<String>, String> {
+    if attachment.is_encrypted {
+        return Ok(None);
+    }
+    let key = current_lock_key(lock_state)?;
+    let plaintext = fs::read(&attachment.stored_path).map_err(|error| error.to_string())?;
+    let (nonce, ciphertext) = crypto::encrypt_bytes(&key, &plaintext)?;
+    let new_path = attachments_dir(app)?.join(encrypted_attachment_filename(&attachment.id, &attachment.filename));
+    let temp_path = new_path.with_extension("lumoenc.tmp");
+    {
+        let mut file = fs::File::create(&temp_path).map_err(|error| error.to_string())?;
+        file.write_all(&ciphertext).map_err(|error| error.to_string())?;
+        let _ = file.sync_all();
+    }
+    fs::rename(&temp_path, &new_path).map_err(|error| error.to_string())?;
+    connection
+        .execute(
+            "UPDATE attachments
+             SET stored_path = ?2, is_encrypted = 1, encryption_nonce = ?3, encrypted_at = ?4
+             WHERE id = ?1",
+            params![
+                attachment.id,
+                new_path.to_string_lossy().to_string(),
+                nonce,
+                encrypted_at
+            ],
+        )
+        .map_err(|error| error.to_string())?;
+    Ok(Some(attachment.stored_path.clone()))
 }
 
 fn base64_encode(bytes: &[u8]) -> String {
@@ -928,7 +1065,8 @@ fn plain_snippet(value: &str, _query: &str) -> String {
 }
 
 #[tauri::command]
-pub fn initialize_database(state: tauri::State<'_, DbState>) -> Result<DatabaseSnapshot, String> {
+pub fn initialize_database(app: AppHandle, state: tauri::State<'_, DbState>) -> Result<DatabaseSnapshot, String> {
+    cleanup_attachment_temp_dir(&app);
     let mut connection = connect(&state.path)?;
     create_schema(&connection)?;
     seed_database_if_empty(&mut connection)?;
@@ -966,6 +1104,118 @@ pub fn get_attachments(state: tauri::State<'_, DbState>) -> Result<Vec<Attachmen
     let connection = connect(&state.path)?;
     create_schema(&connection)?;
     get_attachments_from_connection(&connection)
+}
+
+#[tauri::command]
+pub fn get_attachment_backup_payloads(
+    state: tauri::State<'_, DbState>,
+) -> Result<Vec<AttachmentBackupDto>, String> {
+    let connection = connect(&state.path)?;
+    create_schema(&connection)?;
+    let attachments = get_attachments_from_connection(&connection)?;
+    attachments
+        .into_iter()
+        .map(|attachment| {
+            let bytes = fs::read(&attachment.stored_path).map_err(|error| error.to_string())?;
+            Ok(AttachmentBackupDto {
+                id: attachment.id,
+                note_id: attachment.note_id,
+                filename: attachment.filename,
+                original_path: attachment.original_path,
+                stored_path: attachment.stored_path,
+                mime_type: attachment.mime_type,
+                file_size: attachment.file_size,
+                is_encrypted: attachment.is_encrypted,
+                encryption_nonce: attachment.encryption_nonce,
+                encrypted_at: attachment.encrypted_at,
+                created_at: attachment.created_at,
+                data_base64: crypto::base64_encode(&bytes),
+            })
+        })
+        .collect()
+}
+
+#[tauri::command]
+pub fn restore_backup_attachments(
+    app: AppHandle,
+    state: tauri::State<'_, DbState>,
+    attachments: Vec<AttachmentBackupDto>,
+) -> Result<Vec<AttachmentDto>, String> {
+    let connection = connect(&state.path)?;
+    create_schema(&connection)?;
+    let mut restored = Vec::new();
+    for incoming in attachments {
+        let note_exists: bool = connection
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM notes WHERE id = ?1)",
+                params![incoming.note_id],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(|error| error.to_string())?
+            != 0;
+        if !note_exists {
+            continue;
+        }
+        let mut id = incoming.id.clone();
+        let id_exists: bool = connection
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM attachments WHERE id = ?1)",
+                params![id],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(|error| error.to_string())?
+            != 0;
+        if id_exists {
+            id = attachment_id()?;
+        }
+        let filename = sanitize_file_name(&incoming.filename);
+        let stored_filename = if incoming.is_encrypted {
+            encrypted_attachment_filename(&id, &filename)
+        } else {
+            format!("{}-{}", id, filename)
+        };
+        let stored_path = attachments_dir(&app)?.join(stored_filename);
+        let bytes = crypto::base64_decode(&incoming.data_base64)?;
+        fs::write(&stored_path, bytes).map_err(|error| error.to_string())?;
+        let attachment = AttachmentDto {
+            id,
+            note_id: incoming.note_id,
+            filename,
+            original_path: None,
+            stored_path: stored_path.to_string_lossy().to_string(),
+            mime_type: incoming.mime_type,
+            file_size: incoming.file_size,
+            is_encrypted: incoming.is_encrypted,
+            encryption_nonce: incoming.encryption_nonce,
+            encrypted_at: incoming.encrypted_at,
+            created_at: incoming.created_at,
+        };
+        connection
+            .execute(
+                "INSERT INTO attachments (
+                    id, note_id, filename, original_path, stored_path, mime_type, file_size,
+                    is_encrypted, encryption_nonce, encrypted_at, created_at
+                 )
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                params![
+                    &attachment.id,
+                    &attachment.note_id,
+                    &attachment.filename,
+                    attachment.original_path.as_deref(),
+                    &attachment.stored_path,
+                    &attachment.mime_type,
+                    attachment.file_size,
+                    attachment.is_encrypted as i64,
+                    attachment.encryption_nonce.as_deref(),
+                    attachment.encrypted_at.as_deref(),
+                    &attachment.created_at
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        let _ = upsert_search_index_note(&connection, &attachment.note_id);
+        restored.push(attachment);
+    }
+    Ok(restored)
 }
 
 #[tauri::command]
@@ -1051,16 +1301,18 @@ pub fn unlock_lock_session(
 }
 
 #[tauri::command]
-pub fn lock_all_notes(lock_state: tauri::State<'_, LockState>) -> Result<(), String> {
+pub fn lock_all_notes(app: AppHandle, lock_state: tauri::State<'_, LockState>) -> Result<(), String> {
     *lock_state
         .key
         .lock()
         .map_err(|_| "Lock session is unavailable.".to_string())? = None;
+    cleanup_attachment_temp_dir(&app);
     Ok(())
 }
 
 #[tauri::command]
 pub fn lock_note(
+    app: AppHandle,
     state: tauri::State<'_, DbState>,
     lock_state: tauri::State<'_, LockState>,
     note: NoteDto,
@@ -1072,6 +1324,16 @@ pub fn lock_note(
     }
     let key = current_lock_key(&lock_state)?;
     let locked_at = chrono_like_now()?;
+    let note_attachments = get_attachments_from_connection(&connection)?
+        .into_iter()
+        .filter(|attachment| attachment.note_id == note.id)
+        .collect::<Vec<_>>();
+    let mut old_plaintext_paths = Vec::new();
+    for attachment in &note_attachments {
+        if let Some(old_path) = encrypt_attachment_file(&app, &connection, &lock_state, attachment, &locked_at)? {
+            old_plaintext_paths.push(old_path);
+        }
+    }
     let (content_nonce, encrypted_content) = crypto::encrypt_string(&key, &note.content)?;
     let (preview_nonce, encrypted_preview) = crypto::encrypt_string(&key, &note.preview)?;
     let nonce = format!("{}:{}", content_nonce, preview_nonce);
@@ -1105,6 +1367,7 @@ pub fn lock_note(
     }
     replace_note_tags(&connection, &note)?;
     let _ = upsert_search_index_note(&connection, &note.id);
+    remove_files(old_plaintext_paths);
     Ok(())
 }
 
@@ -1206,6 +1469,189 @@ pub fn unlock_note(
 }
 
 #[tauri::command]
+pub fn encrypt_note_attachments(
+    app: AppHandle,
+    state: tauri::State<'_, DbState>,
+    lock_state: tauri::State<'_, LockState>,
+    note_id: String,
+) -> Result<Vec<AttachmentDto>, String> {
+    let connection = connect(&state.path)?;
+    create_schema(&connection)?;
+    let encrypted_at = chrono_like_now()?;
+    let note_attachments = get_attachments_from_connection(&connection)?
+        .into_iter()
+        .filter(|attachment| attachment.note_id == note_id)
+        .collect::<Vec<_>>();
+    let mut old_plaintext_paths = Vec::new();
+    for attachment in &note_attachments {
+        if let Some(old_path) = encrypt_attachment_file(&app, &connection, &lock_state, attachment, &encrypted_at)? {
+            old_plaintext_paths.push(old_path);
+        }
+    }
+    remove_files(old_plaintext_paths);
+    get_attachments_from_connection(&connection)
+}
+
+#[tauri::command]
+pub fn change_lock_password(
+    state: tauri::State<'_, DbState>,
+    lock_state: tauri::State<'_, LockState>,
+    current_password: String,
+    new_password: String,
+) -> Result<PasswordChangeResultDto, String> {
+    if new_password.len() < 8 {
+        return Err("Use at least 8 characters for the new lock password.".to_string());
+    }
+    let connection = connect(&state.path)?;
+    create_schema(&connection)?;
+    let old_key = verify_password(&connection, &current_password)?;
+    let new_salt = crypto::random_base64(16);
+    let new_key = crypto::derive_key(&new_password, &new_salt)?;
+    let new_verifier = crypto::verifier_for_key(&new_key);
+    let now = chrono_like_now()?;
+
+    let mut note_updates = Vec::new();
+    {
+        let mut statement = connection
+            .prepare(
+                "SELECT id, encrypted_content, encrypted_preview, encryption_nonce
+                 FROM notes
+                 WHERE is_locked = 1",
+            )
+            .map_err(|error| error.to_string())?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                ))
+            })
+            .map_err(|error| error.to_string())?;
+
+        for row in rows {
+            let (id, encrypted_content, encrypted_preview, nonce) = row.map_err(|error| error.to_string())?;
+            let nonce = nonce.ok_or_else(|| "Locked note is missing encryption metadata.".to_string())?;
+            let (content_nonce, preview_nonce) = nonce
+                .split_once(':')
+                .ok_or_else(|| "Locked note has invalid encryption metadata.".to_string())?;
+            let content = crypto::decrypt_string(
+                &old_key,
+                content_nonce,
+                encrypted_content
+                    .as_deref()
+                    .ok_or_else(|| "Locked note is missing encrypted content.".to_string())?,
+            )?;
+            let preview = crypto::decrypt_string(
+                &old_key,
+                preview_nonce,
+                encrypted_preview
+                    .as_deref()
+                    .ok_or_else(|| "Locked note is missing encrypted preview.".to_string())?,
+            )?;
+            let (new_content_nonce, new_encrypted_content) = crypto::encrypt_string(&new_key, &content)?;
+            let (new_preview_nonce, new_encrypted_preview) = crypto::encrypt_string(&new_key, &preview)?;
+            note_updates.push((
+                id,
+                new_encrypted_content,
+                new_encrypted_preview,
+                format!("{}:{}", new_content_nonce, new_preview_nonce),
+            ));
+        }
+    }
+
+    let mut attachment_updates = Vec::new();
+    {
+        let attachments = get_attachments_from_connection(&connection)?;
+        for attachment in attachments.into_iter().filter(|item| item.is_encrypted) {
+            let nonce = attachment
+                .encryption_nonce
+                .as_deref()
+                .ok_or_else(|| "Encrypted attachment is missing encryption metadata.".to_string())?;
+            let ciphertext = fs::read(&attachment.stored_path).map_err(|error| error.to_string())?;
+            let plaintext = crypto::decrypt_bytes(&old_key, nonce, &ciphertext)?;
+            let (new_nonce, new_ciphertext) = crypto::encrypt_bytes(&new_key, &plaintext)?;
+            let old_path = PathBuf::from(&attachment.stored_path);
+            let temp_path = old_path.with_extension("reencrypt.tmp");
+            {
+                let mut file = fs::File::create(&temp_path).map_err(|error| error.to_string())?;
+                file.write_all(&new_ciphertext).map_err(|error| error.to_string())?;
+                let _ = file.sync_all();
+            }
+            attachment_updates.push((attachment.id, old_path, temp_path, new_nonce));
+        }
+    }
+
+    let transaction_result = (|| -> Result<(), String> {
+        connection
+            .execute_batch("BEGIN IMMEDIATE TRANSACTION")
+            .map_err(|error| error.to_string())?;
+        for (id, encrypted_content, encrypted_preview, nonce) in &note_updates {
+            connection
+                .execute(
+                    "UPDATE notes
+                     SET encrypted_content = ?2, encrypted_preview = ?3, encryption_nonce = ?4
+                     WHERE id = ?1 AND is_locked = 1",
+                    params![id, encrypted_content, encrypted_preview, nonce],
+                )
+                .map_err(|error| error.to_string())?;
+        }
+        for (id, _, _, nonce) in &attachment_updates {
+            connection
+                .execute(
+                    "UPDATE attachments SET encryption_nonce = ?2, encrypted_at = ?3 WHERE id = ?1",
+                    params![id, nonce, now],
+                )
+                .map_err(|error| error.to_string())?;
+        }
+        set_setting_value(&connection, "lock.salt", &new_salt, &now)?;
+        set_setting_value(&connection, "lock.verifier", &new_verifier, &now)?;
+        set_setting_value(&connection, "lock.kdf", crypto::KDF_ALGORITHM, &now)?;
+        set_setting_value(&connection, "lock.kdfParams", crypto::KDF_PARAMS, &now)?;
+        set_setting_value(&connection, "lock.algorithm", crypto::ENCRYPTION_ALGORITHM, &now)?;
+        connection.execute_batch("COMMIT").map_err(|error| error.to_string())
+    })();
+
+    if let Err(error) = transaction_result {
+        let _ = connection.execute_batch("ROLLBACK");
+        for (_, _, temp_path, _) in &attachment_updates {
+            let _ = fs::remove_file(temp_path);
+        }
+        return Err(error);
+    }
+
+    for (_, old_path, temp_path, _) in &attachment_updates {
+        let backup_path = old_path.with_extension("old-encrypted");
+        let _ = fs::remove_file(&backup_path);
+        if let Err(error) = fs::rename(old_path, &backup_path) {
+            return Err(format!(
+                "Password metadata changed, but an attachment file could not be staged safely: {}",
+                error
+            ));
+        }
+        if let Err(error) = fs::rename(temp_path, old_path) {
+            let _ = fs::rename(&backup_path, old_path);
+            return Err(format!(
+                "Password metadata changed, but an attachment file could not be replaced safely: {}",
+                error
+            ));
+        }
+        let _ = fs::remove_file(backup_path);
+    }
+
+    *lock_state
+        .key
+        .lock()
+        .map_err(|_| "Lock session is unavailable.".to_string())? = None;
+
+    Ok(PasswordChangeResultDto {
+        changed_notes: note_updates.len(),
+        changed_attachments: attachment_updates.len(),
+    })
+}
+
+#[tauri::command]
 pub fn rebuild_search_index(state: tauri::State<'_, DbState>) -> Result<(), String> {
     let connection = connect(&state.path)?;
     create_schema(&connection)?;
@@ -1300,23 +1746,32 @@ pub fn search_notes(
 pub fn attach_file_to_note(
     app: AppHandle,
     state: tauri::State<'_, DbState>,
+    lock_state: tauri::State<'_, LockState>,
     note_id: String,
     created_at: String,
 ) -> Result<Option<AttachmentDto>, String> {
     let connection = connect(&state.path)?;
     create_schema(&connection)?;
-    let note_exists: bool = connection
+    let note_state: Option<(bool, bool)> = connection
         .query_row(
-            "SELECT EXISTS(SELECT 1 FROM notes WHERE id = ?1 AND is_deleted = 0)",
+            "SELECT is_locked != 0, is_deleted != 0 FROM notes WHERE id = ?1",
             params![note_id],
-            |row| row.get::<_, i64>(0),
+            |row| Ok((row.get::<_, bool>(0)?, row.get::<_, bool>(1)?)),
         )
-        .map_err(|error| error.to_string())?
-        != 0;
+        .optional()
+        .map_err(|error| error.to_string())?;
 
-    if !note_exists {
+    let Some((note_is_locked, note_is_deleted)) = note_state else {
+        return Err("Select an active note before attaching a file.".to_string());
+    };
+    if note_is_deleted {
         return Err("Select an active note before attaching a file.".to_string());
     }
+    let key = if note_is_locked {
+        Some(current_lock_key(&lock_state)?)
+    } else {
+        None
+    };
 
     let Some(source_path) = rfd::FileDialog::new()
         .set_title("Attach file")
@@ -1336,9 +1791,23 @@ pub fn attach_file_to_note(
         .unwrap_or("attachment");
     let filename = sanitize_file_name(original_filename);
     let id = attachment_id()?;
-    let stored_filename = format!("{}-{}", id, filename);
+    let stored_filename = if note_is_locked {
+        encrypted_attachment_filename(&id, &filename)
+    } else {
+        format!("{}-{}", id, filename)
+    };
     let stored_path = attachments_dir(&app)?.join(stored_filename);
-    fs::copy(&source_path, &stored_path).map_err(|error| error.to_string())?;
+    let (is_encrypted, encryption_nonce, encrypted_at) = if let Some(key) = key {
+        let plaintext = fs::read(&source_path).map_err(|error| error.to_string())?;
+        let (nonce, ciphertext) = crypto::encrypt_bytes(&key, &plaintext)?;
+        let mut file = fs::File::create(&stored_path).map_err(|error| error.to_string())?;
+        file.write_all(&ciphertext).map_err(|error| error.to_string())?;
+        let _ = file.sync_all();
+        (true, Some(nonce), Some(created_at.clone()))
+    } else {
+        fs::copy(&source_path, &stored_path).map_err(|error| error.to_string())?;
+        (false, None, None)
+    };
 
     let attachment = AttachmentDto {
         id,
@@ -1348,15 +1817,19 @@ pub fn attach_file_to_note(
         stored_path: stored_path.to_string_lossy().to_string(),
         mime_type: mime_type_for(&source_path),
         file_size: metadata.len() as i64,
+        is_encrypted,
+        encryption_nonce,
+        encrypted_at,
         created_at,
     };
 
     connection
         .execute(
             "INSERT INTO attachments (
-                id, note_id, filename, original_path, stored_path, mime_type, file_size, created_at
+                id, note_id, filename, original_path, stored_path, mime_type, file_size,
+                is_encrypted, encryption_nonce, encrypted_at, created_at
              )
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             params![
                 &attachment.id,
                 &attachment.note_id,
@@ -1365,6 +1838,9 @@ pub fn attach_file_to_note(
                 &attachment.stored_path,
                 &attachment.mime_type,
                 attachment.file_size,
+                attachment.is_encrypted as i64,
+                attachment.encryption_nonce.as_deref(),
+                attachment.encrypted_at.as_deref(),
                 &attachment.created_at
             ],
         )
@@ -1375,7 +1851,7 @@ pub fn attach_file_to_note(
 }
 
 #[tauri::command]
-pub fn remove_attachment(state: tauri::State<'_, DbState>, id: String) -> Result<(), String> {
+pub fn remove_attachment(app: AppHandle, state: tauri::State<'_, DbState>, id: String) -> Result<(), String> {
     let connection = connect(&state.path)?;
     create_schema(&connection)?;
     if let Some(attachment) = attachment_by_id(&connection, &id)? {
@@ -1384,38 +1860,57 @@ pub fn remove_attachment(state: tauri::State<'_, DbState>, id: String) -> Result
             .execute("DELETE FROM attachments WHERE id = ?1", params![id])
             .map_err(|error| error.to_string())?;
         let _ = fs::remove_file(attachment.stored_path);
+        if let Ok(directory) = attachment_temp_dir(&app) {
+            let _ = fs::remove_file(directory.join(format!("{}-{}", attachment.id, attachment.filename)));
+        }
         let _ = upsert_search_index_note(&connection, &note_id);
     }
     Ok(())
 }
 
 #[tauri::command]
-pub fn open_attachment(state: tauri::State<'_, DbState>, id: String) -> Result<(), String> {
+pub fn open_attachment(
+    app: AppHandle,
+    state: tauri::State<'_, DbState>,
+    lock_state: tauri::State<'_, LockState>,
+    id: String,
+) -> Result<(), String> {
     let connection = connect(&state.path)?;
     create_schema(&connection)?;
     let Some(attachment) = attachment_by_id(&connection, &id)? else {
         return Err("Attachment not found.".to_string());
     };
 
-    if !Path::new(&attachment.stored_path).exists() {
+    let open_path = if attachment.is_encrypted {
+        let bytes = attachment_bytes(&attachment, &lock_state)?;
+        let temp_path = attachment_temp_dir(&app)?.join(format!("{}-{}", attachment.id, attachment.filename));
+        let mut file = fs::File::create(&temp_path).map_err(|error| error.to_string())?;
+        file.write_all(&bytes).map_err(|error| error.to_string())?;
+        let _ = file.sync_all();
+        temp_path.to_string_lossy().to_string()
+    } else {
+        attachment.stored_path.clone()
+    };
+
+    if !Path::new(&open_path).exists() {
         return Err("Attachment file is missing from local storage.".to_string());
     }
 
     #[cfg(target_os = "windows")]
     let status = Command::new("cmd")
-        .args(["/C", "start", "", &attachment.stored_path])
+        .args(["/C", "start", "", &open_path])
         .status()
         .map_err(|error| error.to_string())?;
 
     #[cfg(target_os = "macos")]
     let status = Command::new("open")
-        .arg(&attachment.stored_path)
+        .arg(&open_path)
         .status()
         .map_err(|error| error.to_string())?;
 
     #[cfg(all(unix, not(target_os = "macos")))]
     let status = Command::new("xdg-open")
-        .arg(&attachment.stored_path)
+        .arg(&open_path)
         .status()
         .map_err(|error| error.to_string())?;
 
@@ -1458,7 +1953,11 @@ pub fn open_external_url(url: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn save_attachment_as(state: tauri::State<'_, DbState>, id: String) -> Result<Option<String>, String> {
+pub fn save_attachment_as(
+    state: tauri::State<'_, DbState>,
+    lock_state: tauri::State<'_, LockState>,
+    id: String,
+) -> Result<Option<String>, String> {
     let connection = connect(&state.path)?;
     create_schema(&connection)?;
     let Some(attachment) = attachment_by_id(&connection, &id)? else {
@@ -1477,13 +1976,15 @@ pub fn save_attachment_as(state: tauri::State<'_, DbState>, id: String) -> Resul
         return Ok(None);
     };
 
-    fs::copy(&attachment.stored_path, &path).map_err(|error| error.to_string())?;
+    let bytes = attachment_bytes(&attachment, &lock_state)?;
+    fs::write(&path, bytes).map_err(|error| error.to_string())?;
     Ok(Some(path.to_string_lossy().to_string()))
 }
 
 #[tauri::command]
 pub fn get_attachment_data_url(
     state: tauri::State<'_, DbState>,
+    lock_state: tauri::State<'_, LockState>,
     id: String,
 ) -> Result<String, String> {
     let connection = connect(&state.path)?;
@@ -1496,7 +1997,7 @@ pub fn get_attachment_data_url(
         return Err("Attachment is not an image.".to_string());
     }
 
-    let bytes = fs::read(&attachment.stored_path).map_err(|error| error.to_string())?;
+    let bytes = attachment_bytes(&attachment, &lock_state)?;
     Ok(format!(
         "data:{};base64,{}",
         attachment.mime_type,

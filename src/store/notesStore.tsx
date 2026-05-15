@@ -44,6 +44,7 @@ type NotesContextValue = {
     options?: { onDecrypted?: () => void; revealDelayMs?: number },
   ) => Promise<void>;
   lockAllNotes: () => Promise<void>;
+  changeLockPassword: () => Promise<void>;
   configureLockPassword: () => Promise<void>;
   importMarkdownNotes: (imports: ParsedMarkdownNote[]) => Promise<number>;
   restoreBackupMerge: (backup: LumoBackup) => Promise<number>;
@@ -580,11 +581,59 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     await ensureLockSession();
   }, [ensureLockSession, lockPasswordConfigured]);
 
+  const changeLockPassword = useCallback(async () => {
+    if (!lockPasswordConfigured) {
+      notify({ kind: "info", title: "Set a lock password first" });
+      return;
+    }
+    const currentPassword = await requestLockPassword(
+      "Change Lock Password",
+      "Enter your current Lock Password.",
+    );
+    if (!currentPassword) return;
+    const newPassword = await requestLockPassword(
+      "New Lock Password",
+      "Enter a new Lock Password. Use at least 8 characters.",
+    );
+    if (!newPassword) return;
+    const confirmation = await requestLockPassword("Confirm New Password", "Re-enter the new Lock Password.");
+    if (newPassword !== confirmation) {
+      notifyError("Lock password not changed", "New passwords do not match.");
+      return;
+    }
+    const confirmed = await confirmDialog({
+      confirmLabel: "Change Password",
+      message: "Changing your lock password will re-encrypt all locked notes and encrypted attachments. Do not close the app during this process.",
+      title: "Change Lock Password",
+    });
+    if (!confirmed) return;
+    const result = await database.changeLockPassword(currentPassword, newPassword);
+    setNotes((current) =>
+      current.map((note) =>
+        note.isLocked
+          ? {
+              ...note,
+              content: "",
+              preview: "",
+              isUnlocked: false,
+            }
+          : note,
+      ),
+    );
+    notify({
+      kind: "success",
+      title: "Lock password changed",
+      message: `${result.changedNotes} locked note${result.changedNotes === 1 ? "" : "s"} and ${result.changedAttachments} attachment${result.changedAttachments === 1 ? "" : "s"} re-encrypted.`,
+    });
+  }, [lockPasswordConfigured, requestLockPassword]);
+
   const lockSelectedNote = useCallback(async (noteId?: string) => {
     const targetNote = noteId ? notes.find((note) => note.id === noteId) : selectedNote;
     if (!targetNote) return;
     if (targetNote.isLocked) {
       await database.updateNote(targetNote);
+      const nextAttachments = await database.encryptNoteAttachments(targetNote.id);
+      setAttachments(nextAttachments);
       setNotes((current) =>
         current.map((note) =>
           note.id === targetNote.id
@@ -605,8 +654,8 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     if (
       noteAttachments.length > 0 &&
       !await confirmDialog({
-          confirmLabel: "Lock Text",
-          message: "This locks the note text. Existing attachment files are not encrypted yet.",
+          confirmLabel: "Encrypt and Lock",
+          message: "This will encrypt the note text and its existing attachment files. If attachment encryption fails, the note will not finish locking.",
           title: "Lock note with attachments",
         })
     ) {
@@ -622,6 +671,8 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       updatedAt: lockedAt,
     };
     await database.lockNote(lockedNote);
+    const nextAttachments = await database.getAttachments();
+    setAttachments(nextAttachments);
     setNotes((current) =>
       current.map((note) =>
         note.id === targetNote.id
@@ -795,12 +846,14 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       }
 
       const existingNoteIds = new Set(notes.map((note) => note.id));
+      const restoredNoteIdByBackupId = new Map<string, string>();
       const notesToCreate = backup.notes.map((incoming) => {
         const backupFolder =
           backup.folders.find((folder) => folder.id === incoming.folderId) ?? null;
         const folder = ensureFolder(backupFolder, incoming.folderName);
         const id = existingNoteIds.has(incoming.id) ? noteId() : incoming.id;
         existingNoteIds.add(id);
+        restoredNoteIdByBackupId.set(incoming.id, id);
         const relationshipTags = backup.noteTags
           .filter((item) => item.noteId === incoming.id)
           .map((item) => item.tag);
@@ -841,10 +894,22 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       for (const note of notesToCreate) {
         await database.createNote(note);
       }
+      const backupAttachments = backup.attachments?.filter((attachment) => typeof attachment.dataBase64 === "string") ?? [];
+      const restoredAttachments = backupAttachments.length
+        ? await database.restoreBackupAttachments(
+            backupAttachments.map((attachment) => ({
+              ...attachment,
+              noteId: restoredNoteIdByBackupId.get(attachment.noteId) ?? attachment.noteId,
+            })),
+          )
+        : [];
 
       setFolders(localFolders);
       setDatabaseTags((current) => uniqueByLower([...current, ...tagsToCreate]).sort((a, b) => a.localeCompare(b)));
       setNotes((current) => [...notesToCreate, ...current]);
+      if (restoredAttachments.length > 0) {
+        setAttachments((current) => [...restoredAttachments, ...current]);
+      }
       setSelectedNoteId(notesToCreate[0]?.id ?? selectedNoteId);
       setActiveViewState("all");
       setActiveFolderIdState(null);
@@ -907,6 +972,10 @@ export function NotesProvider({ children }: { children: ReactNode }) {
 
   const attachFileToSelectedNote = useCallback(async () => {
     if (!selectedNote) return null;
+    if (selectedNote.isLocked && !selectedNote.isUnlocked) {
+      notify({ kind: "info", title: "Unlock this note before attaching files" });
+      return null;
+    }
     flushNoteSave(selectedNote.id);
 
     const createdAt = new Date().toISOString();
@@ -1402,6 +1471,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       lockSelectedNote,
       unlockSelectedNote,
       lockAllNotes,
+      changeLockPassword,
       configureLockPassword,
       importMarkdownNotes,
       restoreBackupMerge,
@@ -1455,6 +1525,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       isSearchLoading,
       importMarkdownNotes,
       lockAllNotes,
+      changeLockPassword,
       lockPasswordConfigured,
       lockSelectedNote,
       moveToTrash,

@@ -30,6 +30,15 @@ export type LockBackupMetadata = {
   encryptionAlgorithm: string;
 };
 
+export type AttachmentBackupPayload = Attachment & {
+  dataBase64: string;
+};
+
+export type PasswordChangeResult = {
+  changedNotes: number;
+  changedAttachments: number;
+};
+
 export async function initializeDatabase() {
   return invoke<DatabaseSnapshot>("initialize_database");
 }
@@ -172,12 +181,28 @@ export async function unlockNote(id: string) {
   return invoke<Note>("unlock_note", { id });
 }
 
+export async function encryptNoteAttachments(noteId: string) {
+  return invoke<Attachment[]>("encrypt_note_attachments", { noteId });
+}
+
+export async function changeLockPassword(currentPassword: string, newPassword: string) {
+  return invoke<PasswordChangeResult>("change_lock_password", { currentPassword, newPassword });
+}
+
 export async function attachFileToNote(noteId: string, createdAt: string) {
   return invoke<Attachment | null>("attach_file_to_note", { noteId, createdAt });
 }
 
 export async function getAttachments() {
   return invoke<Attachment[]>("get_attachments");
+}
+
+export async function getAttachmentBackupPayloads() {
+  return invoke<AttachmentBackupPayload[]>("get_attachment_backup_payloads");
+}
+
+export async function restoreBackupAttachments(attachments: AttachmentBackupPayload[]) {
+  return invoke<Attachment[]>("restore_backup_attachments", { attachments });
 }
 
 export async function removeAttachment(id: string) {

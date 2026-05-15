@@ -511,7 +511,7 @@ function SettingToggle<K extends keyof AppSettings>({
 export function SettingsScreen() {
   const [searchIndexStatus, setSearchIndexStatus] = useState<"idle" | "working" | "done" | "error">("idle");
   const [appVersion, setAppVersion] = useState("");
-  const { configureLockPassword, lockPasswordConfigured } = useNotes();
+  const { changeLockPassword, configureLockPassword, lockPasswordConfigured } = useNotes();
 
   useEffect(() => {
     let mounted = true;
@@ -639,11 +639,12 @@ export function SettingsScreen() {
                   as plaintext, are excluded from the SQLite content index, and remain encrypted in backups.
                 </p>
                 <p className="text-slate-500">
-                  Attachment files are not encrypted yet. Locking a note protects the note text only.
+                  Attachments on locked notes are encrypted at rest. Opening an encrypted attachment creates
+                  a temporary decrypted copy that is cleared when locked sessions are closed or the app restarts.
                 </p>
                 <p className="text-slate-500">
-                  Password recovery is not available. Password changes are disabled until full re-encryption
-                  tooling is added.
+                  Password recovery is not available. Changing the Lock Password re-encrypts locked notes
+                  and encrypted attachments, then closes the current unlocked session.
                 </p>
                 <div className="flex flex-wrap items-center gap-3 pt-2">
                   <span className="text-xs text-slate-500">
@@ -656,6 +657,15 @@ export function SettingsScreen() {
                       onClick={() => void configureLockPassword()}
                     >
                       Set Lock Password
+                    </button>
+                  ) : null}
+                  {lockPasswordConfigured ? (
+                    <button
+                      className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-medium text-slate-200 transition hover:bg-white/[0.07] hover:text-white"
+                      type="button"
+                      onClick={() => void changeLockPassword()}
+                    >
+                      Change Lock Password
                     </button>
                   ) : null}
                 </div>
