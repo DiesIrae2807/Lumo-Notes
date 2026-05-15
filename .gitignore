@@ -3,3 +3,5 @@ dist
 src-tauri/target
 src-tauri/gen
 *.log
+src-tauri/*.md
+src-tauri/lumo-notes-backup-*.json
