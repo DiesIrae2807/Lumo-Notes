@@ -21,6 +21,7 @@ import {
   ItalicIcon,
   LinkIcon,
   LockIcon,
+  LockTransitionIcon,
   NumberedListIcon,
   QuoteIcon,
   UnderlineIcon,
@@ -159,8 +160,10 @@ export function Editor({
   const [isAttachmentBusy, setIsAttachmentBusy] = useState(false);
   const [isFolderMenuOpen, setIsFolderMenuOpen] = useState(false);
   const [isMetadataOpen, setIsMetadataOpen] = useState(false);
+  const [lockAnimationPhase, setLockAnimationPhase] = useState<"idle" | "pending" | "closing">("idle");
   const [isOverflowOpen, setIsOverflowOpen] = useState(false);
   const [isTagMenuOpen, setIsTagMenuOpen] = useState(false);
+  const [isUnlockAnimating, setIsUnlockAnimating] = useState(false);
   const [linkDialog, setLinkDialog] = useState<{
     displayText: string;
     isOpen: boolean;
@@ -451,6 +454,28 @@ export function Editor({
   const isInternalLinkResolved = (title: string) =>
     Boolean(resolveInternalLink(title, notes, activeView === "trash", activeView === "archive"));
 
+  const unlockSelectedNoteWithAnimation = useCallback(async () => {
+    if (!selectedNote) return;
+    setIsUnlockAnimating(false);
+    try {
+      await unlockSelectedNote(undefined, {
+        onDecrypted: () => setIsUnlockAnimating(true),
+        revealDelayMs: 980,
+      });
+    } finally {
+      setIsUnlockAnimating(false);
+    }
+  }, [selectedNote, unlockSelectedNote]);
+
+  const lockSelectedNoteWithAnimation = useCallback(async () => {
+    if (!selectedNote) return;
+    setLockAnimationPhase("idle");
+    await lockSelectedNote();
+    setLockAnimationPhase("pending");
+    window.setTimeout(() => setLockAnimationPhase("closing"), 500);
+    window.setTimeout(() => setLockAnimationPhase("idle"), 1480);
+  }, [lockSelectedNote, selectedNote]);
+
   const exportSelectedNote = async () => {
     if (selectedNote.isLocked && !selectedNote.isUnlocked) {
       notify({ kind: "info", title: "Unlock this note before exporting Markdown" });
@@ -636,7 +661,7 @@ export function Editor({
               className={`grid h-8 w-8 place-items-center rounded-lg transition duration-150 hover:bg-white/[0.05] active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-lumo-teal/60 ${
                 selectedNote.isLocked ? "text-lumo-teal" : "text-slate-500 hover:text-lumo-teal"
               }`}
-              onClick={() => void (selectedNote.isLocked && !selectedNote.isUnlocked ? unlockSelectedNote() : lockSelectedNote())}
+              onClick={() => void (selectedNote.isLocked && !selectedNote.isUnlocked ? unlockSelectedNoteWithAnimation() : lockSelectedNoteWithAnimation())}
               title={selectedNote.isLocked && !selectedNote.isUnlocked ? "Unlock note" : "Lock note"}
               aria-label={selectedNote.isLocked && !selectedNote.isUnlocked ? "Unlock note" : "Lock note"}
               aria-pressed={selectedNote.isLocked}
@@ -716,8 +741,13 @@ export function Editor({
       {selectedNote.isLocked && !selectedNote.isUnlocked ? (
         <article className="grid flex-1 place-items-center px-6 py-10 text-center">
           <div className="max-w-md rounded-2xl border border-white/10 bg-white/[0.035] p-6">
-            <div className="mx-auto grid h-12 w-12 place-items-center text-lumo-teal">
-              <LockIcon size={42} />
+            <div
+              className="locked-note-unlock-mark mx-auto grid h-12 w-12 place-items-center text-lumo-teal"
+              data-locking={lockAnimationPhase === "closing" ? "true" : undefined}
+              data-locking-pending={lockAnimationPhase !== "idle" ? "true" : undefined}
+              data-unlocking={isUnlockAnimating ? "true" : undefined}
+            >
+              <LockTransitionIcon size={42} />
             </div>
             <h2 className="mt-5 text-lg font-semibold text-white">
               {selectedNote.title || "Locked note"}
@@ -727,7 +757,7 @@ export function Editor({
             </p>
             <button
               className="mt-5 rounded-xl bg-lumo-violet px-4 py-2 text-sm font-medium text-white transition hover:bg-lumo-violet/90 active:scale-95"
-              onClick={() => void unlockSelectedNote()}
+              onClick={() => void unlockSelectedNoteWithAnimation()}
             >
               Unlock Note
             </button>

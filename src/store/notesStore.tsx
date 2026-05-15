@@ -39,7 +39,10 @@ type NotesContextValue = {
   lockPasswordConfigured: boolean;
   createNote: (title?: string, options?: { folderId?: string | null; keepCurrentView?: boolean }) => void;
   lockSelectedNote: (noteId?: string) => Promise<void>;
-  unlockSelectedNote: (noteId?: string) => Promise<void>;
+  unlockSelectedNote: (
+    noteId?: string,
+    options?: { onDecrypted?: () => void; revealDelayMs?: number },
+  ) => Promise<void>;
   lockAllNotes: () => Promise<void>;
   configureLockPassword: () => Promise<void>;
   importMarkdownNotes: (imports: ParsedMarkdownNote[]) => Promise<number>;
@@ -636,12 +639,19 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     notify({ kind: "success", title: "Note locked" });
   }, [attachments, ensureLockSession, flushNoteSave, notes, selectedNote]);
 
-  const unlockSelectedNote = useCallback(async (noteId?: string) => {
+  const unlockSelectedNote = useCallback(async (
+    noteId?: string,
+    options?: { onDecrypted?: () => void; revealDelayMs?: number },
+  ) => {
     const targetNote = noteId ? notes.find((note) => note.id === noteId) : selectedNote;
     if (!targetNote?.isLocked) return;
     const ready = await ensureLockSession();
     if (!ready) return;
     const unlocked = await database.unlockNote(targetNote.id);
+    options?.onDecrypted?.();
+    if (options?.revealDelayMs) {
+      await new Promise((resolve) => window.setTimeout(resolve, options.revealDelayMs));
+    }
     setNotes((current) =>
       current.map((note) => (note.id === unlocked.id ? { ...unlocked, isUnlocked: true } : note)),
     );

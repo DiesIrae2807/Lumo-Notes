@@ -2,6 +2,51 @@
 @tailwind components;
 @tailwind utilities;
 
+.locked-note-unlock-mark {
+  transform-origin: center;
+}
+
+.locked-note-unlock-mark .lock-transition-shackle {
+  transform-box: fill-box;
+  transform-origin: 18% 100%;
+  transform: translate3d(0, 0, 0) rotate(0deg);
+  transition: transform 760ms cubic-bezier(0.2, 0.82, 0.18, 1);
+  will-change: transform;
+}
+
+.locked-note-unlock-mark[data-unlocking="true"] .lock-transition-shackle {
+  transform: translate3d(1px, -0.7px, 0) rotate(-30deg);
+}
+
+.locked-note-unlock-mark[data-locking-pending="true"] .lock-transition-shackle {
+  transform: translate3d(1px, -0.7px, 0) rotate(-30deg);
+  transition: none;
+}
+
+.locked-note-unlock-mark[data-locking="true"] .lock-transition-shackle {
+  animation: lumo-shackle-close 980ms cubic-bezier(0.2, 0.82, 0.18, 1) forwards;
+}
+
+@keyframes lumo-shackle-close {
+  from {
+    transform: translate3d(1px, -0.7px, 0) rotate(-30deg);
+  }
+
+  to {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .locked-note-unlock-mark .lock-transition-shackle {
+    transition-duration: 1ms;
+  }
+
+  .locked-note-unlock-mark[data-locking="true"] .lock-transition-shackle {
+    animation-duration: 1ms;
+  }
+}
+
 @layer base {
   :root {
     color-scheme: dark;
