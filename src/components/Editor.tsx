@@ -20,9 +20,11 @@ import {
   HighlightIcon,
   ItalicIcon,
   LinkIcon,
+  LockIcon,
   NumberedListIcon,
   QuoteIcon,
   UnderlineIcon,
+  UnlockIcon,
 } from "./icons/AppIcons";
 import { useNotes } from "../store/notesStore";
 import { useSettings } from "../store/settingsStore";
@@ -132,7 +134,6 @@ export function Editor({
     createNote,
     createTag,
     folders,
-    lockAllNotes,
     lockSelectedNote,
     moveToTrash,
     notes,
@@ -630,6 +631,19 @@ export function Editor({
           >
             <FocusIcon active={isFocusMode} />
           </button>
+          {!selectedNote.isDeleted ? (
+            <button
+              className={`grid h-8 w-8 place-items-center rounded-lg transition duration-150 hover:bg-white/[0.05] active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-lumo-teal/60 ${
+                selectedNote.isLocked ? "text-lumo-teal" : "text-slate-500 hover:text-lumo-teal"
+              }`}
+              onClick={() => void (selectedNote.isLocked && !selectedNote.isUnlocked ? unlockSelectedNote() : lockSelectedNote())}
+              title={selectedNote.isLocked && !selectedNote.isUnlocked ? "Unlock note" : "Lock note"}
+              aria-label={selectedNote.isLocked && !selectedNote.isUnlocked ? "Unlock note" : "Lock note"}
+              aria-pressed={selectedNote.isLocked}
+            >
+              {selectedNote.isLocked && !selectedNote.isUnlocked ? <UnlockIcon size={18} /> : <LockIcon size={18} />}
+            </button>
+          ) : null}
           {selectedNote.isDeleted ? (
             <>
               <button
@@ -672,24 +686,6 @@ export function Editor({
                     className="w-full rounded-lg px-3 py-2 text-left text-xs text-slate-300 transition hover:bg-white/[0.06] hover:text-white"
                     onClick={() => {
                       setIsOverflowOpen(false);
-                      void (selectedNote.isLocked && !selectedNote.isUnlocked ? unlockSelectedNote() : lockSelectedNote());
-                    }}
-                  >
-                    {selectedNote.isLocked && !selectedNote.isUnlocked ? "Unlock Note" : "Lock Note"}
-                  </button>
-                  <button
-                    className="w-full rounded-lg px-3 py-2 text-left text-xs text-slate-300 transition hover:bg-white/[0.06] hover:text-white"
-                    onClick={() => {
-                      setIsOverflowOpen(false);
-                      void lockAllNotes();
-                    }}
-                  >
-                    Lock All
-                  </button>
-                  <button
-                    className="w-full rounded-lg px-3 py-2 text-left text-xs text-slate-300 transition hover:bg-white/[0.06] hover:text-white"
-                    onClick={() => {
-                      setIsOverflowOpen(false);
                       if (selectedNote.isArchived) {
                         unarchiveNote(selectedNote.id);
                         notify({ kind: "success", title: "Note unarchived" });
@@ -720,8 +716,8 @@ export function Editor({
       {selectedNote.isLocked && !selectedNote.isUnlocked ? (
         <article className="grid flex-1 place-items-center px-6 py-10 text-center">
           <div className="max-w-md rounded-2xl border border-white/10 bg-white/[0.035] p-6">
-            <div className="mx-auto grid h-12 w-12 place-items-center rounded-2xl border border-lumo-teal/25 bg-lumo-teal/10 text-lumo-teal">
-              <span aria-hidden="true">Lock</span>
+            <div className="mx-auto grid h-12 w-12 place-items-center text-lumo-teal">
+              <LockIcon size={42} />
             </div>
             <h2 className="mt-5 text-lg font-semibold text-white">
               {selectedNote.title || "Locked note"}

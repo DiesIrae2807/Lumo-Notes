@@ -150,6 +150,26 @@ export function LinkIcon(props: IconProps) {
   );
 }
 
+export function LockIcon(props: IconProps) {
+  return (
+    <SvgIcon {...props}>
+      <rect height="9.5" rx="2.4" width="12.5" x="5.75" y="10.25" />
+      <path d="M8.4 10.25V8.1a3.6 3.6 0 0 1 7.2 0v2.15" />
+      <path d="M12 14.1v2.1" />
+    </SvgIcon>
+  );
+}
+
+export function UnlockIcon(props: IconProps) {
+  return (
+    <SvgIcon {...props}>
+      <rect height="9.5" rx="2.4" width="12.5" x="5.75" y="10.25" />
+      <path d="M8.4 10.25V8.1a3.6 3.6 0 0 1 6.4-2.25" />
+      <path d="M12 14.1v2.1" />
+    </SvgIcon>
+  );
+}
+
 export function NumberedListIcon(props: IconProps) {
   return (
     <SvgIcon {...props}>

@@ -93,6 +93,7 @@ export function NotesList() {
     filteredNotes,
     folders,
     forceSaveSelectedNote,
+    lockSelectedNote,
     moveToTrash,
     notes,
     permanentlyDeleteNote,
@@ -177,7 +178,7 @@ export function NotesList() {
     event.preventDefault();
     event.stopPropagation();
     const menuWidth = 190;
-    const menuHeight = note.isDeleted ? 136 : 144;
+    const menuHeight = note.isDeleted || (note.isLocked && !note.isUnlocked) ? 136 : 184;
     setContextMenu({
       left: Math.min(event.clientX, window.innerWidth - menuWidth - 10),
       note,
@@ -237,6 +238,11 @@ export function NotesList() {
     forceSaveSelectedNote();
     selectNote(note.id);
     window.setTimeout(() => window.dispatchEvent(new Event("lumo-focus-note-title")), 0);
+  };
+
+  const lockNote = async (note: Note) => {
+    selectNote(note.id);
+    await lockSelectedNote(note.id);
   };
 
   const emptyState = (() => {
@@ -427,6 +433,17 @@ export function NotesList() {
           >
             Export Markdown
           </button>
+          {!contextMenu.note.isDeleted && !(contextMenu.note.isLocked && !contextMenu.note.isUnlocked) ? (
+            <button
+              className="w-full rounded-lg px-3 py-2 text-left text-slate-200 transition hover:bg-white/[0.06] hover:text-white"
+              onClick={() => {
+                void lockNote(contextMenu.note);
+                setContextMenu(null);
+              }}
+            >
+              Lock note
+            </button>
+          ) : null}
           {contextMenu.note.isDeleted ? (
             <button
               className="w-full rounded-lg px-3 py-2 text-left text-slate-200 transition hover:bg-white/[0.06] hover:text-white"

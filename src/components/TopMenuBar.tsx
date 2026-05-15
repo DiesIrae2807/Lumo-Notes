@@ -55,7 +55,6 @@ export function TopMenuBar({ onExit }: { onExit: () => void }) {
     folders,
     forceSaveSelectedNote,
     importMarkdownNotes,
-    lockAllNotes,
     lockSelectedNote,
     moveToTrash,
     notes,
@@ -278,10 +277,6 @@ export function TopMenuBar({ onExit }: { onExit: () => void }) {
         disabled: !selectedNote || selectedNote.isDeleted,
         onSelect: () => selectedNote?.isLocked && !selectedNote.isUnlocked ? unlockSelectedNote() : lockSelectedNote(),
       },
-      {
-        label: "Lock All",
-        onSelect: lockAllNotes,
-      },
       { separator: true },
       {
         label: "Export Selected Note...",
@@ -328,7 +323,6 @@ export function TopMenuBar({ onExit }: { onExit: () => void }) {
       exportSelected,
       forceSaveSelectedNote,
       importMarkdown,
-      lockAllNotes,
       lockSelectedNote,
       unlockSelectedNote,
       onExit,

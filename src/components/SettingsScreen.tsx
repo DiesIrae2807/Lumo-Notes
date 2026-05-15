@@ -511,7 +511,7 @@ function SettingToggle<K extends keyof AppSettings>({
 export function SettingsScreen() {
   const [searchIndexStatus, setSearchIndexStatus] = useState<"idle" | "working" | "done" | "error">("idle");
   const [appVersion, setAppVersion] = useState("");
-  const { configureLockPassword, lockAllNotes, lockPasswordConfigured } = useNotes();
+  const { configureLockPassword, lockPasswordConfigured } = useNotes();
 
   useEffect(() => {
     let mounted = true;
@@ -658,13 +658,6 @@ export function SettingsScreen() {
                       Set Lock Password
                     </button>
                   ) : null}
-                  <button
-                    className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-medium text-slate-200 transition hover:bg-white/[0.07] hover:text-white"
-                    type="button"
-                    onClick={() => void lockAllNotes()}
-                  >
-                    Lock all unlocked notes
-                  </button>
                 </div>
               </div>
             </SettingsCard>

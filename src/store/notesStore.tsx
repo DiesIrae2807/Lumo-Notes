@@ -38,8 +38,8 @@ type NotesContextValue = {
   searchSnippets: Record<string, string>;
   lockPasswordConfigured: boolean;
   createNote: (title?: string, options?: { folderId?: string | null; keepCurrentView?: boolean }) => void;
-  lockSelectedNote: () => Promise<void>;
-  unlockSelectedNote: () => Promise<void>;
+  lockSelectedNote: (noteId?: string) => Promise<void>;
+  unlockSelectedNote: (noteId?: string) => Promise<void>;
   lockAllNotes: () => Promise<void>;
   configureLockPassword: () => Promise<void>;
   importMarkdownNotes: (imports: ParsedMarkdownNote[]) => Promise<number>;
@@ -577,13 +577,14 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     await ensureLockSession();
   }, [ensureLockSession, lockPasswordConfigured]);
 
-  const lockSelectedNote = useCallback(async () => {
-    if (!selectedNote) return;
-    if (selectedNote.isLocked) {
-      await database.updateNote(selectedNote);
+  const lockSelectedNote = useCallback(async (noteId?: string) => {
+    const targetNote = noteId ? notes.find((note) => note.id === noteId) : selectedNote;
+    if (!targetNote) return;
+    if (targetNote.isLocked) {
+      await database.updateNote(targetNote);
       setNotes((current) =>
         current.map((note) =>
-          note.id === selectedNote.id
+          note.id === targetNote.id
             ? {
                 ...note,
                 content: "",
@@ -596,8 +597,8 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       notify({ kind: "info", title: "Note locked" });
       return;
     }
-    flushNoteSave(selectedNote.id);
-    const noteAttachments = attachments.filter((attachment) => attachment.noteId === selectedNote.id);
+    flushNoteSave(targetNote.id);
+    const noteAttachments = attachments.filter((attachment) => attachment.noteId === targetNote.id);
     if (
       noteAttachments.length > 0 &&
       !await confirmDialog({
@@ -612,7 +613,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     if (!ready) return;
     const lockedAt = new Date().toISOString();
     const lockedNote: Note = {
-      ...selectedNote,
+      ...targetNote,
       isLocked: true,
       lockedAt,
       updatedAt: lockedAt,
@@ -620,7 +621,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     await database.lockNote(lockedNote);
     setNotes((current) =>
       current.map((note) =>
-        note.id === selectedNote.id
+        note.id === targetNote.id
           ? {
               ...lockedNote,
               content: "",
@@ -633,18 +634,19 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       ),
     );
     notify({ kind: "success", title: "Note locked" });
-  }, [attachments, ensureLockSession, flushNoteSave, selectedNote]);
+  }, [attachments, ensureLockSession, flushNoteSave, notes, selectedNote]);
 
-  const unlockSelectedNote = useCallback(async () => {
-    if (!selectedNote?.isLocked) return;
+  const unlockSelectedNote = useCallback(async (noteId?: string) => {
+    const targetNote = noteId ? notes.find((note) => note.id === noteId) : selectedNote;
+    if (!targetNote?.isLocked) return;
     const ready = await ensureLockSession();
     if (!ready) return;
-    const unlocked = await database.unlockNote(selectedNote.id);
+    const unlocked = await database.unlockNote(targetNote.id);
     setNotes((current) =>
       current.map((note) => (note.id === unlocked.id ? { ...unlocked, isUnlocked: true } : note)),
     );
     notify({ kind: "success", title: "Note unlocked for this session" });
-  }, [ensureLockSession, selectedNote]);
+  }, [ensureLockSession, notes, selectedNote]);
 
   const lockAllNotes = useCallback(async () => {
     flushAllPendingSaves();
