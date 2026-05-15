@@ -66,7 +66,9 @@ export function NoteCard({
   searchQuery?: string;
   searchSnippet?: string;
 }) {
-  const preview = searchSnippet || getPlainTextPreview(note.preview || note.content, 110);
+  const preview = note.isLocked && !note.isUnlocked
+    ? "Encrypted note"
+    : searchSnippet || getPlainTextPreview(note.preview || note.content, 110);
   const folderChip = note.folderName ?? "Uncategorized";
 
   return (

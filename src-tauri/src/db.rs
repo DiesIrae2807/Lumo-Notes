@@ -1,9 +1,11 @@
+use crate::crypto;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
     path::{Path, PathBuf},
     process::Command,
+    sync::Mutex,
     time::{SystemTime, UNIX_EPOCH},
 };
 use tauri::{AppHandle, Manager};
@@ -11,6 +13,11 @@ use tauri::{AppHandle, Manager};
 #[derive(Clone)]
 pub struct DbState {
     pub path: PathBuf,
+}
+
+#[derive(Default)]
+pub struct LockState {
+    pub key: Mutex<Option<[u8; 32]>>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -35,6 +42,11 @@ pub struct NoteDto {
     pub is_favorite: bool,
     pub is_deleted: bool,
     pub is_archived: bool,
+    pub is_locked: bool,
+    pub encrypted_content: Option<String>,
+    pub encrypted_preview: Option<String>,
+    pub encryption_nonce: Option<String>,
+    pub locked_at: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -59,6 +71,7 @@ pub struct DatabaseSnapshot {
     pub folders: Vec<FolderDto>,
     pub tags: Vec<String>,
     pub attachments: Vec<AttachmentDto>,
+    pub lock_password_configured: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -75,6 +88,25 @@ pub struct SearchResultDto {
     pub note_id: String,
     pub score: f64,
     pub snippet: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LockMetadataDto {
+    pub configured: bool,
+    pub kdf_algorithm: Option<String>,
+    pub kdf_params: Option<String>,
+    pub encryption_algorithm: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct LockBackupMetadataDto {
+    pub salt: String,
+    pub verifier: String,
+    pub kdf_algorithm: String,
+    pub kdf_params: String,
+    pub encryption_algorithm: String,
 }
 
 fn connect(path: &PathBuf) -> Result<Connection, String> {
@@ -115,6 +147,11 @@ fn create_schema(connection: &Connection) -> Result<(), String> {
                 is_favorite INTEGER NOT NULL DEFAULT 0,
                 is_deleted INTEGER NOT NULL DEFAULT 0,
                 is_archived INTEGER NOT NULL DEFAULT 0,
+                is_locked INTEGER NOT NULL DEFAULT 0,
+                encrypted_content TEXT,
+                encrypted_preview TEXT,
+                encryption_nonce TEXT,
+                locked_at TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 FOREIGN KEY(folder_id) REFERENCES folders(id)
@@ -186,6 +223,39 @@ fn migrate_schema(connection: &Connection) -> Result<(), String> {
             .map_err(|error| error.to_string())?;
     }
 
+    if !column_exists(connection, "notes", "is_locked")? {
+        connection
+            .execute(
+                "ALTER TABLE notes ADD COLUMN is_locked INTEGER NOT NULL DEFAULT 0",
+                [],
+            )
+            .map_err(|error| error.to_string())?;
+    }
+
+    if !column_exists(connection, "notes", "encrypted_content")? {
+        connection
+            .execute("ALTER TABLE notes ADD COLUMN encrypted_content TEXT", [])
+            .map_err(|error| error.to_string())?;
+    }
+
+    if !column_exists(connection, "notes", "encrypted_preview")? {
+        connection
+            .execute("ALTER TABLE notes ADD COLUMN encrypted_preview TEXT", [])
+            .map_err(|error| error.to_string())?;
+    }
+
+    if !column_exists(connection, "notes", "encryption_nonce")? {
+        connection
+            .execute("ALTER TABLE notes ADD COLUMN encryption_nonce TEXT", [])
+            .map_err(|error| error.to_string())?;
+    }
+
+    if !column_exists(connection, "notes", "locked_at")? {
+        connection
+            .execute("ALTER TABLE notes ADD COLUMN locked_at TEXT", [])
+            .map_err(|error| error.to_string())?;
+    }
+
     Ok(())
 }
 
@@ -250,9 +320,11 @@ fn insert_note(connection: &Connection, note: &NoteDto) -> Result<(), String> {
         .execute(
             "INSERT INTO notes (
                 id, title, content, preview, folder_id, folder_name,
-                is_pinned, is_favorite, is_deleted, is_archived, created_at, updated_at
+                is_pinned, is_favorite, is_deleted, is_archived, is_locked,
+                encrypted_content, encrypted_preview, encryption_nonce, locked_at,
+                created_at, updated_at
              )
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
             params![
                 note.id,
                 note.title,
@@ -264,6 +336,11 @@ fn insert_note(connection: &Connection, note: &NoteDto) -> Result<(), String> {
                 note.is_favorite as i64,
                 note.is_deleted as i64,
                 note.is_archived as i64,
+                note.is_locked as i64,
+                note.encrypted_content.as_deref(),
+                note.encrypted_preview.as_deref(),
+                note.encryption_nonce.as_deref(),
+                note.locked_at.as_deref(),
                 note.created_at,
                 note.updated_at
             ],
@@ -324,13 +401,95 @@ fn ensure_uncategorized_folder(connection: &Connection, updated_at: &str) -> Res
     Ok(())
 }
 
+fn setting_value(connection: &Connection, key: &str) -> Result<Option<String>, String> {
+    connection
+        .query_row(
+            "SELECT value FROM app_settings WHERE key = ?1 LIMIT 1",
+            params![key],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|error| error.to_string())
+}
+
+fn set_setting_value(
+    connection: &Connection,
+    key: &str,
+    value: &str,
+    updated_at: &str,
+) -> Result<(), String> {
+    connection
+        .execute(
+            "INSERT INTO app_settings (key, value, updated_at)
+             VALUES (?1, ?2, ?3)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+            params![key, value, updated_at],
+        )
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+fn lock_password_configured(connection: &Connection) -> Result<bool, String> {
+    Ok(setting_value(connection, "lock.verifier")?.is_some()
+        && setting_value(connection, "lock.salt")?.is_some())
+}
+
+fn lock_metadata_from_connection(connection: &Connection) -> Result<LockMetadataDto, String> {
+    Ok(LockMetadataDto {
+        configured: lock_password_configured(connection)?,
+        kdf_algorithm: setting_value(connection, "lock.kdf")?,
+        kdf_params: setting_value(connection, "lock.kdfParams")?,
+        encryption_algorithm: setting_value(connection, "lock.algorithm")?,
+    })
+}
+
+fn lock_backup_metadata_from_connection(
+    connection: &Connection,
+) -> Result<Option<LockBackupMetadataDto>, String> {
+    if !lock_password_configured(connection)? {
+        return Ok(None);
+    }
+    Ok(Some(LockBackupMetadataDto {
+        salt: setting_value(connection, "lock.salt")?.unwrap_or_default(),
+        verifier: setting_value(connection, "lock.verifier")?.unwrap_or_default(),
+        kdf_algorithm: setting_value(connection, "lock.kdf")?
+            .unwrap_or_else(|| crypto::KDF_ALGORITHM.to_string()),
+        kdf_params: setting_value(connection, "lock.kdfParams")?
+            .unwrap_or_else(|| crypto::KDF_PARAMS.to_string()),
+        encryption_algorithm: setting_value(connection, "lock.algorithm")?
+            .unwrap_or_else(|| crypto::ENCRYPTION_ALGORITHM.to_string()),
+    }))
+}
+
+fn current_lock_key(lock_state: &tauri::State<'_, LockState>) -> Result<[u8; 32], String> {
+    lock_state
+        .key
+        .lock()
+        .map_err(|_| "Lock session is unavailable.".to_string())?
+        .ok_or_else(|| "Unlock Lumo Notes with your lock password first.".to_string())
+}
+
+fn verify_password(connection: &Connection, password: &str) -> Result<[u8; 32], String> {
+    let salt = setting_value(connection, "lock.salt")?
+        .ok_or_else(|| "Set a lock password first.".to_string())?;
+    let verifier = setting_value(connection, "lock.verifier")?
+        .ok_or_else(|| "Set a lock password first.".to_string())?;
+    let key = crypto::derive_key(password, &salt)?;
+    if crypto::verifier_for_key(&key) != verifier {
+        return Err("Wrong lock password.".to_string());
+    }
+    Ok(key)
+}
+
 fn get_notes_from_connection(connection: &Connection) -> Result<Vec<NoteDto>, String> {
     let mut statement = connection
         .prepare(
             "
             SELECT
                 id, title, content, preview, folder_id, folder_name,
-                is_pinned, is_favorite, is_deleted, is_archived, created_at, updated_at
+                is_pinned, is_favorite, is_deleted, is_archived, is_locked,
+                encrypted_content, encrypted_preview, encryption_nonce, locked_at,
+                created_at, updated_at
             FROM notes
             ORDER BY updated_at DESC
             ",
@@ -342,19 +501,25 @@ fn get_notes_from_connection(connection: &Connection) -> Result<Vec<NoteDto>, St
             let note_id: String = row.get(0)?;
             let tags = get_tags_for_note(connection, &note_id)?;
 
+            let is_locked = row.get::<_, i64>(10)? != 0;
             Ok(NoteDto {
                 id: note_id,
                 title: row.get(1)?,
-                content: row.get(2)?,
-                preview: row.get(3)?,
+                content: if is_locked { String::new() } else { row.get(2)? },
+                preview: if is_locked { String::new() } else { row.get(3)? },
                 folder_id: row.get(4)?,
                 folder_name: row.get(5)?,
                 is_pinned: row.get::<_, i64>(6)? != 0,
                 is_favorite: row.get::<_, i64>(7)? != 0,
                 is_deleted: row.get::<_, i64>(8)? != 0,
                 is_archived: row.get::<_, i64>(9)? != 0,
-                created_at: row.get(10)?,
-                updated_at: row.get(11)?,
+                is_locked,
+                encrypted_content: row.get(11)?,
+                encrypted_preview: row.get(12)?,
+                encryption_nonce: row.get(13)?,
+                locked_at: row.get(14)?,
+                created_at: row.get(15)?,
+                updated_at: row.get(16)?,
                 tags,
             })
         })
@@ -476,7 +641,7 @@ fn upsert_search_index_note(connection: &Connection, note_id: &str) -> Result<()
     let note = connection
         .query_row(
             "
-            SELECT id, title, content, preview, folder_name
+            SELECT id, title, content, preview, folder_name, is_locked
             FROM notes
             WHERE id = ?1
             ",
@@ -488,6 +653,7 @@ fn upsert_search_index_note(connection: &Connection, note_id: &str) -> Result<()
                     row.get::<_, String>(2)?,
                     row.get::<_, String>(3)?,
                     row.get::<_, String>(4)?,
+                    row.get::<_, i64>(5)? != 0,
                 ))
             },
         )
@@ -498,20 +664,22 @@ fn upsert_search_index_note(connection: &Connection, note_id: &str) -> Result<()
         .execute("DELETE FROM notes_fts WHERE note_id = ?1", params![note_id])
         .map_err(|error| error.to_string())?;
 
-    if let Some((id, title, content, preview, folder_name)) = note {
+    if let Some((id, title, content, preview, folder_name, is_locked)) = note {
         let tags = get_tags_for_note(connection, &id)
             .map_err(|error| error.to_string())?
             .join(" ");
         let attachments = get_attachment_names_for_note(connection, &id)
             .map_err(|error| error.to_string())?
             .join(" ");
+        let safe_preview = if is_locked { "" } else { preview.as_str() };
+        let safe_content = if is_locked { "" } else { content.as_str() };
         connection
             .execute(
                 "
                 INSERT INTO notes_fts (note_id, title, preview, content, folder_name, tags, attachments)
                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
                 ",
-                params![id, title, preview, content, folder_name, tags, attachments],
+                params![id, title, safe_preview, safe_content, folder_name, tags, attachments],
             )
             .map_err(|error| error.to_string())?;
     }
@@ -602,6 +770,10 @@ fn unix_millis() -> Result<u128, String> {
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_millis())
         .map_err(|error| error.to_string())
+}
+
+fn chrono_like_now() -> Result<String, String> {
+    Ok(format!("{}Z", unix_millis()?))
 }
 
 fn attachment_id() -> Result<String, String> {
@@ -766,12 +938,14 @@ pub fn initialize_database(state: tauri::State<'_, DbState>) -> Result<DatabaseS
         folders: get_folders_from_connection(&connection)?,
         tags: get_tags_from_connection(&connection)?,
         attachments: get_attachments_from_connection(&connection)?,
+        lock_password_configured: lock_password_configured(&connection)?,
     })
 }
 
 #[tauri::command]
 pub fn get_notes(state: tauri::State<'_, DbState>) -> Result<Vec<NoteDto>, String> {
     let connection = connect(&state.path)?;
+    create_schema(&connection)?;
     get_notes_from_connection(&connection)
 }
 
@@ -792,6 +966,243 @@ pub fn get_attachments(state: tauri::State<'_, DbState>) -> Result<Vec<Attachmen
     let connection = connect(&state.path)?;
     create_schema(&connection)?;
     get_attachments_from_connection(&connection)
+}
+
+#[tauri::command]
+pub fn get_lock_metadata(state: tauri::State<'_, DbState>) -> Result<LockMetadataDto, String> {
+    let connection = connect(&state.path)?;
+    create_schema(&connection)?;
+    lock_metadata_from_connection(&connection)
+}
+
+#[tauri::command]
+pub fn get_lock_backup_metadata(
+    state: tauri::State<'_, DbState>,
+) -> Result<Option<LockBackupMetadataDto>, String> {
+    let connection = connect(&state.path)?;
+    create_schema(&connection)?;
+    lock_backup_metadata_from_connection(&connection)
+}
+
+#[tauri::command]
+pub fn restore_lock_backup_metadata(
+    state: tauri::State<'_, DbState>,
+    metadata: LockBackupMetadataDto,
+) -> Result<(), String> {
+    let connection = connect(&state.path)?;
+    create_schema(&connection)?;
+    if lock_password_configured(&connection)? {
+        return Ok(());
+    }
+    let now = chrono_like_now()?;
+    set_setting_value(&connection, "lock.salt", &metadata.salt, &now)?;
+    set_setting_value(&connection, "lock.verifier", &metadata.verifier, &now)?;
+    set_setting_value(&connection, "lock.kdf", &metadata.kdf_algorithm, &now)?;
+    set_setting_value(&connection, "lock.kdfParams", &metadata.kdf_params, &now)?;
+    set_setting_value(&connection, "lock.algorithm", &metadata.encryption_algorithm, &now)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn setup_lock_password(
+    state: tauri::State<'_, DbState>,
+    lock_state: tauri::State<'_, LockState>,
+    password: String,
+) -> Result<LockMetadataDto, String> {
+    if password.len() < 8 {
+        return Err("Use at least 8 characters for the lock password.".to_string());
+    }
+    let connection = connect(&state.path)?;
+    create_schema(&connection)?;
+    if lock_password_configured(&connection)? {
+        return Err("A lock password is already configured.".to_string());
+    }
+
+    let now = chrono_like_now()?;
+    let salt = crypto::random_base64(16);
+    let key = crypto::derive_key(&password, &salt)?;
+    let verifier = crypto::verifier_for_key(&key);
+    set_setting_value(&connection, "lock.salt", &salt, &now)?;
+    set_setting_value(&connection, "lock.verifier", &verifier, &now)?;
+    set_setting_value(&connection, "lock.kdf", crypto::KDF_ALGORITHM, &now)?;
+    set_setting_value(&connection, "lock.kdfParams", crypto::KDF_PARAMS, &now)?;
+    set_setting_value(&connection, "lock.algorithm", crypto::ENCRYPTION_ALGORITHM, &now)?;
+    *lock_state
+        .key
+        .lock()
+        .map_err(|_| "Lock session is unavailable.".to_string())? = Some(key);
+    lock_metadata_from_connection(&connection)
+}
+
+#[tauri::command]
+pub fn unlock_lock_session(
+    state: tauri::State<'_, DbState>,
+    lock_state: tauri::State<'_, LockState>,
+    password: String,
+) -> Result<(), String> {
+    let connection = connect(&state.path)?;
+    create_schema(&connection)?;
+    let key = verify_password(&connection, &password)?;
+    *lock_state
+        .key
+        .lock()
+        .map_err(|_| "Lock session is unavailable.".to_string())? = Some(key);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn lock_all_notes(lock_state: tauri::State<'_, LockState>) -> Result<(), String> {
+    *lock_state
+        .key
+        .lock()
+        .map_err(|_| "Lock session is unavailable.".to_string())? = None;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn lock_note(
+    state: tauri::State<'_, DbState>,
+    lock_state: tauri::State<'_, LockState>,
+    note: NoteDto,
+) -> Result<(), String> {
+    let connection = connect(&state.path)?;
+    create_schema(&connection)?;
+    if !lock_password_configured(&connection)? {
+        return Err("Set a lock password first.".to_string());
+    }
+    let key = current_lock_key(&lock_state)?;
+    let locked_at = chrono_like_now()?;
+    let (content_nonce, encrypted_content) = crypto::encrypt_string(&key, &note.content)?;
+    let (preview_nonce, encrypted_preview) = crypto::encrypt_string(&key, &note.preview)?;
+    let nonce = format!("{}:{}", content_nonce, preview_nonce);
+    let changed_rows = connection
+        .execute(
+            "UPDATE notes
+             SET title = ?2, content = '', preview = '', folder_id = ?3, folder_name = ?4,
+                 is_pinned = ?5, is_favorite = ?6, is_deleted = ?7, is_archived = ?8,
+                 is_locked = 1, encrypted_content = ?9, encrypted_preview = ?10,
+                 encryption_nonce = ?11, locked_at = ?12, updated_at = ?13
+             WHERE id = ?1",
+            params![
+                note.id,
+                note.title,
+                note.folder_id,
+                note.folder_name,
+                note.is_pinned as i64,
+                note.is_favorite as i64,
+                note.is_deleted as i64,
+                note.is_archived as i64,
+                encrypted_content,
+                encrypted_preview,
+                nonce,
+                locked_at,
+                note.updated_at
+            ],
+        )
+        .map_err(|error| error.to_string())?;
+    if changed_rows == 0 {
+        return Err("Note no longer exists in local storage.".to_string());
+    }
+    replace_note_tags(&connection, &note)?;
+    let _ = upsert_search_index_note(&connection, &note.id);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn unlock_note(
+    state: tauri::State<'_, DbState>,
+    lock_state: tauri::State<'_, LockState>,
+    id: String,
+) -> Result<NoteDto, String> {
+    let connection = connect(&state.path)?;
+    create_schema(&connection)?;
+    let key = current_lock_key(&lock_state)?;
+    let note = connection
+        .query_row(
+            "
+            SELECT
+                id, title, folder_id, folder_name, is_pinned, is_favorite, is_deleted, is_archived,
+                encrypted_content, encrypted_preview, encryption_nonce, locked_at, created_at, updated_at
+            FROM notes
+            WHERE id = ?1 AND is_locked = 1
+            ",
+            params![id],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, i64>(4)? != 0,
+                    row.get::<_, i64>(5)? != 0,
+                    row.get::<_, i64>(6)? != 0,
+                    row.get::<_, i64>(7)? != 0,
+                    row.get::<_, Option<String>>(8)?,
+                    row.get::<_, Option<String>>(9)?,
+                    row.get::<_, Option<String>>(10)?,
+                    row.get::<_, Option<String>>(11)?,
+                    row.get::<_, String>(12)?,
+                    row.get::<_, String>(13)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| "Locked note not found.".to_string())?;
+    let (
+        note_id,
+        title,
+        folder_id,
+        folder_name,
+        is_pinned,
+        is_favorite,
+        is_deleted,
+        is_archived,
+        encrypted_content,
+        encrypted_preview,
+        encryption_nonce,
+        locked_at,
+        created_at,
+        updated_at,
+    ) = note;
+    let nonce = encryption_nonce.ok_or_else(|| "Locked note is missing encryption metadata.".to_string())?;
+    let (content_nonce, preview_nonce) = nonce
+        .split_once(':')
+        .ok_or_else(|| "Locked note has invalid encryption metadata.".to_string())?;
+    let content = crypto::decrypt_string(
+        &key,
+        content_nonce,
+        encrypted_content
+            .as_deref()
+            .ok_or_else(|| "Locked note is missing encrypted content.".to_string())?,
+    )?;
+    let preview = crypto::decrypt_string(
+        &key,
+        preview_nonce,
+        encrypted_preview
+            .as_deref()
+            .ok_or_else(|| "Locked note is missing encrypted preview.".to_string())?,
+    )?;
+    Ok(NoteDto {
+        id: note_id.clone(),
+        title,
+        content,
+        preview,
+        folder_id,
+        folder_name,
+        tags: get_tags_for_note(&connection, &note_id).map_err(|error| error.to_string())?,
+        is_pinned,
+        is_favorite,
+        is_deleted,
+        is_archived,
+        is_locked: true,
+        encrypted_content,
+        encrypted_preview,
+        encryption_nonce: Some(nonce),
+        locked_at,
+        created_at,
+        updated_at,
+    })
 }
 
 #[tauri::command]
@@ -1143,25 +1554,65 @@ pub fn create_note(state: tauri::State<'_, DbState>, note: NoteDto) -> Result<()
 }
 
 #[tauri::command]
-pub fn update_note(state: tauri::State<'_, DbState>, note: NoteDto) -> Result<(), String> {
+pub fn update_note(
+    state: tauri::State<'_, DbState>,
+    lock_state: tauri::State<'_, LockState>,
+    note: NoteDto,
+) -> Result<(), String> {
     let connection = connect(&state.path)?;
+    let (
+        stored_content,
+        stored_preview,
+        encrypted_content,
+        encrypted_preview,
+        encryption_nonce,
+        locked_at,
+    ) = if note.is_locked {
+        let key = current_lock_key(&lock_state)?;
+        let (content_nonce, content_ciphertext) = crypto::encrypt_string(&key, &note.content)?;
+        let (preview_nonce, preview_ciphertext) = crypto::encrypt_string(&key, &note.preview)?;
+        (
+            String::new(),
+            String::new(),
+            Some(content_ciphertext),
+            Some(preview_ciphertext),
+            Some(format!("{}:{}", content_nonce, preview_nonce)),
+            note.locked_at.clone(),
+        )
+    } else {
+        (
+            note.content.clone(),
+            note.preview.clone(),
+            None,
+            None,
+            None,
+            None,
+        )
+    };
     let changed_rows = connection
         .execute(
             "UPDATE notes
              SET title = ?2, content = ?3, preview = ?4, folder_id = ?5, folder_name = ?6,
-                 is_pinned = ?7, is_favorite = ?8, is_deleted = ?9, is_archived = ?10, updated_at = ?11
+                 is_pinned = ?7, is_favorite = ?8, is_deleted = ?9, is_archived = ?10,
+                 is_locked = ?11, encrypted_content = ?12, encrypted_preview = ?13,
+                 encryption_nonce = ?14, locked_at = ?15, updated_at = ?16
              WHERE id = ?1",
             params![
                 note.id,
                 note.title,
-                note.content,
-                note.preview,
+                stored_content,
+                stored_preview,
                 note.folder_id,
                 note.folder_name,
                 note.is_pinned as i64,
                 note.is_favorite as i64,
                 note.is_deleted as i64,
                 note.is_archived as i64,
+                note.is_locked as i64,
+                encrypted_content.as_deref(),
+                encrypted_preview.as_deref(),
+                encryption_nonce.as_deref(),
+                locked_at.as_deref(),
                 note.updated_at
             ],
         )
@@ -1581,6 +2032,11 @@ fn seed_notes() -> Vec<NoteDto> {
             is_favorite: true,
             is_deleted: false,
             is_archived: false,
+            is_locked: false,
+            encrypted_content: None,
+            encrypted_preview: None,
+            encryption_nonce: None,
+            locked_at: None,
             created_at: "2026-04-25T10:00:00.000Z".into(),
             updated_at: "2026-05-04T21:58:00.000Z".into(),
         },
@@ -1596,6 +2052,11 @@ fn seed_notes() -> Vec<NoteDto> {
             is_favorite: false,
             is_deleted: false,
             is_archived: false,
+            is_locked: false,
+            encrypted_content: None,
+            encrypted_preview: None,
+            encryption_nonce: None,
+            locked_at: None,
             created_at: "2026-04-29T10:00:00.000Z".into(),
             updated_at: "2026-05-04T21:00:00.000Z".into(),
         },
@@ -1611,6 +2072,11 @@ fn seed_notes() -> Vec<NoteDto> {
             is_favorite: false,
             is_deleted: false,
             is_archived: false,
+            is_locked: false,
+            encrypted_content: None,
+            encrypted_preview: None,
+            encryption_nonce: None,
+            locked_at: None,
             created_at: "2026-05-01T10:00:00.000Z".into(),
             updated_at: "2026-05-04T18:00:00.000Z".into(),
         },
@@ -1626,6 +2092,11 @@ fn seed_notes() -> Vec<NoteDto> {
             is_favorite: true,
             is_deleted: false,
             is_archived: false,
+            is_locked: false,
+            encrypted_content: None,
+            encrypted_preview: None,
+            encryption_nonce: None,
+            locked_at: None,
             created_at: "2026-05-02T10:00:00.000Z".into(),
             updated_at: "2026-05-04T16:00:00.000Z".into(),
         },
@@ -1641,6 +2112,11 @@ fn seed_notes() -> Vec<NoteDto> {
             is_favorite: false,
             is_deleted: false,
             is_archived: false,
+            is_locked: false,
+            encrypted_content: None,
+            encrypted_preview: None,
+            encryption_nonce: None,
+            locked_at: None,
             created_at: "2026-04-30T10:00:00.000Z".into(),
             updated_at: "2026-05-03T10:00:00.000Z".into(),
         },

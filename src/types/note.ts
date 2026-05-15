@@ -10,6 +10,12 @@ export type Note = {
   isFavorite: boolean;
   isDeleted: boolean;
   isArchived: boolean;
+  isLocked: boolean;
+  isUnlocked?: boolean;
+  encryptedContent?: string | null;
+  encryptedPreview?: string | null;
+  encryptionNonce?: string | null;
+  lockedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 };

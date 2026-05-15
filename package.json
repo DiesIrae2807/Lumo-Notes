@@ -1,7 +1,7 @@
 {
   "name": "lumo-notes",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Local-first note-taking app",
   "author": "Lumo Notes Publisher",
   "type": "module",

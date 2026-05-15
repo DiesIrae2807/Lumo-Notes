@@ -10,6 +10,8 @@ import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { rebuildSearchIndex } from "../services/database";
 import { notify, notifyError } from "../utils/toast";
 import { confirmDialog } from "../utils/confirm";
+import { useNotes } from "../store/notesStore";
+import { getVersion } from "@tauri-apps/api/app";
 
 const shortcuts = [
   ["Ctrl+K", "Command palette"],
@@ -508,6 +510,23 @@ function SettingToggle<K extends keyof AppSettings>({
 
 export function SettingsScreen() {
   const [searchIndexStatus, setSearchIndexStatus] = useState<"idle" | "working" | "done" | "error">("idle");
+  const [appVersion, setAppVersion] = useState("");
+  const { configureLockPassword, lockAllNotes, lockPasswordConfigured } = useNotes();
+
+  useEffect(() => {
+    let mounted = true;
+    void getVersion()
+      .then((version) => {
+        if (mounted) setAppVersion(version);
+      })
+      .catch(() => {
+        if (mounted) setAppVersion("Unknown");
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const handleRebuildSearchIndex = async () => {
     setSearchIndexStatus("working");
@@ -609,6 +628,47 @@ export function SettingsScreen() {
               />
             </SettingsCard>
 
+            <SettingsCard title="Privacy / Locked Notes">
+              <div className="space-y-3 text-sm text-slate-300">
+                <p>
+                  Locked notes are encrypted locally with your Lock Password. If you forget this password,
+                  locked notes cannot be recovered.
+                </p>
+                <p className="text-slate-500">
+                  Titles, folders, and tags remain visible. Locked note bodies and previews are not stored
+                  as plaintext, are excluded from the SQLite content index, and remain encrypted in backups.
+                </p>
+                <p className="text-slate-500">
+                  Attachment files are not encrypted yet. Locking a note protects the note text only.
+                </p>
+                <p className="text-slate-500">
+                  Password recovery is not available. Password changes are disabled until full re-encryption
+                  tooling is added.
+                </p>
+                <div className="flex flex-wrap items-center gap-3 pt-2">
+                  <span className="text-xs text-slate-500">
+                    Status: {lockPasswordConfigured ? "Lock password configured" : "No lock password yet"}
+                  </span>
+                  {!lockPasswordConfigured ? (
+                    <button
+                      className="rounded-xl border border-lumo-teal/20 bg-lumo-teal/10 px-3 py-2 text-xs font-medium text-lumo-teal transition hover:bg-lumo-teal/15"
+                      type="button"
+                      onClick={() => void configureLockPassword()}
+                    >
+                      Set Lock Password
+                    </button>
+                  ) : null}
+                  <button
+                    className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-medium text-slate-200 transition hover:bg-white/[0.07] hover:text-white"
+                    type="button"
+                    onClick={() => void lockAllNotes()}
+                  >
+                    Lock all unlocked notes
+                  </button>
+                </div>
+              </div>
+            </SettingsCard>
+
             <SettingsCard title="Keyboard Shortcuts">
               <div className="grid gap-2 sm:grid-cols-2">
                 {shortcuts.map(([keys, action]) => (
@@ -624,7 +684,7 @@ export function SettingsScreen() {
               <div className="space-y-2 text-sm text-slate-300">
                 <p><span className="text-slate-500">App:</span> Lumo Notes</p>
                 <p><span className="text-slate-500">Tagline:</span> Thoughts. Organized. Illuminated.</p>
-                <p><span className="text-slate-500">Version:</span> 0.1.0</p>
+                <p><span className="text-slate-500">Version:</span> {appVersion || "Loading..."}</p>
                 <p className="text-slate-500">
                   Your notes are stored locally on this device. Use Export Backup to keep a safe copy.
                 </p>

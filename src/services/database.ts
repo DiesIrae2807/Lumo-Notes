@@ -6,12 +6,28 @@ export type DatabaseSnapshot = {
   folders: Folder[];
   tags: string[];
   attachments: Attachment[];
+  lockPasswordConfigured: boolean;
 };
 
 export type SearchResult = {
   noteId: string;
   score: number;
   snippet: string;
+};
+
+export type LockMetadata = {
+  configured: boolean;
+  kdfAlgorithm?: string | null;
+  kdfParams?: string | null;
+  encryptionAlgorithm?: string | null;
+};
+
+export type LockBackupMetadata = {
+  salt: string;
+  verifier: string;
+  kdfAlgorithm: string;
+  kdfParams: string;
+  encryptionAlgorithm: string;
 };
 
 export async function initializeDatabase() {
@@ -122,6 +138,38 @@ export async function searchNotes(query: string, includeDeleted: boolean, includ
 
 export async function rebuildSearchIndex() {
   return invoke<void>("rebuild_search_index");
+}
+
+export async function getLockMetadata() {
+  return invoke<LockMetadata>("get_lock_metadata");
+}
+
+export async function getLockBackupMetadata() {
+  return invoke<LockBackupMetadata | null>("get_lock_backup_metadata");
+}
+
+export async function restoreLockBackupMetadata(metadata: LockBackupMetadata) {
+  return invoke<void>("restore_lock_backup_metadata", { metadata });
+}
+
+export async function setupLockPassword(password: string) {
+  return invoke<LockMetadata>("setup_lock_password", { password });
+}
+
+export async function unlockLockSession(password: string) {
+  return invoke<void>("unlock_lock_session", { password });
+}
+
+export async function lockAllNotes() {
+  return invoke<void>("lock_all_notes");
+}
+
+export async function lockNote(note: Note) {
+  return invoke<void>("lock_note", { note });
+}
+
+export async function unlockNote(id: string) {
+  return invoke<Note>("unlock_note", { id });
 }
 
 export async function attachFileToNote(noteId: string, createdAt: string) {

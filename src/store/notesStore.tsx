@@ -16,6 +16,7 @@ import type { Attachment, Folder, Note, SidebarView } from "../types/note";
 import { normalizeFolderColor } from "../utils/folderColor";
 import { getPlainTextPreview, markdownToPlainText } from "../utils/markdown";
 import { notify, notifyError } from "../utils/toast";
+import { confirmDialog } from "../utils/confirm";
 
 type NotesContextValue = {
   notes: Note[];
@@ -35,7 +36,12 @@ type NotesContextValue = {
   saveStatus: "idle" | "dirty" | "saving" | "saved" | "error";
   isSearchLoading: boolean;
   searchSnippets: Record<string, string>;
+  lockPasswordConfigured: boolean;
   createNote: (title?: string, options?: { folderId?: string | null; keepCurrentView?: boolean }) => void;
+  lockSelectedNote: () => Promise<void>;
+  unlockSelectedNote: () => Promise<void>;
+  lockAllNotes: () => Promise<void>;
+  configureLockPassword: () => Promise<void>;
   importMarkdownNotes: (imports: ParsedMarkdownNote[]) => Promise<number>;
   restoreBackupMerge: (backup: LumoBackup) => Promise<number>;
   attachFileToSelectedNote: () => Promise<Attachment | null>;
@@ -123,6 +129,12 @@ const uniqueFolderId = (name: string, existingFolders: Folder[]) => {
     : preferred;
 };
 
+type PasswordPromptState = {
+  message: string;
+  resolve: (value: string) => void;
+  title: string;
+} | null;
+
 export function NotesProvider({ children }: { children: ReactNode }) {
   const { settings } = useSettings();
   const [notes, setNotes] = useState<Note[]>([]);
@@ -137,7 +149,9 @@ export function NotesProvider({ children }: { children: ReactNode }) {
   const [isDatabaseLoading, setIsDatabaseLoading] = useState(true);
   const [databaseError, setDatabaseError] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<"idle" | "dirty" | "saving" | "saved" | "error">("idle");
+  const [lockPasswordConfigured, setLockPasswordConfigured] = useState(false);
   const [isSearchLoading, setIsSearchLoading] = useState(false);
+  const [passwordPrompt, setPasswordPrompt] = useState<PasswordPromptState>(null);
   const [searchResults, setSearchResults] = useState<{
     includeDeleted: boolean;
     includeArchived: boolean;
@@ -280,6 +294,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         setFolders(snapshot.folders.length > 0 ? snapshot.folders : fallbackFolders);
         setAttachments(snapshot.attachments);
         setDatabaseTags(snapshot.tags);
+        setLockPasswordConfigured(snapshot.lockPasswordConfigured);
         setSelectedNoteId(
           settings.startupBehavior === "allNotes"
             ? null
@@ -428,8 +443,8 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       next = next.filter((note) => {
         const haystack = [
           note.title,
-          markdownToPlainText(note.content),
-          note.preview,
+          note.isLocked && !note.isUnlocked ? "" : markdownToPlainText(note.content),
+          note.isLocked && !note.isUnlocked ? "" : note.preview,
           note.folderName,
           ...attachments
             .filter((attachment) => attachment.noteId === note.id)
@@ -498,6 +513,11 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       isFavorite: false,
       isDeleted: false,
       isArchived: false,
+      isLocked: false,
+      encryptedContent: null,
+      encryptedPreview: null,
+      encryptionNonce: null,
+      lockedAt: null,
       createdAt: now,
       updatedAt: now,
     };
@@ -519,6 +539,130 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     }
     setSearchQuery("");
   }, [activeFolderId, flushNoteSave, folders, selectedNoteId, settings.newNoteTitleBehavior]);
+
+  const requestLockPassword = useCallback((title: string, message: string) => {
+    return new Promise<string>((resolve) => {
+      setPasswordPrompt({ message, resolve, title });
+    });
+  }, []);
+
+  const ensureLockSession = useCallback(async () => {
+    if (!lockPasswordConfigured) {
+      const password = await requestLockPassword(
+        "Set Lock Password",
+        "Set a Lock Password. If you forget this password, locked notes cannot be recovered. Use at least 8 characters.",
+      );
+      if (!password) return false;
+      const confirmation = await requestLockPassword("Confirm Lock Password", "Re-enter your Lock Password.");
+      if (password !== confirmation) {
+        notifyError("Lock password not set", "Passwords do not match.");
+        return false;
+      }
+      const metadata = await database.setupLockPassword(password);
+      setLockPasswordConfigured(metadata.configured);
+      return true;
+    }
+
+    const password = await requestLockPassword("Unlock Notes", "Enter Lock Password.");
+    if (!password) return false;
+    await database.unlockLockSession(password);
+    return true;
+  }, [lockPasswordConfigured, requestLockPassword]);
+
+  const configureLockPassword = useCallback(async () => {
+    if (lockPasswordConfigured) {
+      notify({ kind: "info", title: "Lock password is already configured" });
+      return;
+    }
+    await ensureLockSession();
+  }, [ensureLockSession, lockPasswordConfigured]);
+
+  const lockSelectedNote = useCallback(async () => {
+    if (!selectedNote) return;
+    if (selectedNote.isLocked) {
+      await database.updateNote(selectedNote);
+      setNotes((current) =>
+        current.map((note) =>
+          note.id === selectedNote.id
+            ? {
+                ...note,
+                content: "",
+                preview: "",
+                isUnlocked: false,
+              }
+            : note,
+        ),
+      );
+      notify({ kind: "info", title: "Note locked" });
+      return;
+    }
+    flushNoteSave(selectedNote.id);
+    const noteAttachments = attachments.filter((attachment) => attachment.noteId === selectedNote.id);
+    if (
+      noteAttachments.length > 0 &&
+      !await confirmDialog({
+          confirmLabel: "Lock Text",
+          message: "This locks the note text. Existing attachment files are not encrypted yet.",
+          title: "Lock note with attachments",
+        })
+    ) {
+      return;
+    }
+    const ready = await ensureLockSession();
+    if (!ready) return;
+    const lockedAt = new Date().toISOString();
+    const lockedNote: Note = {
+      ...selectedNote,
+      isLocked: true,
+      lockedAt,
+      updatedAt: lockedAt,
+    };
+    await database.lockNote(lockedNote);
+    setNotes((current) =>
+      current.map((note) =>
+        note.id === selectedNote.id
+          ? {
+              ...lockedNote,
+              content: "",
+              preview: "",
+              isUnlocked: false,
+              encryptedContent: "[encrypted]",
+              encryptedPreview: "[encrypted]",
+            }
+          : note,
+      ),
+    );
+    notify({ kind: "success", title: "Note locked" });
+  }, [attachments, ensureLockSession, flushNoteSave, selectedNote]);
+
+  const unlockSelectedNote = useCallback(async () => {
+    if (!selectedNote?.isLocked) return;
+    const ready = await ensureLockSession();
+    if (!ready) return;
+    const unlocked = await database.unlockNote(selectedNote.id);
+    setNotes((current) =>
+      current.map((note) => (note.id === unlocked.id ? { ...unlocked, isUnlocked: true } : note)),
+    );
+    notify({ kind: "success", title: "Note unlocked for this session" });
+  }, [ensureLockSession, selectedNote]);
+
+  const lockAllNotes = useCallback(async () => {
+    flushAllPendingSaves();
+    await database.lockAllNotes();
+    setNotes((current) =>
+      current.map((note) =>
+        note.isLocked
+          ? {
+              ...note,
+              content: "",
+              preview: "",
+              isUnlocked: false,
+            }
+          : note,
+      ),
+    );
+    notify({ kind: "info", title: "Locked notes hidden" });
+  }, [flushAllPendingSaves]);
 
   const importMarkdownNotes = useCallback(
     async (imports: ParsedMarkdownNote[]) => {
@@ -566,6 +710,11 @@ export function NotesProvider({ children }: { children: ReactNode }) {
           isFavorite: item.isFavorite,
           isDeleted: false,
           isArchived: false,
+          isLocked: false,
+          encryptedContent: null,
+          encryptedPreview: null,
+          encryptionNonce: null,
+          lockedAt: null,
           createdAt,
           updatedAt,
         } satisfies Note;
@@ -606,6 +755,10 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       const now = new Date().toISOString();
       const localFolders = [...folders];
       const foldersToCreate: Folder[] = [];
+      if (backup.lockMetadata && !lockPasswordConfigured) {
+        await database.restoreLockBackupMetadata(backup.lockMetadata);
+        setLockPasswordConfigured(true);
+      }
 
       const ensureFolder = (incoming: Folder | null, fallbackName: string) => {
         const name = incoming?.name?.trim() || fallbackName || "Uncategorized";
@@ -645,9 +798,16 @@ export function NotesProvider({ children }: { children: ReactNode }) {
           id,
           folderId: folder.id,
           folderName: folder.name,
-          preview: incoming.preview || getPlainTextPreview(incoming.content),
+          content: incoming.isLocked ? "" : incoming.content,
+          preview: incoming.isLocked ? "" : incoming.preview || getPlainTextPreview(incoming.content),
+          isUnlocked: false,
           tags: uniqueByLower([...incoming.tags, ...relationshipTags]),
           isArchived: incoming.isArchived ?? false,
+          isLocked: Boolean(incoming.isLocked),
+          encryptedContent: incoming.encryptedContent ?? null,
+          encryptedPreview: incoming.encryptedPreview ?? null,
+          encryptionNonce: incoming.encryptionNonce ?? null,
+          lockedAt: incoming.lockedAt ?? null,
         } satisfies Note;
       });
       const tagsToCreate = uniqueByLower([
@@ -681,7 +841,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       notify({ kind: "success", title: `${notesToCreate.length} backup note${notesToCreate.length === 1 ? "" : "s"} restored` });
       return notesToCreate.length;
     },
-    [availableTags, flushNoteSave, folders, notes, selectedNoteId],
+    [availableTags, flushNoteSave, folders, lockPasswordConfigured, notes, selectedNoteId],
   );
 
   const updateSelectedNote = useCallback(
@@ -1225,7 +1385,12 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       saveStatus,
       isSearchLoading,
       searchSnippets,
+      lockPasswordConfigured,
       createNote,
+      lockSelectedNote,
+      unlockSelectedNote,
+      lockAllNotes,
+      configureLockPassword,
       importMarkdownNotes,
       restoreBackupMerge,
       attachFileToSelectedNote,
@@ -1266,6 +1431,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       availableTags,
       attachFileToSelectedNote,
       createNote,
+      configureLockPassword,
       createFolder,
       createTag,
       databaseError,
@@ -1276,6 +1442,9 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       isDatabaseLoading,
       isSearchLoading,
       importMarkdownNotes,
+      lockAllNotes,
+      lockPasswordConfigured,
+      lockSelectedNote,
       moveToTrash,
       openAttachment,
       permanentlyDeleteNote,
@@ -1302,6 +1471,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       toggleFavorite,
       togglePinned,
       unarchiveNote,
+      unlockSelectedNote,
       updateSelectedNote,
     ],
   );
@@ -1327,7 +1497,88 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     );
   }
 
-  return <NotesContext.Provider value={value}>{children}</NotesContext.Provider>;
+  return (
+    <NotesContext.Provider value={value}>
+      {children}
+      <PasswordPromptModal prompt={passwordPrompt} onClose={() => setPasswordPrompt(null)} />
+    </NotesContext.Provider>
+  );
+}
+
+function PasswordPromptModal({
+  onClose,
+  prompt,
+}: {
+  onClose: () => void;
+  prompt: PasswordPromptState;
+}) {
+  const [value, setValue] = useState("");
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (!prompt) return;
+    setValue("");
+    window.setTimeout(() => inputRef.current?.focus(), 0);
+  }, [prompt]);
+
+  if (!prompt) return null;
+
+  const close = (result: string) => {
+    prompt.resolve(result.trim());
+    onClose();
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-[100] grid place-items-center bg-night-950/55 px-4 backdrop-blur-sm"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) close("");
+      }}
+    >
+      <form
+        className="w-full max-w-md rounded-2xl border border-white/10 bg-night-900/95 p-4 shadow-[0_24px_80px_rgba(0,0,0,0.45)]"
+        onSubmit={(event) => {
+          event.preventDefault();
+          close(value);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            close("");
+          }
+        }}
+      >
+        <div className="mb-4">
+          <p className="text-sm font-semibold text-white">{prompt.title}</p>
+          <p className="mt-1 text-xs leading-5 text-slate-500">{prompt.message}</p>
+        </div>
+        <input
+          ref={inputRef}
+          className="h-10 w-full rounded-lg border border-white/10 bg-night-950/80 px-3 text-sm text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-lumo-teal/50 focus:ring-2 focus:ring-lumo-teal/10"
+          type="password"
+          value={value}
+          onChange={(event) => setValue(event.target.value)}
+          placeholder="Lock password"
+        />
+        <div className="mt-5 flex justify-end gap-2">
+          <button
+            type="button"
+            className="rounded-lg px-3 py-2 text-sm text-slate-400 transition hover:bg-white/[0.05] hover:text-white"
+            onClick={() => close("")}
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            className="rounded-lg bg-lumo-violet px-3 py-2 text-sm font-medium text-white transition hover:bg-lumo-violet/90 disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={!value.trim()}
+          >
+            Continue
+          </button>
+        </div>
+      </form>
+    </div>
+  );
 }
 
 export function useNotes() {

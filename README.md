@@ -83,4 +83,12 @@ Do not delete `%APPDATA%\com.lumo.notes\` on a real user's machine unless they e
 - Windows bundling target: NSIS installer
 - Icon: `src-tauri/icons/icon.ico`
 
-The app does not include authentication, cloud sync, telemetry, analytics, AI, collaboration, mobile support, or locked notes yet.
+The app does not include authentication, cloud sync, telemetry, analytics, AI, collaboration, or mobile support.
+
+## Locked Notes
+
+Locked notes use a local Lock Password. The password is not stored directly; Lumo Notes derives an encryption key with Argon2id and encrypts note body text/previews with XChaCha20-Poly1305 in the Tauri backend.
+
+Locked note titles, folders, and tags remain visible. Locked note content and previews are cleared from the plaintext SQLite columns and from the persisted search index. Backups preserve encrypted note payloads and lock metadata so restored locked notes still require the same Lock Password.
+
+Attachment files are not encrypted in this MVP. Locking a note protects the note text only.

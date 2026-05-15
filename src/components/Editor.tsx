@@ -132,6 +132,8 @@ export function Editor({
     createNote,
     createTag,
     folders,
+    lockAllNotes,
+    lockSelectedNote,
     moveToTrash,
     notes,
     permanentlyDeleteSelectedNote,
@@ -148,6 +150,7 @@ export function Editor({
     toggleFavorite,
     togglePinned,
     unarchiveNote,
+    unlockSelectedNote,
     updateSelectedNote,
   } = useNotes();
   const { settings } = useSettings();
@@ -448,6 +451,18 @@ export function Editor({
     Boolean(resolveInternalLink(title, notes, activeView === "trash", activeView === "archive"));
 
   const exportSelectedNote = async () => {
+    if (selectedNote.isLocked && !selectedNote.isUnlocked) {
+      notify({ kind: "info", title: "Unlock this note before exporting Markdown" });
+      return;
+    }
+    if (selectedNote.isLocked) {
+      const confirmed = await confirmDialog({
+        confirmLabel: "Export Plaintext",
+        message: "Exported Markdown will be plaintext.",
+        title: "Export unlocked locked note",
+      });
+      if (!confirmed) return;
+    }
     const filename = `${sanitizeFilename(selectedNote.title)}.md`;
     try {
       const path = await saveTextFile(
@@ -657,6 +672,24 @@ export function Editor({
                     className="w-full rounded-lg px-3 py-2 text-left text-xs text-slate-300 transition hover:bg-white/[0.06] hover:text-white"
                     onClick={() => {
                       setIsOverflowOpen(false);
+                      void (selectedNote.isLocked && !selectedNote.isUnlocked ? unlockSelectedNote() : lockSelectedNote());
+                    }}
+                  >
+                    {selectedNote.isLocked && !selectedNote.isUnlocked ? "Unlock Note" : "Lock Note"}
+                  </button>
+                  <button
+                    className="w-full rounded-lg px-3 py-2 text-left text-xs text-slate-300 transition hover:bg-white/[0.06] hover:text-white"
+                    onClick={() => {
+                      setIsOverflowOpen(false);
+                      void lockAllNotes();
+                    }}
+                  >
+                    Lock All
+                  </button>
+                  <button
+                    className="w-full rounded-lg px-3 py-2 text-left text-xs text-slate-300 transition hover:bg-white/[0.06] hover:text-white"
+                    onClick={() => {
+                      setIsOverflowOpen(false);
                       if (selectedNote.isArchived) {
                         unarchiveNote(selectedNote.id);
                         notify({ kind: "success", title: "Note unarchived" });
@@ -684,6 +717,27 @@ export function Editor({
         </div>
       </div>
 
+      {selectedNote.isLocked && !selectedNote.isUnlocked ? (
+        <article className="grid flex-1 place-items-center px-6 py-10 text-center">
+          <div className="max-w-md rounded-2xl border border-white/10 bg-white/[0.035] p-6">
+            <div className="mx-auto grid h-12 w-12 place-items-center rounded-2xl border border-lumo-teal/25 bg-lumo-teal/10 text-lumo-teal">
+              <span aria-hidden="true">Lock</span>
+            </div>
+            <h2 className="mt-5 text-lg font-semibold text-white">
+              {selectedNote.title || "Locked note"}
+            </h2>
+            <p className="mt-3 text-sm leading-6 text-slate-400">
+              This note is encrypted on this device.
+            </p>
+            <button
+              className="mt-5 rounded-xl bg-lumo-violet px-4 py-2 text-sm font-medium text-white transition hover:bg-lumo-violet/90 active:scale-95"
+              onClick={() => void unlockSelectedNote()}
+            >
+              Unlock Note
+            </button>
+          </div>
+        </article>
+      ) : (
       <article className="scroll-area flex-1 overflow-y-auto px-6 py-7 md:px-8">
         <div className="w-full max-w-[1400px]">
           {isFocusMode ? (
@@ -915,6 +969,7 @@ export function Editor({
 
         </div>
       </article>
+      )}
 
       <div className="flex items-center justify-between border-t border-white/10 px-6 py-3 text-slate-400">
         <div className="flex items-center gap-3">

@@ -14,6 +14,7 @@ import {
 } from "../services/fileTransfer";
 import { notify, notifyError } from "../utils/toast";
 import { confirmDialog } from "../utils/confirm";
+import { getLockBackupMetadata, getNotes } from "../services/database";
 
 export function ImportExportActions({ compact = false }: { compact?: boolean }) {
   const {
@@ -50,6 +51,15 @@ export function ImportExportActions({ compact = false }: { compact?: boolean }) 
   const exportSelected = () =>
     runAction(async () => {
       if (!selectedNote) return "Select a note first.";
+      if (selectedNote.isLocked && !selectedNote.isUnlocked) return "Unlock this note before exporting Markdown.";
+      if (selectedNote.isLocked) {
+        const confirmed = await confirmDialog({
+          confirmLabel: "Export Plaintext",
+          message: "Exported Markdown will be plaintext.",
+          title: "Export unlocked locked note",
+        });
+        if (!confirmed) return null;
+      }
       const filename = `${sanitizeFilename(selectedNote.title)}.md`;
       const path = await saveTextFile(
         "Export selected note",
@@ -67,7 +77,7 @@ export function ImportExportActions({ compact = false }: { compact?: boolean }) 
         message: "Include notes in Trash in this Markdown export?",
         title: "Export all notes",
       });
-      const exportNotes = notes.filter((note) => includeTrash || !note.isDeleted);
+      const exportNotes = notes.filter((note) => (includeTrash || !note.isDeleted) && !note.isLocked);
       if (exportNotes.length === 0) return "No notes to export.";
       const path = await chooseFolderAndWriteFiles(
         "Export notes as Markdown",
@@ -79,7 +89,15 @@ export function ImportExportActions({ compact = false }: { compact?: boolean }) 
   const exportBackup = () =>
     runAction(async () => {
       const date = new Date().toISOString().slice(0, 10);
-      const backup = createBackup(notes, folders, availableTags, settings.backupIncludeTrash, attachments);
+      const backupNotes = await getNotes();
+      const backup = createBackup(
+        backupNotes,
+        folders,
+        availableTags,
+        settings.backupIncludeTrash,
+        attachments,
+        await getLockBackupMetadata(),
+      );
       const path = await saveTextFile(
         "Export Lumo Notes backup",
         `lumo-notes-backup-${date}.json`,

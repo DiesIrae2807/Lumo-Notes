@@ -14,6 +14,7 @@ import {
 } from "../services/fileTransfer";
 import { notify, notifyError } from "../utils/toast";
 import { confirmDialog } from "../utils/confirm";
+import { getLockBackupMetadata, getNotes } from "../services/database";
 
 type MenuName = "file" | "edit";
 
@@ -54,6 +55,8 @@ export function TopMenuBar({ onExit }: { onExit: () => void }) {
     folders,
     forceSaveSelectedNote,
     importMarkdownNotes,
+    lockAllNotes,
+    lockSelectedNote,
     moveToTrash,
     notes,
     permanentlyDeleteSelectedNote,
@@ -65,6 +68,7 @@ export function TopMenuBar({ onExit }: { onExit: () => void }) {
     toggleFavorite,
     togglePinned,
     unarchiveNote,
+    unlockSelectedNote,
   } = useNotes();
   const { settings } = useSettings();
   const [openMenu, setOpenMenu] = useState<MenuName | null>(null);
@@ -134,6 +138,18 @@ export function TopMenuBar({ onExit }: { onExit: () => void }) {
   const exportSelected = () =>
     runAction(async () => {
       if (!selectedNote) return;
+      if (selectedNote.isLocked && !selectedNote.isUnlocked) {
+        notify({ kind: "info", title: "Unlock this note before exporting Markdown" });
+        return;
+      }
+      if (selectedNote.isLocked) {
+        const confirmed = await confirmDialog({
+          confirmLabel: "Export Plaintext",
+          message: "Exported Markdown will be plaintext.",
+          title: "Export unlocked locked note",
+        });
+        if (!confirmed) return;
+      }
       const filename = `${sanitizeFilename(selectedNote.title)}.md`;
       const path = await saveTextFile(
         "Export selected note",
@@ -154,7 +170,7 @@ export function TopMenuBar({ onExit }: { onExit: () => void }) {
         message: "Include notes in Trash in this Markdown export?",
         title: "Export all notes",
       });
-      const exportNotes = notes.filter((note) => includeTrash || !note.isDeleted);
+      const exportNotes = notes.filter((note) => (includeTrash || !note.isDeleted) && !note.isLocked);
       if (exportNotes.length === 0) {
         setMessage("No notes to export.");
         notify({ kind: "info", title: "No notes to export" });
@@ -174,7 +190,15 @@ export function TopMenuBar({ onExit }: { onExit: () => void }) {
   const exportBackup = () =>
     runAction(async () => {
       const date = new Date().toISOString().slice(0, 10);
-      const backup = createBackup(notes, folders, availableTags, settings.backupIncludeTrash, attachments);
+      const backupNotes = await getNotes();
+      const backup = createBackup(
+        backupNotes,
+        folders,
+        availableTags,
+        settings.backupIncludeTrash,
+        attachments,
+        await getLockBackupMetadata(),
+      );
       const path = await saveTextFile(
         "Export Lumo Notes backup",
         `lumo-notes-backup-${date}.json`,
@@ -244,10 +268,19 @@ export function TopMenuBar({ onExit }: { onExit: () => void }) {
       { separator: true },
       {
         label: "Attach File...",
-        disabled: !selectedNote || selectedNote.isDeleted,
+        disabled: !selectedNote || selectedNote.isDeleted || (selectedNote.isLocked && !selectedNote.isUnlocked),
         onSelect: async () => {
           await attachFileToSelectedNote();
         },
+      },
+      {
+        label: selectedNote?.isLocked && !selectedNote.isUnlocked ? "Unlock Note..." : "Lock Note...",
+        disabled: !selectedNote || selectedNote.isDeleted,
+        onSelect: () => selectedNote?.isLocked && !selectedNote.isUnlocked ? unlockSelectedNote() : lockSelectedNote(),
+      },
+      {
+        label: "Lock All",
+        onSelect: lockAllNotes,
       },
       { separator: true },
       {
@@ -295,6 +328,9 @@ export function TopMenuBar({ onExit }: { onExit: () => void }) {
       exportSelected,
       forceSaveSelectedNote,
       importMarkdown,
+      lockAllNotes,
+      lockSelectedNote,
+      unlockSelectedNote,
       onExit,
       permanentlyDeleteTrashedNotes,
       restoreBackup,

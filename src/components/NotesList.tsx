@@ -187,6 +187,10 @@ export function NotesList() {
 
   const exportNote = async (note: Note) => {
     try {
+      if (note.isLocked) {
+        notify({ kind: "info", title: "Unlock this note before exporting Markdown" });
+        return;
+      }
       forceSaveSelectedNote();
       const path = await saveTextFile(
         "Export note",

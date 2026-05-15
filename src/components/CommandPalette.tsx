@@ -14,6 +14,7 @@ import type { SidebarView } from "../types/note";
 import { getPlainTextPreview, markdownToPlainText } from "../utils/markdown";
 import { notify, notifyError } from "../utils/toast";
 import { confirmDialog } from "../utils/confirm";
+import { getLockBackupMetadata, getNotes } from "../services/database";
 
 type CommandItem = {
   id: string;
@@ -49,6 +50,8 @@ export function CommandPalette() {
     folders,
     forceSaveSelectedNote,
     importMarkdownNotes,
+    lockAllNotes,
+    lockSelectedNote,
     notes,
     activeView,
     restoreBackupMerge,
@@ -60,6 +63,7 @@ export function CommandPalette() {
     toggleFavorite,
     togglePinned,
     unarchiveNote,
+    unlockSelectedNote,
   } = useNotes();
   const { settings } = useSettings();
   const [isOpen, setIsOpen] = useState(false);
@@ -101,6 +105,18 @@ export function CommandPalette() {
 
   const exportSelectedNote = async () => {
     if (!selectedNote) return;
+    if (selectedNote.isLocked && !selectedNote.isUnlocked) {
+      notify({ kind: "info", title: "Unlock this note before exporting Markdown" });
+      return;
+    }
+    if (selectedNote.isLocked) {
+      const confirmed = await confirmDialog({
+        confirmLabel: "Export Plaintext",
+        message: "Exported Markdown will be plaintext.",
+        title: "Export unlocked locked note",
+      });
+      if (!confirmed) return;
+    }
     await saveTextFile(
       "Export selected note",
       `${sanitizeFilename(selectedNote.title)}.md`,
@@ -111,7 +127,15 @@ export function CommandPalette() {
 
   const exportBackup = async () => {
     const date = new Date().toISOString().slice(0, 10);
-    const backup = createBackup(notes, folders, availableTags, settings.backupIncludeTrash, attachments);
+    const backupNotes = await getNotes();
+    const backup = createBackup(
+      backupNotes,
+      folders,
+      availableTags,
+      settings.backupIncludeTrash,
+      attachments,
+      await getLockBackupMetadata(),
+    );
     await saveTextFile(
       "Export Lumo Notes backup",
       `lumo-notes-backup-${date}.json`,
@@ -265,6 +289,24 @@ export function CommandPalette() {
           },
         },
         {
+          id: "command-lock-note",
+          title: selectedNote.isLocked && !selectedNote.isUnlocked ? "Unlock Note" : "Lock Note",
+          subtitle: selectedNote.isLocked && !selectedNote.isUnlocked
+            ? "Decrypt this note for the current session"
+            : "Encrypt this note on disk",
+          section: "Commands",
+          keywords: "lock unlock encrypted private current note",
+          run: () => selectedNote.isLocked && !selectedNote.isUnlocked ? unlockSelectedNote() : lockSelectedNote(),
+        },
+        {
+          id: "command-lock-all",
+          title: "Lock All",
+          subtitle: "Hide decrypted locked notes",
+          section: "Commands",
+          keywords: "lock all encrypted private",
+          run: lockAllNotes,
+        },
+        {
           id: "command-export-selected",
           title: "Export Selected Note",
           subtitle: "Save current note as Markdown",
@@ -285,12 +327,12 @@ export function CommandPalette() {
         return {
           id: `note-${note.id}`,
           title: note.title || "Untitled Note",
-          subtitle: getPlainTextPreview(note.preview || note.content, 90) || note.folderName,
+          subtitle: note.isLocked && !note.isUnlocked ? "Encrypted note" : getPlainTextPreview(note.preview || note.content, 90) || note.folderName,
           section: "Notes",
           keywords: [
             note.title,
-            markdownToPlainText(note.content),
-            note.preview,
+            note.isLocked && !note.isUnlocked ? "" : markdownToPlainText(note.content),
+            note.isLocked && !note.isUnlocked ? "" : note.preview,
             note.folderName,
             ...note.tags,
             ...attachmentNames,
@@ -338,6 +380,8 @@ export function CommandPalette() {
     folders,
     forceSaveSelectedNote,
     importMarkdownNotes,
+    lockAllNotes,
+    lockSelectedNote,
     notes,
     restoreBackupMerge,
     selectedNote,
@@ -350,6 +394,7 @@ export function CommandPalette() {
     toggleFavorite,
     togglePinned,
     unarchiveNote,
+    unlockSelectedNote,
   ]);
 
   const normalizedQuery = query.trim().toLowerCase();

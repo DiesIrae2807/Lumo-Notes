@@ -1,3 +1,4 @@
+mod crypto;
 mod db;
 mod file_io;
 
@@ -9,6 +10,7 @@ pub fn run() {
         .setup(|app| {
             let path = db::database_path(app.handle())?;
             app.manage(db::DbState { path });
+            app.manage(db::LockState::default());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -27,6 +29,14 @@ pub fn run() {
             db::get_folders,
             db::get_tags,
             db::get_attachments,
+            db::get_lock_metadata,
+            db::get_lock_backup_metadata,
+            db::restore_lock_backup_metadata,
+            db::setup_lock_password,
+            db::unlock_lock_session,
+            db::lock_all_notes,
+            db::lock_note,
+            db::unlock_note,
             db::search_notes,
             db::rebuild_search_index,
             db::attach_file_to_note,

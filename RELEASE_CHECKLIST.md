@@ -41,6 +41,18 @@ Generated files:
 - Confirm restored notes are merged and existing notes are not deleted.
 - Confirm attachments listed in the backup do not imply cloud storage; attachment files remain local.
 
+## Locked Notes Test
+
+- Set a Lock Password from Settings > Privacy / Locked Notes.
+- Lock a note, close and reopen the app, and confirm the body is hidden.
+- Open `%APPDATA%\com.lumo.notes\lumo-notes.db` with a SQLite viewer and confirm the locked note body is not readable in `notes.content` or `notes.preview`.
+- Unlock with a wrong password and confirm it fails.
+- Unlock with the correct password, edit the note, wait for autosave, close and reopen, then unlock again.
+- Search for text that only exists inside the locked note body and confirm it does not appear while locked.
+- Export a backup and confirm locked notes are preserved as encrypted payloads, not plaintext body content.
+- Archive, trash, restore, and permanently delete a locked note.
+- Confirm locking a note with attachments warns that attachments are not encrypted yet.
+
 ## Fresh Install Test
 
 - On a clean Windows profile or VM, install Lumo Notes.
