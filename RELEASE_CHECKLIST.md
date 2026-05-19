@@ -22,12 +22,13 @@ Generated files:
 - Confirm Settings > About shows the local backup reminder.
 - Confirm no dev-only debug UI is visible.
 - Confirm no hardcoded local paths are shown in the UI.
+- Confirm no mock or starter data is added to an existing user database.
 
 ## Installer Test Checklist
 
 - Run `npm run tauri:build`.
 - Install the NSIS installer from `src-tauri/target/release/bundle/nsis/`.
-- Confirm the Start Menu entry, executable name, taskbar icon, installer icon, and window icon use Lumo Notes branding.
+- Confirm the Start Menu entry, executable name, installer name, displayed version, taskbar icon, installer icon, and window icon use Lumo Notes branding.
 - Launch the installed app.
 - Create a note and attach a small file.
 - Close and reopen the installed app.
@@ -40,12 +41,14 @@ Generated files:
 - Use Restore Backup.
 - Confirm restored notes are merged and existing notes are not deleted.
 - Confirm backup JSON includes attachment payloads for restored attachments; no cloud storage is involved.
+- Confirm a note with an image attachment restores with the image visible.
 
 ## Locked Notes Test
 
 - Set a Lock Password from Settings > Privacy / Locked Notes.
 - Lock a note, close and reopen the app, and confirm the body is hidden.
 - Open `%APPDATA%\com.lumo.notes\lumo-notes.db` with a SQLite viewer and confirm the locked note body is not readable in `notes.content` or `notes.preview`.
+- Confirm the locked note body is not readable in FTS/search tables.
 - Unlock with a wrong password and confirm it fails.
 - Unlock with the correct password, edit the note, wait for autosave, close and reopen, then unlock again.
 - Search for text that only exists inside the locked note body and confirm it does not appear while locked.
@@ -56,6 +59,7 @@ Generated files:
 - Close locked sessions and confirm temporary decrypted attachment files under the app cache are cleaned up on the next app launch.
 - Change the Lock Password from Settings > Privacy / Locked Notes, confirm the old password fails, and confirm the new password unlocks the note and opens the attachment.
 - Restore a backup containing encrypted locked notes and encrypted attachments, then confirm the same Lock Password unlocks both.
+- Confirm Markdown export warns before exporting an unlocked locked note as plaintext.
 - Archive, trash, restore, and permanently delete a locked note.
 - Confirm permanently deleting a locked note removes encrypted attachment files and metadata.
 
@@ -65,6 +69,7 @@ Generated files:
 - Launch the app.
 - Confirm the SQLite database is created under `%APPDATA%\com.lumo.notes\`.
 - Confirm attachments are stored under `%APPDATA%\com.lumo.notes\attachments\` after attaching a file.
+- Create notes, settings changes, and attachments; close and reopen the app and confirm the data persists.
 
 ## Upgrade Install Test
 
@@ -73,6 +78,14 @@ Generated files:
 - Launch the app.
 - Confirm existing SQLite data, attachments, settings, search, backlinks, and graph behavior remain intact.
 - Confirm no mock or starter data is added to an existing user database.
+
+## Search Privacy Test
+
+- Lock a note containing a unique phrase.
+- Close and reopen the app.
+- Search for that unique phrase while the note is locked.
+- Confirm search does not return locked note body text, locked previews, or locked attachment content.
+- Confirm visible metadata search remains intentional: titles, folders, tags, and attachment filenames may remain visible.
 
 ## Uninstall Behavior Note
 

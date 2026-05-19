@@ -691,6 +691,10 @@ export function SettingsScreen() {
                 <p className="text-slate-500">
                   Your notes are stored locally on this device. Use Export Backup to keep a safe copy.
                 </p>
+                <p className="text-slate-500">
+                  Locked notes and locked attachments are encrypted locally. If you forget the Lock Password,
+                  locked notes cannot be recovered. Exported unlocked locked notes are written as plaintext.
+                </p>
                 <div className="flex flex-wrap items-center gap-3 pt-3">
                   <button
                     className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-medium text-slate-200 transition hover:bg-white/[0.07] hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
