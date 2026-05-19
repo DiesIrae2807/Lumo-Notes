@@ -121,6 +121,17 @@ const nextFolderColor = (index: number) =>
 const uniqueByLower = (values: string[]) =>
   Array.from(new Map(values.filter(Boolean).map((value) => [value.toLowerCase(), value])).values());
 
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const remapAttachmentReferences = (content: string, idMap: Map<string, string>) => {
+  let next = content;
+  idMap.forEach((newId, oldId) => {
+    if (newId === oldId) return;
+    next = next.replace(new RegExp(`attachment://${escapeRegExp(oldId)}(?=[)\\s}])`, "g"), `attachment://${newId}`);
+  });
+  return next;
+};
+
 const noteId = () => `note-${crypto.randomUUID()}`;
 const autosaveDelayMs = { fast: 350, normal: 700, relaxed: 1200 } as const;
 
@@ -895,7 +906,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         await database.createNote(note);
       }
       const backupAttachments = backup.attachments?.filter((attachment) => typeof attachment.dataBase64 === "string") ?? [];
-      const restoredAttachments = backupAttachments.length
+      const restoredAttachmentBackups = backupAttachments.length
         ? await database.restoreBackupAttachments(
             backupAttachments.map((attachment) => ({
               ...attachment,
@@ -903,6 +914,22 @@ export function NotesProvider({ children }: { children: ReactNode }) {
             })),
           )
         : [];
+      const restoredAttachments = restoredAttachmentBackups.map((item) => item.attachment);
+      const restoredAttachmentIdByBackupId = new Map(
+        restoredAttachmentBackups.map((item) => [item.originalId, item.attachment.id]),
+      );
+      if (restoredAttachmentIdByBackupId.size > 0) {
+        await Promise.all(
+          notesToCreate.map(async (note) => {
+            if (note.isLocked) return;
+            const content = remapAttachmentReferences(note.content, restoredAttachmentIdByBackupId);
+            if (content === note.content) return;
+            note.content = content;
+            note.preview = getPlainTextPreview(content);
+            await database.updateNote(note);
+          }),
+        );
+      }
 
       setFolders(localFolders);
       setDatabaseTags((current) => uniqueByLower([...current, ...tagsToCreate]).sort((a, b) => a.localeCompare(b)));

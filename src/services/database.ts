@@ -34,6 +34,11 @@ export type AttachmentBackupPayload = Attachment & {
   dataBase64: string;
 };
 
+export type RestoredAttachmentBackup = {
+  originalId: string;
+  attachment: Attachment;
+};
+
 export type PasswordChangeResult = {
   changedNotes: number;
   changedAttachments: number;
@@ -202,7 +207,7 @@ export async function getAttachmentBackupPayloads() {
 }
 
 export async function restoreBackupAttachments(attachments: AttachmentBackupPayload[]) {
-  return invoke<Attachment[]>("restore_backup_attachments", { attachments });
+  return invoke<RestoredAttachmentBackup[]>("restore_backup_attachments", { attachments });
 }
 
 export async function removeAttachment(id: string) {

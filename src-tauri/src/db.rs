@@ -87,6 +87,13 @@ pub struct AttachmentBackupDto {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct RestoredAttachmentBackupDto {
+    pub original_id: String,
+    pub attachment: AttachmentDto,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PasswordChangeResultDto {
     pub changed_notes: usize,
     pub changed_attachments: usize,
@@ -1140,7 +1147,7 @@ pub fn restore_backup_attachments(
     app: AppHandle,
     state: tauri::State<'_, DbState>,
     attachments: Vec<AttachmentBackupDto>,
-) -> Result<Vec<AttachmentDto>, String> {
+) -> Result<Vec<RestoredAttachmentBackupDto>, String> {
     let connection = connect(&state.path)?;
     create_schema(&connection)?;
     let mut restored = Vec::new();
@@ -1156,7 +1163,8 @@ pub fn restore_backup_attachments(
         if !note_exists {
             continue;
         }
-        let mut id = incoming.id.clone();
+        let original_id = incoming.id.clone();
+        let mut id = original_id.clone();
         let id_exists: bool = connection
             .query_row(
                 "SELECT EXISTS(SELECT 1 FROM attachments WHERE id = ?1)",
@@ -1213,7 +1221,10 @@ pub fn restore_backup_attachments(
             )
             .map_err(|error| error.to_string())?;
         let _ = upsert_search_index_note(&connection, &attachment.note_id);
-        restored.push(attachment);
+        restored.push(RestoredAttachmentBackupDto {
+            original_id,
+            attachment,
+        });
     }
     Ok(restored)
 }
