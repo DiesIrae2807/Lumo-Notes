@@ -23,7 +23,9 @@ pub fn random_base64(length: usize) -> String {
 }
 
 pub fn derive_key(password: &str, salt_b64: &str) -> Result<[u8; 32], String> {
-    let salt = STANDARD.decode(salt_b64).map_err(|_| "Invalid lock salt.".to_string())?;
+    let salt = STANDARD
+        .decode(salt_b64)
+        .map_err(|_| "Invalid lock salt.".to_string())?;
     let mut key = [0_u8; 32];
     argon2()?
         .hash_password_into(password.as_bytes(), &salt, &mut key)
@@ -43,7 +45,11 @@ pub fn encrypt_string(key: &[u8; 32], plaintext: &str) -> Result<(String, String
     Ok((nonce, STANDARD.encode(ciphertext)))
 }
 
-pub fn decrypt_string(key: &[u8; 32], nonce_b64: &str, ciphertext_b64: &str) -> Result<String, String> {
+pub fn decrypt_string(
+    key: &[u8; 32],
+    nonce_b64: &str,
+    ciphertext_b64: &str,
+) -> Result<String, String> {
     let ciphertext = STANDARD
         .decode(ciphertext_b64)
         .map_err(|_| "Invalid encrypted note payload.".to_string())?;
@@ -61,15 +67,24 @@ pub fn encrypt_bytes(key: &[u8; 32], plaintext: &[u8]) -> Result<(String, Vec<u8
     Ok((STANDARD.encode(nonce), ciphertext))
 }
 
-pub fn decrypt_bytes(key: &[u8; 32], nonce_b64: &str, ciphertext: &[u8]) -> Result<Vec<u8>, String> {
-    let nonce = STANDARD.decode(nonce_b64).map_err(|_| "Invalid encryption nonce.".to_string())?;
+pub fn decrypt_bytes(
+    key: &[u8; 32],
+    nonce_b64: &str,
+    ciphertext: &[u8],
+) -> Result<Vec<u8>, String> {
+    let nonce = STANDARD
+        .decode(nonce_b64)
+        .map_err(|_| "Invalid encryption nonce.".to_string())?;
     if nonce.len() != 24 {
         return Err("Invalid encryption nonce length.".to_string());
     }
     let cipher = XChaCha20Poly1305::new(key.into());
     cipher
         .decrypt(XNonce::from_slice(&nonce), ciphertext)
-        .map_err(|_| "Could not decrypt payload. The password may be wrong or the data is corrupted.".to_string())
+        .map_err(|_| {
+            "Could not decrypt payload. The password may be wrong or the data is corrupted."
+                .to_string()
+        })
 }
 
 pub fn base64_encode(bytes: &[u8]) -> String {
@@ -77,5 +92,7 @@ pub fn base64_encode(bytes: &[u8]) -> String {
 }
 
 pub fn base64_decode(value: &str) -> Result<Vec<u8>, String> {
-    STANDARD.decode(value).map_err(|_| "Invalid base64 payload.".to_string())
+    STANDARD
+        .decode(value)
+        .map_err(|_| "Invalid base64 payload.".to_string())
 }

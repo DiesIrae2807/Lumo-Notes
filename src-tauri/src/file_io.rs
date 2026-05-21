@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::{fs, path::PathBuf};
+use std::{env, fs, path::PathBuf};
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -22,6 +22,24 @@ fn safe_join_file(directory: PathBuf, filename: &str) -> Result<PathBuf, String>
         .ok_or_else(|| "Invalid filename".to_string())?
         .to_owned();
     Ok(directory.join(file_name))
+}
+
+fn documents_dir() -> Option<PathBuf> {
+    #[cfg(target_os = "windows")]
+    {
+        env::var_os("USERPROFILE")
+            .map(PathBuf::from)
+            .map(|path| path.join("Documents"))
+            .filter(|path| path.is_dir())
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        env::var_os("HOME")
+            .map(PathBuf::from)
+            .map(|path| path.join("Documents"))
+            .filter(|path| path.is_dir())
+    }
 }
 
 #[tauri::command]
@@ -66,6 +84,9 @@ pub fn open_text_files(
     multiple: bool,
 ) -> Result<Vec<TextFile>, String> {
     let mut dialog = rfd::FileDialog::new().set_title(&title);
+    if let Some(directory) = documents_dir() {
+        dialog = dialog.set_directory(directory);
+    }
 
     if !extensions.is_empty() {
         let extension_refs = extensions.iter().map(String::as_str).collect::<Vec<_>>();

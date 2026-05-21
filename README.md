@@ -61,6 +61,9 @@ Settings are stored in the SQLite database, in the `app_settings` table.
 
 Backups are not stored automatically. Export Backup asks for a destination and writes the selected JSON backup wherever you choose.
 
+Optional Google Drive backups use hidden Drive `appDataFolder` storage and encrypt the whole backup package before upload.
+Setup details are in [docs/google-drive-appdata-backups.md](docs/google-drive-appdata-backups.md).
+
 ## Resetting Local Dev Data
 
 Only reset local data when you intentionally want a clean local database.
@@ -83,7 +86,7 @@ Do not delete `%APPDATA%\com.lumo.notes\` on a real user's machine unless they e
 - Windows bundling target: NSIS installer
 - Icon: `src-tauri/icons/icon.ico`
 
-The app does not include authentication, cloud sync, telemetry, analytics, AI, collaboration, or mobile support.
+The app does not include mandatory authentication, live cloud sync, telemetry, analytics, AI, collaboration, or mobile support.
 
 ## Locked Notes
 

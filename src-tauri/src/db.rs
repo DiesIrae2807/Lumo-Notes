@@ -1,12 +1,16 @@
 use crate::crypto;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
+use sha2::Digest;
+use std::time::Duration;
 use std::{
     fs,
-    io::Write,
+    io::{Read, Write},
+    net::TcpListener,
     path::{Path, PathBuf},
     process::Command,
     sync::Mutex,
+    thread,
     time::{SystemTime, UNIX_EPOCH},
 };
 use tauri::{AppHandle, Manager};
@@ -142,6 +146,45 @@ pub struct LockBackupMetadataDto {
     pub kdf_algorithm: String,
     pub kdf_params: String,
     pub encryption_algorithm: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CloudBackupPasswordMetadataDto {
+    pub salt: String,
+    pub verifier: String,
+    pub kdf_algorithm: String,
+    pub kdf_params: String,
+    pub encryption_algorithm: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EncryptedCloudBackupDto {
+    pub format: String,
+    pub kdf_algorithm: String,
+    pub kdf_params: String,
+    pub encryption_algorithm: String,
+    pub salt: String,
+    pub password_verifier: Option<String>,
+    pub nonce: String,
+    pub ciphertext_base64: String,
+    pub checksum: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceIdentityDto {
+    pub device_id: String,
+    pub device_name: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GoogleOAuthCodeDto {
+    pub code: String,
+    pub redirect_uri: String,
 }
 
 fn connect(path: &PathBuf) -> Result<Connection, String> {
@@ -305,7 +348,10 @@ fn migrate_schema(connection: &Connection) -> Result<(), String> {
 
     if !column_exists(connection, "attachments", "encryption_nonce")? {
         connection
-            .execute("ALTER TABLE attachments ADD COLUMN encryption_nonce TEXT", [])
+            .execute(
+                "ALTER TABLE attachments ADD COLUMN encryption_nonce TEXT",
+                [],
+            )
             .map_err(|error| error.to_string())?;
     }
 
@@ -345,33 +391,7 @@ fn seed_database_if_empty(connection: &mut Connection) -> Result<(), String> {
         return Ok(());
     }
 
-    let folders = seed_folders();
-    let notes = seed_notes();
-    let transaction = connection
-        .transaction()
-        .map_err(|error| error.to_string())?;
-
-    for folder in &folders {
-        transaction
-            .execute(
-                "INSERT INTO folders (id, name, color, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5)",
-                params![
-                    folder.id,
-                    folder.name,
-                    folder.color_class,
-                    "2026-05-04T00:00:00.000Z",
-                    "2026-05-04T00:00:00.000Z"
-                ],
-            )
-            .map_err(|error| error.to_string())?;
-    }
-
-    for note in &notes {
-        insert_note(&transaction, note)?;
-    }
-
-    transaction.commit().map_err(|error| error.to_string())
+    ensure_uncategorized_folder(connection, "2026-05-04T00:00:00.000Z")
 }
 
 fn insert_note(connection: &Connection, note: &NoteDto) -> Result<(), String> {
@@ -460,6 +480,42 @@ fn ensure_uncategorized_folder(connection: &Connection, updated_at: &str) -> Res
     Ok(())
 }
 
+fn ensure_note_folder_exists(connection: &Connection, note: &NoteDto) -> Result<(), String> {
+    let folder_exists: bool = connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM folders WHERE id = ?1)",
+            params![note.folder_id],
+            |row| row.get::<_, i64>(0),
+        )
+        .map_err(|error| error.to_string())?
+        != 0;
+    if folder_exists {
+        return Ok(());
+    }
+
+    if note.folder_id == "uncategorized" {
+        return ensure_uncategorized_folder(connection, &note.updated_at);
+    }
+
+    connection
+        .execute(
+            "INSERT INTO folders (id, name, color, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?4)",
+            params![
+                note.folder_id,
+                if note.folder_name.trim().is_empty() {
+                    "Uncategorized"
+                } else {
+                    note.folder_name.as_str()
+                },
+                "bg-slate-400",
+                note.updated_at
+            ],
+        )
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
 fn setting_value(connection: &Connection, key: &str) -> Result<Option<String>, String> {
     connection
         .query_row(
@@ -486,6 +542,69 @@ fn set_setting_value(
         )
         .map_err(|error| error.to_string())?;
     Ok(())
+}
+
+fn now_iso() -> String {
+    let millis = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .unwrap_or_default();
+    format!("{}", millis)
+}
+
+fn checksum_base64(bytes: &[u8]) -> String {
+    let mut hasher = sha2::Sha256::new();
+    hasher.update(bytes);
+    crypto::base64_encode(&hasher.finalize())
+}
+
+fn percent_encode(value: &str) -> String {
+    value
+        .bytes()
+        .flat_map(|byte| match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                vec![byte as char]
+            }
+            _ => format!("%{:02X}", byte).chars().collect(),
+        })
+        .collect()
+}
+
+fn query_param(path: &str, key: &str) -> Option<String> {
+    let query = path
+        .split_once('?')?
+        .1
+        .split_whitespace()
+        .next()
+        .unwrap_or("");
+    query.split('&').find_map(|pair| {
+        let (name, value) = pair.split_once('=')?;
+        if name == key {
+            Some(percent_decode(&value.replace('+', " ")))
+        } else {
+            None
+        }
+    })
+}
+
+fn percent_decode(value: &str) -> String {
+    let bytes = value.as_bytes();
+    let mut output = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%' && index + 2 < bytes.len() {
+            if let Ok(hex) = std::str::from_utf8(&bytes[index + 1..index + 3]) {
+                if let Ok(byte) = u8::from_str_radix(hex, 16) {
+                    output.push(byte);
+                    index += 3;
+                    continue;
+                }
+            }
+        }
+        output.push(bytes[index]);
+        index += 1;
+    }
+    String::from_utf8_lossy(&output).to_string()
 }
 
 fn lock_password_configured(connection: &Connection) -> Result<bool, String> {
@@ -564,8 +683,16 @@ fn get_notes_from_connection(connection: &Connection) -> Result<Vec<NoteDto>, St
             Ok(NoteDto {
                 id: note_id,
                 title: row.get(1)?,
-                content: if is_locked { String::new() } else { row.get(2)? },
-                preview: if is_locked { String::new() } else { row.get(3)? },
+                content: if is_locked {
+                    String::new()
+                } else {
+                    row.get(2)?
+                },
+                preview: if is_locked {
+                    String::new()
+                } else {
+                    row.get(3)?
+                },
                 folder_id: row.get(4)?,
                 folder_name: row.get(5)?,
                 is_pinned: row.get::<_, i64>(6)? != 0,
@@ -950,11 +1077,15 @@ fn encrypt_attachment_file(
     let key = current_lock_key(lock_state)?;
     let plaintext = fs::read(&attachment.stored_path).map_err(|error| error.to_string())?;
     let (nonce, ciphertext) = crypto::encrypt_bytes(&key, &plaintext)?;
-    let new_path = attachments_dir(app)?.join(encrypted_attachment_filename(&attachment.id, &attachment.filename));
+    let new_path = attachments_dir(app)?.join(encrypted_attachment_filename(
+        &attachment.id,
+        &attachment.filename,
+    ));
     let temp_path = new_path.with_extension("lumoenc.tmp");
     {
         let mut file = fs::File::create(&temp_path).map_err(|error| error.to_string())?;
-        file.write_all(&ciphertext).map_err(|error| error.to_string())?;
+        file.write_all(&ciphertext)
+            .map_err(|error| error.to_string())?;
         let _ = file.sync_all();
     }
     fs::rename(&temp_path, &new_path).map_err(|error| error.to_string())?;
@@ -1072,7 +1203,10 @@ fn plain_snippet(value: &str, _query: &str) -> String {
 }
 
 #[tauri::command]
-pub fn initialize_database(app: AppHandle, state: tauri::State<'_, DbState>) -> Result<DatabaseSnapshot, String> {
+pub fn initialize_database(
+    app: AppHandle,
+    state: tauri::State<'_, DbState>,
+) -> Result<DatabaseSnapshot, String> {
     cleanup_attachment_temp_dir(&app);
     let mut connection = connect(&state.path)?;
     create_schema(&connection)?;
@@ -1260,7 +1394,12 @@ pub fn restore_lock_backup_metadata(
     set_setting_value(&connection, "lock.verifier", &metadata.verifier, &now)?;
     set_setting_value(&connection, "lock.kdf", &metadata.kdf_algorithm, &now)?;
     set_setting_value(&connection, "lock.kdfParams", &metadata.kdf_params, &now)?;
-    set_setting_value(&connection, "lock.algorithm", &metadata.encryption_algorithm, &now)?;
+    set_setting_value(
+        &connection,
+        "lock.algorithm",
+        &metadata.encryption_algorithm,
+        &now,
+    )?;
     Ok(())
 }
 
@@ -1287,7 +1426,12 @@ pub fn setup_lock_password(
     set_setting_value(&connection, "lock.verifier", &verifier, &now)?;
     set_setting_value(&connection, "lock.kdf", crypto::KDF_ALGORITHM, &now)?;
     set_setting_value(&connection, "lock.kdfParams", crypto::KDF_PARAMS, &now)?;
-    set_setting_value(&connection, "lock.algorithm", crypto::ENCRYPTION_ALGORITHM, &now)?;
+    set_setting_value(
+        &connection,
+        "lock.algorithm",
+        crypto::ENCRYPTION_ALGORITHM,
+        &now,
+    )?;
     *lock_state
         .key
         .lock()
@@ -1312,7 +1456,10 @@ pub fn unlock_lock_session(
 }
 
 #[tauri::command]
-pub fn lock_all_notes(app: AppHandle, lock_state: tauri::State<'_, LockState>) -> Result<(), String> {
+pub fn lock_all_notes(
+    app: AppHandle,
+    lock_state: tauri::State<'_, LockState>,
+) -> Result<(), String> {
     *lock_state
         .key
         .lock()
@@ -1341,7 +1488,9 @@ pub fn lock_note(
         .collect::<Vec<_>>();
     let mut old_plaintext_paths = Vec::new();
     for attachment in &note_attachments {
-        if let Some(old_path) = encrypt_attachment_file(&app, &connection, &lock_state, attachment, &locked_at)? {
+        if let Some(old_path) =
+            encrypt_attachment_file(&app, &connection, &lock_state, attachment, &locked_at)?
+        {
             old_plaintext_paths.push(old_path);
         }
     }
@@ -1439,7 +1588,8 @@ pub fn unlock_note(
         created_at,
         updated_at,
     ) = note;
-    let nonce = encryption_nonce.ok_or_else(|| "Locked note is missing encryption metadata.".to_string())?;
+    let nonce = encryption_nonce
+        .ok_or_else(|| "Locked note is missing encryption metadata.".to_string())?;
     let (content_nonce, preview_nonce) = nonce
         .split_once(':')
         .ok_or_else(|| "Locked note has invalid encryption metadata.".to_string())?;
@@ -1495,7 +1645,9 @@ pub fn encrypt_note_attachments(
         .collect::<Vec<_>>();
     let mut old_plaintext_paths = Vec::new();
     for attachment in &note_attachments {
-        if let Some(old_path) = encrypt_attachment_file(&app, &connection, &lock_state, attachment, &encrypted_at)? {
+        if let Some(old_path) =
+            encrypt_attachment_file(&app, &connection, &lock_state, attachment, &encrypted_at)?
+        {
             old_plaintext_paths.push(old_path);
         }
     }
@@ -1542,8 +1694,10 @@ pub fn change_lock_password(
             .map_err(|error| error.to_string())?;
 
         for row in rows {
-            let (id, encrypted_content, encrypted_preview, nonce) = row.map_err(|error| error.to_string())?;
-            let nonce = nonce.ok_or_else(|| "Locked note is missing encryption metadata.".to_string())?;
+            let (id, encrypted_content, encrypted_preview, nonce) =
+                row.map_err(|error| error.to_string())?;
+            let nonce =
+                nonce.ok_or_else(|| "Locked note is missing encryption metadata.".to_string())?;
             let (content_nonce, preview_nonce) = nonce
                 .split_once(':')
                 .ok_or_else(|| "Locked note has invalid encryption metadata.".to_string())?;
@@ -1561,8 +1715,10 @@ pub fn change_lock_password(
                     .as_deref()
                     .ok_or_else(|| "Locked note is missing encrypted preview.".to_string())?,
             )?;
-            let (new_content_nonce, new_encrypted_content) = crypto::encrypt_string(&new_key, &content)?;
-            let (new_preview_nonce, new_encrypted_preview) = crypto::encrypt_string(&new_key, &preview)?;
+            let (new_content_nonce, new_encrypted_content) =
+                crypto::encrypt_string(&new_key, &content)?;
+            let (new_preview_nonce, new_encrypted_preview) =
+                crypto::encrypt_string(&new_key, &preview)?;
             note_updates.push((
                 id,
                 new_encrypted_content,
@@ -1576,18 +1732,19 @@ pub fn change_lock_password(
     {
         let attachments = get_attachments_from_connection(&connection)?;
         for attachment in attachments.into_iter().filter(|item| item.is_encrypted) {
-            let nonce = attachment
-                .encryption_nonce
-                .as_deref()
-                .ok_or_else(|| "Encrypted attachment is missing encryption metadata.".to_string())?;
-            let ciphertext = fs::read(&attachment.stored_path).map_err(|error| error.to_string())?;
+            let nonce = attachment.encryption_nonce.as_deref().ok_or_else(|| {
+                "Encrypted attachment is missing encryption metadata.".to_string()
+            })?;
+            let ciphertext =
+                fs::read(&attachment.stored_path).map_err(|error| error.to_string())?;
             let plaintext = crypto::decrypt_bytes(&old_key, nonce, &ciphertext)?;
             let (new_nonce, new_ciphertext) = crypto::encrypt_bytes(&new_key, &plaintext)?;
             let old_path = PathBuf::from(&attachment.stored_path);
             let temp_path = old_path.with_extension("reencrypt.tmp");
             {
                 let mut file = fs::File::create(&temp_path).map_err(|error| error.to_string())?;
-                file.write_all(&new_ciphertext).map_err(|error| error.to_string())?;
+                file.write_all(&new_ciphertext)
+                    .map_err(|error| error.to_string())?;
                 let _ = file.sync_all();
             }
             attachment_updates.push((attachment.id, old_path, temp_path, new_nonce));
@@ -1620,8 +1777,15 @@ pub fn change_lock_password(
         set_setting_value(&connection, "lock.verifier", &new_verifier, &now)?;
         set_setting_value(&connection, "lock.kdf", crypto::KDF_ALGORITHM, &now)?;
         set_setting_value(&connection, "lock.kdfParams", crypto::KDF_PARAMS, &now)?;
-        set_setting_value(&connection, "lock.algorithm", crypto::ENCRYPTION_ALGORITHM, &now)?;
-        connection.execute_batch("COMMIT").map_err(|error| error.to_string())
+        set_setting_value(
+            &connection,
+            "lock.algorithm",
+            crypto::ENCRYPTION_ALGORITHM,
+            &now,
+        )?;
+        connection
+            .execute_batch("COMMIT")
+            .map_err(|error| error.to_string())
     })();
 
     if let Err(error) = transaction_result {
@@ -1708,38 +1872,41 @@ pub fn search_notes(
         )
         .map_err(|error| error.to_string())?;
     let rows = statement
-        .query_map(params![normalized, include_deleted as i64, include_archived as i64], |row| {
-            let note_id: String = row.get(0)?;
-            let title: String = row.get(1)?;
-            let preview: String = row.get(2)?;
-            let content: String = row.get(3)?;
-            let folder_name: String = row.get(4)?;
-            let is_pinned: i64 = row.get(6)?;
-            let rank_score: f64 = row.get(7)?;
-            let title_boost = if title.to_lowercase().contains(&query.to_lowercase()) {
-                80.0
-            } else {
-                0.0
-            };
-            let folder_boost = if folder_name.to_lowercase().contains(&query.to_lowercase()) {
-                40.0
-            } else {
-                0.0
-            };
-            let pin_boost = if is_pinned != 0 { 8.0 } else { 0.0 };
-            let score =
-                (1000.0 - rank_score.abs()).max(0.0) + title_boost + folder_boost + pin_boost;
-            let snippet_source = if !preview.trim().is_empty() {
-                preview
-            } else {
-                content
-            };
-            Ok(SearchResultDto {
-                note_id,
-                score,
-                snippet: plain_snippet(&snippet_source, &query),
-            })
-        })
+        .query_map(
+            params![normalized, include_deleted as i64, include_archived as i64],
+            |row| {
+                let note_id: String = row.get(0)?;
+                let title: String = row.get(1)?;
+                let preview: String = row.get(2)?;
+                let content: String = row.get(3)?;
+                let folder_name: String = row.get(4)?;
+                let is_pinned: i64 = row.get(6)?;
+                let rank_score: f64 = row.get(7)?;
+                let title_boost = if title.to_lowercase().contains(&query.to_lowercase()) {
+                    80.0
+                } else {
+                    0.0
+                };
+                let folder_boost = if folder_name.to_lowercase().contains(&query.to_lowercase()) {
+                    40.0
+                } else {
+                    0.0
+                };
+                let pin_boost = if is_pinned != 0 { 8.0 } else { 0.0 };
+                let score =
+                    (1000.0 - rank_score.abs()).max(0.0) + title_boost + folder_boost + pin_boost;
+                let snippet_source = if !preview.trim().is_empty() {
+                    preview
+                } else {
+                    content
+                };
+                Ok(SearchResultDto {
+                    note_id,
+                    score,
+                    snippet: plain_snippet(&snippet_source, &query),
+                })
+            },
+        )
         .map_err(|error| error.to_string())?;
 
     let mut results = rows
@@ -1812,7 +1979,8 @@ pub fn attach_file_to_note(
         let plaintext = fs::read(&source_path).map_err(|error| error.to_string())?;
         let (nonce, ciphertext) = crypto::encrypt_bytes(&key, &plaintext)?;
         let mut file = fs::File::create(&stored_path).map_err(|error| error.to_string())?;
-        file.write_all(&ciphertext).map_err(|error| error.to_string())?;
+        file.write_all(&ciphertext)
+            .map_err(|error| error.to_string())?;
         let _ = file.sync_all();
         (true, Some(nonce), Some(created_at.clone()))
     } else {
@@ -1862,7 +2030,11 @@ pub fn attach_file_to_note(
 }
 
 #[tauri::command]
-pub fn remove_attachment(app: AppHandle, state: tauri::State<'_, DbState>, id: String) -> Result<(), String> {
+pub fn remove_attachment(
+    app: AppHandle,
+    state: tauri::State<'_, DbState>,
+    id: String,
+) -> Result<(), String> {
     let connection = connect(&state.path)?;
     create_schema(&connection)?;
     if let Some(attachment) = attachment_by_id(&connection, &id)? {
@@ -1872,7 +2044,9 @@ pub fn remove_attachment(app: AppHandle, state: tauri::State<'_, DbState>, id: S
             .map_err(|error| error.to_string())?;
         let _ = fs::remove_file(attachment.stored_path);
         if let Ok(directory) = attachment_temp_dir(&app) {
-            let _ = fs::remove_file(directory.join(format!("{}-{}", attachment.id, attachment.filename)));
+            let _ = fs::remove_file(
+                directory.join(format!("{}-{}", attachment.id, attachment.filename)),
+            );
         }
         let _ = upsert_search_index_note(&connection, &note_id);
     }
@@ -1894,7 +2068,8 @@ pub fn open_attachment(
 
     let open_path = if attachment.is_encrypted {
         let bytes = attachment_bytes(&attachment, &lock_state)?;
-        let temp_path = attachment_temp_dir(&app)?.join(format!("{}-{}", attachment.id, attachment.filename));
+        let temp_path =
+            attachment_temp_dir(&app)?.join(format!("{}-{}", attachment.id, attachment.filename));
         let mut file = fs::File::create(&temp_path).map_err(|error| error.to_string())?;
         file.write_all(&bytes).map_err(|error| error.to_string())?;
         let _ = file.sync_all();
@@ -1939,8 +2114,8 @@ pub fn open_external_url(url: String) -> Result<(), String> {
     }
 
     #[cfg(target_os = "windows")]
-    let status = Command::new("cmd")
-        .args(["/C", "start", "", &url])
+    let status = Command::new("rundll32")
+        .args(["url.dll,FileProtocolHandler", &url])
         .status()
         .map_err(|error| error.to_string())?;
 
@@ -2058,8 +2233,224 @@ pub fn set_app_setting(
 }
 
 #[tauri::command]
+pub fn get_or_create_device_identity(
+    state: tauri::State<'_, DbState>,
+) -> Result<DeviceIdentityDto, String> {
+    let connection = connect(&state.path)?;
+    create_schema(&connection)?;
+    let existing_id = setting_value(&connection, "sync.deviceId")?;
+    let existing_name = setting_value(&connection, "sync.deviceName")?;
+    let existing_created_at = setting_value(&connection, "sync.deviceCreatedAt")?;
+
+    if let (Some(device_id), Some(device_name), Some(created_at)) =
+        (existing_id, existing_name, existing_created_at)
+    {
+        return Ok(DeviceIdentityDto {
+            device_id,
+            device_name,
+            created_at,
+        });
+    }
+
+    let device_id = format!(
+        "device-{}",
+        crypto::random_base64(18).replace(['/', '+', '='], "")
+    );
+    let device_name = if cfg!(target_os = "windows") {
+        "Windows PC".to_string()
+    } else if cfg!(target_os = "macos") {
+        "Mac".to_string()
+    } else if cfg!(target_os = "linux") {
+        "Linux PC".to_string()
+    } else {
+        "Lumo device".to_string()
+    };
+    let created_at = now_iso();
+    set_setting_value(&connection, "sync.deviceId", &device_id, &created_at)?;
+    set_setting_value(&connection, "sync.deviceName", &device_name, &created_at)?;
+    set_setting_value(
+        &connection,
+        "sync.deviceCreatedAt",
+        &created_at,
+        &created_at,
+    )?;
+
+    Ok(DeviceIdentityDto {
+        device_id,
+        device_name,
+        created_at,
+    })
+}
+
+#[tauri::command]
+pub fn create_cloud_backup_password_metadata(
+    password: String,
+) -> Result<CloudBackupPasswordMetadataDto, String> {
+    if password.len() < 8 {
+        return Err("Use at least 8 characters for the Cloud Backup Password.".to_string());
+    }
+    let salt = crypto::random_base64(16);
+    let key = crypto::derive_key(&password, &salt)?;
+    Ok(CloudBackupPasswordMetadataDto {
+        salt,
+        verifier: crypto::verifier_for_key(&key),
+        kdf_algorithm: crypto::KDF_ALGORITHM.to_string(),
+        kdf_params: crypto::KDF_PARAMS.to_string(),
+        encryption_algorithm: crypto::ENCRYPTION_ALGORITHM.to_string(),
+    })
+}
+
+#[tauri::command]
+pub fn verify_cloud_backup_password(
+    password: String,
+    salt: String,
+    verifier: String,
+) -> Result<(), String> {
+    let key = crypto::derive_key(&password, &salt)?;
+    if crypto::verifier_for_key(&key) != verifier {
+        return Err("Wrong Cloud Backup Password.".to_string());
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn encrypt_cloud_backup(
+    password: String,
+    plaintext_json: String,
+) -> Result<EncryptedCloudBackupDto, String> {
+    let salt = crypto::random_base64(16);
+    let key = crypto::derive_key(&password, &salt)?;
+    let password_verifier = crypto::verifier_for_key(&key);
+    let (nonce, ciphertext) = crypto::encrypt_bytes(&key, plaintext_json.as_bytes())?;
+    Ok(EncryptedCloudBackupDto {
+        format: "lumo-cloud-backup-v1".to_string(),
+        kdf_algorithm: crypto::KDF_ALGORITHM.to_string(),
+        kdf_params: crypto::KDF_PARAMS.to_string(),
+        encryption_algorithm: crypto::ENCRYPTION_ALGORITHM.to_string(),
+        salt,
+        password_verifier: Some(password_verifier),
+        nonce,
+        checksum: checksum_base64(&ciphertext),
+        ciphertext_base64: crypto::base64_encode(&ciphertext),
+    })
+}
+
+#[tauri::command]
+pub fn decrypt_cloud_backup(
+    password: String,
+    package: EncryptedCloudBackupDto,
+) -> Result<String, String> {
+    if package.format != "lumo-cloud-backup-v1" {
+        return Err("Unsupported encrypted backup format.".to_string());
+    }
+    let ciphertext = crypto::base64_decode(&package.ciphertext_base64)?;
+    if checksum_base64(&ciphertext) != package.checksum {
+        return Err("Encrypted backup checksum does not match.".to_string());
+    }
+    let key = crypto::derive_key(&password, &package.salt)?;
+    if let Some(verifier) = package.password_verifier {
+        if crypto::verifier_for_key(&key) != verifier {
+            return Err(
+                "This password does not match the password used to create this backup.".to_string(),
+            );
+        }
+    }
+    let plaintext = crypto::decrypt_bytes(&key, &package.nonce, &ciphertext)?;
+    String::from_utf8(plaintext).map_err(|_| "Backup package is not valid UTF-8.".to_string())
+}
+
+#[tauri::command]
+pub async fn google_oauth_authorize(
+    client_id: String,
+    code_challenge: String,
+) -> Result<GoogleOAuthCodeDto, String> {
+    if client_id.trim().is_empty() {
+        return Err("Google OAuth client id is missing.".to_string());
+    }
+
+    let listener = TcpListener::bind("127.0.0.1:0").map_err(|error| error.to_string())?;
+    listener
+        .set_nonblocking(true)
+        .map_err(|error| error.to_string())?;
+    let redirect_uri = format!(
+        "http://127.0.0.1:{}/google-drive-callback",
+        listener
+            .local_addr()
+            .map_err(|error| error.to_string())?
+            .port()
+    );
+    let state = crypto::random_base64(18).replace(['/', '+', '='], "");
+    let scope = "https://www.googleapis.com/auth/drive.appdata";
+    let auth_url = format!(
+        "https://accounts.google.com/o/oauth2/v2/auth?client_id={}&redirect_uri={}&response_type=code&scope={}&access_type=offline&prompt=consent&code_challenge={}&code_challenge_method=S256&state={}",
+        percent_encode(&client_id),
+        percent_encode(&redirect_uri),
+        percent_encode(scope),
+        percent_encode(&code_challenge),
+        percent_encode(&state),
+    );
+
+    open_external_url(auth_url)?;
+
+    let code = tauri::async_runtime::spawn_blocking(move || {
+        let started_at = SystemTime::now();
+        let (mut stream, _) = loop {
+            match listener.accept() {
+                Ok(value) => break value,
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    if started_at
+                        .elapsed()
+                        .map(|elapsed| elapsed > Duration::from_secs(300))
+                        .unwrap_or(false)
+                    {
+                        return Err("Google OAuth timed out. Try connecting again.".to_string());
+                    }
+                    thread::sleep(Duration::from_millis(100));
+                }
+                Err(error) => return Err(error.to_string()),
+            }
+        };
+        let mut buffer = [0_u8; 4096];
+        let length = stream
+            .read(&mut buffer)
+            .map_err(|error| error.to_string())?;
+        let request = String::from_utf8_lossy(&buffer[..length]);
+        let first_line = request.lines().next().unwrap_or_default();
+        let path = first_line.split_whitespace().nth(1).unwrap_or_default();
+        let returned_state = query_param(path, "state").unwrap_or_default();
+        let response_body = if returned_state == state && query_param(path, "code").is_some() {
+            "Google Drive is connected. You can return to Lumo Notes."
+        } else {
+            "Google Drive authorization was cancelled or failed. You can return to Lumo Notes."
+        };
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            response_body.len(),
+            response_body
+        );
+        stream
+            .write_all(response.as_bytes())
+            .map_err(|error| error.to_string())?;
+
+        if returned_state != state {
+            return Err("Google OAuth state did not match.".to_string());
+        }
+        if let Some(error) = query_param(path, "error") {
+            return Err(format!("Google OAuth failed: {}", error));
+        }
+        query_param(path, "code")
+            .ok_or_else(|| "Google OAuth did not return an authorization code.".to_string())
+    })
+    .await
+    .map_err(|error| error.to_string())??;
+
+    Ok(GoogleOAuthCodeDto { code, redirect_uri })
+}
+
+#[tauri::command]
 pub fn create_note(state: tauri::State<'_, DbState>, note: NoteDto) -> Result<(), String> {
     let connection = connect(&state.path)?;
+    ensure_note_folder_exists(&connection, &note)?;
     insert_note(&connection, &note)?;
     let _ = upsert_search_index_note(&connection, &note.id);
     Ok(())
@@ -2130,7 +2521,9 @@ pub fn update_note(
         )
         .map_err(|error| error.to_string())?;
     if changed_rows == 0 {
-        return Err("Note no longer exists in local storage. Reload notes or create it again.".to_string());
+        return Err(
+            "Note no longer exists in local storage. Reload notes or create it again.".to_string(),
+        );
     }
     replace_note_tags(&connection, &note)?;
     let _ = upsert_search_index_note(&connection, &note.id);
@@ -2308,7 +2701,7 @@ pub fn create_folder(
     let connection = connect(&state.path)?;
     connection
         .execute(
-            "INSERT INTO folders (id, name, color, created_at, updated_at)
+            "INSERT OR IGNORE INTO folders (id, name, color, created_at, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5)",
             params![
                 folder.id,
@@ -2498,139 +2891,4 @@ pub fn remove_tag_from_note(
         .map_err(|error| error.to_string())?;
     let _ = upsert_search_index_note(&connection, &note_id);
     Ok(())
-}
-
-fn seed_folders() -> Vec<FolderDto> {
-    vec![
-        FolderDto {
-            id: "projects".into(),
-            name: "Projects".into(),
-            color_class: "bg-lumo-violet".into(),
-        },
-        FolderDto {
-            id: "personal".into(),
-            name: "Personal".into(),
-            color_class: "bg-lumo-teal".into(),
-        },
-        FolderDto {
-            id: "ideas".into(),
-            name: "Ideas".into(),
-            color_class: "bg-emerald-300".into(),
-        },
-        FolderDto {
-            id: "learning".into(),
-            name: "Learning".into(),
-            color_class: "bg-violet-400".into(),
-        },
-        FolderDto {
-            id: "archive".into(),
-            name: "Archive".into(),
-            color_class: "bg-indigo-200".into(),
-        },
-    ]
-}
-
-fn seed_notes() -> Vec<NoteDto> {
-    vec![
-        NoteDto {
-            id: "note-project-aurora".into(),
-            title: "Project Aurora".into(),
-            content: "Vision\nCreate a calm, intelligent note-taking experience that helps people think clearly and stay connected.\n\nGoals\nDelightful and minimal experience\nPowerful linking and knowledge capture\nClear structure across devices\nPrivate, focused, and reliable\n\nRoadmap\nDefine MVP scope\nUser research\nWireframes and prototype\nBuild core linking experience\nBeta release".into(),
-            preview: "Product vision, goals, and roadmap".into(),
-            folder_id: "projects".into(),
-            folder_name: "Projects".into(),
-            tags: vec!["work".into(), "product".into()],
-            is_pinned: true,
-            is_favorite: true,
-            is_deleted: false,
-            is_archived: false,
-            is_locked: false,
-            encrypted_content: None,
-            encrypted_preview: None,
-            encryption_nonce: None,
-            locked_at: None,
-            created_at: "2026-04-25T10:00:00.000Z".into(),
-            updated_at: "2026-05-04T21:58:00.000Z".into(),
-        },
-        NoteDto {
-            id: "note-branding-ideas".into(),
-            title: "Branding Ideas".into(),
-            content: "Color, typography, style, and moodboard notes for the next Lumo identity pass.".into(),
-            preview: "Color, typography, style, moodboard".into(),
-            folder_id: "personal".into(),
-            folder_name: "Personal".into(),
-            tags: vec!["design".into(), "personal".into()],
-            is_pinned: true,
-            is_favorite: false,
-            is_deleted: false,
-            is_archived: false,
-            is_locked: false,
-            encrypted_content: None,
-            encrypted_preview: None,
-            encryption_nonce: None,
-            locked_at: None,
-            created_at: "2026-04-29T10:00:00.000Z".into(),
-            updated_at: "2026-05-04T21:00:00.000Z".into(),
-        },
-        NoteDto {
-            id: "note-design-system".into(),
-            title: "Design system exploration".into(),
-            content: "Explore compact panels, restrained color tokens, focus states, and editor controls.".into(),
-            preview: "Color, typography, components".into(),
-            folder_id: "projects".into(),
-            folder_name: "Projects".into(),
-            tags: vec!["design".into(), "product".into()],
-            is_pinned: false,
-            is_favorite: false,
-            is_deleted: false,
-            is_archived: false,
-            is_locked: false,
-            encrypted_content: None,
-            encrypted_preview: None,
-            encryption_nonce: None,
-            locked_at: None,
-            created_at: "2026-05-01T10:00:00.000Z".into(),
-            updated_at: "2026-05-04T18:00:00.000Z".into(),
-        },
-        NoteDto {
-            id: "note-user-interviews".into(),
-            title: "User interviews".into(),
-            content: "People want capture to feel fast, calm, and reliable. Organization should emerge without heavy setup.".into(),
-            preview: "What users need, learnings, gratitude".into(),
-            folder_id: "personal".into(),
-            folder_name: "Personal".into(),
-            tags: vec!["personal".into(), "product".into()],
-            is_pinned: false,
-            is_favorite: true,
-            is_deleted: false,
-            is_archived: false,
-            is_locked: false,
-            encrypted_content: None,
-            encrypted_preview: None,
-            encryption_nonce: None,
-            locked_at: None,
-            created_at: "2026-05-02T10:00:00.000Z".into(),
-            updated_at: "2026-05-04T16:00:00.000Z".into(),
-        },
-        NoteDto {
-            id: "note-marketing-strategy".into(),
-            title: "Marketing strategy".into(),
-            content: "Positioning, messaging, and channels for the first public Lumo Notes story.".into(),
-            preview: "Positioning, messaging, channels".into(),
-            folder_id: "projects".into(),
-            folder_name: "Projects".into(),
-            tags: vec!["work".into(), "planning".into()],
-            is_pinned: false,
-            is_favorite: false,
-            is_deleted: false,
-            is_archived: false,
-            is_locked: false,
-            encrypted_content: None,
-            encrypted_preview: None,
-            encryption_nonce: None,
-            locked_at: None,
-            created_at: "2026-04-30T10:00:00.000Z".into(),
-            updated_at: "2026-05-03T10:00:00.000Z".into(),
-        },
-    ]
 }

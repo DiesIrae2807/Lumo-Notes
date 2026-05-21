@@ -6,12 +6,33 @@ import {
   type AppSettings,
   type CustomThemeColors,
 } from "../types/settings";
-import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { rebuildSearchIndex } from "../services/database";
 import { notify, notifyError } from "../utils/toast";
 import { confirmDialog } from "../utils/confirm";
 import { useNotes } from "../store/notesStore";
 import { getVersion } from "@tauri-apps/api/app";
+import {
+  createCloudBackupPasswordMetadata,
+  verifyCloudBackupPassword,
+  type CloudBackupPasswordMetadata,
+} from "../sync/backupEncryption";
+import {
+  downloadAndDecryptCloudBackup,
+  formatBytes,
+  getCloudBackupStatus,
+  listCloudBackups,
+  markCloudRestoreComplete,
+  uploadEncryptedCloudBackup,
+  type CloudBackupManifestEntry,
+} from "../sync/cloudBackup";
+import {
+  connectGoogleDrive,
+  disconnectGoogleDrive,
+  getStoredGoogleDriveSession,
+  type GoogleDriveSession,
+} from "../sync/googleDriveAuth";
+import { getRawSetting, setRawSetting } from "../sync/syncSettings";
 
 const shortcuts = [
   ["Ctrl+K", "Command palette"],
@@ -508,6 +529,321 @@ function SettingToggle<K extends keyof AppSettings>({
   );
 }
 
+const CLOUD_PASSWORD_KEY = "sync.cloudBackupPassword";
+
+type SecretPromptState = {
+  message: string;
+  resolve: (value: string) => void;
+  title: string;
+} | null;
+
+async function requestCloudBackupPassword(
+  promptSecret: (title: string, message: string) => Promise<string>,
+  mode: "backup" | "restore",
+) {
+  const existing = await getRawSetting<CloudBackupPasswordMetadata | null>(CLOUD_PASSWORD_KEY);
+  if (!existing?.salt || !existing.verifier) {
+    if (mode === "restore") {
+      const password = await promptSecret(
+        "Cloud Backup Password",
+        "Enter the Cloud Backup Password that was used when this Drive backup was created.",
+      );
+      return password || null;
+    }
+
+    const password = await promptSecret(
+      "Set Cloud Backup Password",
+      "Set a separate Cloud Backup Password. If you forget it, Drive backups cannot be restored. Use at least 8 characters.",
+    );
+    if (!password) return null;
+    const confirmation = await promptSecret("Confirm Cloud Backup Password", "Re-enter the Cloud Backup Password.");
+    if (password !== confirmation) {
+      throw new Error("Cloud Backup Passwords do not match.");
+    }
+    const metadata = await createCloudBackupPasswordMetadata(password);
+    await setRawSetting(CLOUD_PASSWORD_KEY, metadata);
+    return password;
+  }
+
+  const password = await promptSecret("Cloud Backup Password", "Enter your Cloud Backup Password.");
+  if (!password) return null;
+  await verifyCloudBackupPassword(password, existing);
+  return password;
+}
+
+function SecretPromptModal({
+  onClose,
+  prompt,
+}: {
+  onClose: () => void;
+  prompt: SecretPromptState;
+}) {
+  const [value, setValue] = useState("");
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (!prompt) return;
+    setValue("");
+    window.setTimeout(() => inputRef.current?.focus(), 0);
+  }, [prompt]);
+
+  if (!prompt) return null;
+
+  const close = (result: string) => {
+    prompt.resolve(result.trim());
+    onClose();
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-[120] grid place-items-center bg-night-950/60 px-4 backdrop-blur-sm"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) close("");
+      }}
+    >
+      <form
+        className="w-full max-w-md rounded-2xl border border-white/10 bg-night-900/95 p-4 shadow-[0_24px_80px_rgba(0,0,0,0.45)]"
+        onSubmit={(event) => {
+          event.preventDefault();
+          close(value);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            close("");
+          }
+        }}
+      >
+        <div className="mb-4">
+          <p className="text-sm font-semibold text-white">{prompt.title}</p>
+          <p className="mt-1 text-xs leading-5 text-slate-500">{prompt.message}</p>
+        </div>
+        <input
+          ref={inputRef}
+          className="h-10 w-full rounded-lg border border-white/10 bg-night-950/80 px-3 text-sm text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-lumo-teal/50 focus:ring-2 focus:ring-lumo-teal/10"
+          type="password"
+          value={value}
+          onChange={(event) => setValue(event.target.value)}
+          placeholder="Cloud Backup Password"
+        />
+        <div className="mt-5 flex justify-end gap-2">
+          <button
+            type="button"
+            className="rounded-lg px-3 py-2 text-sm text-slate-400 transition hover:bg-white/[0.05] hover:text-white"
+            onClick={() => close("")}
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            className="rounded-lg bg-lumo-violet px-3 py-2 text-sm font-medium text-white transition hover:bg-lumo-violet/90 disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={!value.trim()}
+          >
+            Continue
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function SyncSettingsPanel({ appVersion }: { appVersion: string }) {
+  const { availableTags, folders, notes, restoreBackupMerge } = useNotes();
+  const { settings } = useSettings();
+  const [session, setSession] = useState<GoogleDriveSession | null>(null);
+  const [backups, setBackups] = useState<CloudBackupManifestEntry[]>([]);
+  const [lastBackupAt, setLastBackupAt] = useState<string | null>(null);
+  const [lastRestoreAt, setLastRestoreAt] = useState<string | null>(null);
+  const [isBusy, setIsBusy] = useState(false);
+  const [statusText, setStatusText] = useState("");
+  const [secretPrompt, setSecretPrompt] = useState<SecretPromptState>(null);
+
+  const promptSecret = useCallback((title: string, message: string) => {
+    return new Promise<string>((resolve) => {
+      setSecretPrompt({ message, resolve, title });
+    });
+  }, []);
+
+  const refreshState = async (loadBackups: boolean) => {
+    const [storedSession, cloudStatus] = await Promise.all([
+      getStoredGoogleDriveSession(),
+      getCloudBackupStatus(),
+    ]);
+    setSession(storedSession);
+    setLastBackupAt(cloudStatus.lastBackupAt);
+    setLastRestoreAt(cloudStatus.lastRestoreAt);
+    if (storedSession && loadBackups) {
+      const nextBackups = await listCloudBackups();
+      setBackups(nextBackups);
+    }
+  };
+
+  useEffect(() => {
+    void refreshState(false).catch(() => {
+      setSession(null);
+    });
+  }, []);
+
+  const run = async (label: string, action: () => Promise<void>) => {
+    if (isBusy) return;
+    setIsBusy(true);
+    setStatusText(label);
+    try {
+      await action();
+    } catch (error) {
+      notifyError(label, error);
+    } finally {
+      setIsBusy(false);
+      setStatusText("");
+    }
+  };
+
+  const handleConnect = () =>
+    run("Connecting Google Drive", async () => {
+      const connected = await connectGoogleDrive();
+      setSession(connected);
+      notify({ kind: "success", title: "Google Drive connected" });
+      await refreshState(true);
+    });
+
+  const handleDisconnect = () =>
+    run("Disconnecting Google Drive", async () => {
+      await disconnectGoogleDrive();
+      setSession(null);
+      setBackups([]);
+      notify({ kind: "success", title: "Google Drive disconnected" });
+    });
+
+  const handleBackup = () =>
+    run("Backing up to Google Drive", async () => {
+      if (!session) throw new Error("Connect Google Drive first.");
+      const password = await requestCloudBackupPassword(promptSecret, "backup");
+      if (!password) return;
+      const entry = await uploadEncryptedCloudBackup({
+        appVersion,
+        folders,
+        notes,
+        password,
+        settings,
+        tags: availableTags,
+      });
+      setBackups((current) => [entry, ...current.filter((item) => item.id !== entry.id)]);
+      setLastBackupAt(entry.createdAt);
+      notify({ kind: "success", title: "Encrypted Drive backup uploaded" });
+    });
+
+  const handleRefresh = () =>
+    run("Refreshing Drive backups", async () => {
+      if (!session) throw new Error("Connect Google Drive first.");
+      const nextBackups = await listCloudBackups();
+      setBackups(nextBackups);
+      notify({ kind: "success", title: "Drive backup list refreshed" });
+    });
+
+  const handleRestore = (entry: CloudBackupManifestEntry) =>
+    run("Restoring Drive backup", async () => {
+      const confirmed = await confirmDialog({
+        confirmLabel: "Merge restore",
+        message:
+          "This will decrypt the selected Drive backup locally and merge it into your current notes. Existing local data will not be wiped.",
+        title: "Restore encrypted Drive backup?",
+      });
+      if (!confirmed) return;
+      const password = await requestCloudBackupPassword(promptSecret, "restore");
+      if (!password) return;
+      let backup;
+      try {
+        backup = await downloadAndDecryptCloudBackup(entry, password);
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        throw new Error(
+          detail
+            ? `Could not decrypt this selected backup from ${new Date(entry.createdAt).toLocaleString()}. ${detail}`
+            : `Could not decrypt this selected backup from ${new Date(entry.createdAt).toLocaleString()}.`,
+        );
+      }
+      await restoreBackupMerge(backup);
+      await markCloudRestoreComplete();
+      setLastRestoreAt(new Date().toISOString());
+    });
+
+  return (
+    <div className="space-y-4 text-sm text-slate-300">
+      <div className="grid gap-3 md:grid-cols-2">
+        <div className="rounded-xl border border-white/10 bg-white/[0.025] p-3">
+          <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Sync provider</p>
+          <p className="mt-2 font-medium text-white">Google Drive appDataFolder</p>
+        </div>
+        <div className="rounded-xl border border-white/10 bg-white/[0.025] p-3">
+          <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Connection status</p>
+          <p className="mt-2 font-medium text-white">{session ? "Connected" : "Not connected"}</p>
+          {session?.email ? <p className="mt-1 text-xs text-slate-500">{session.email}</p> : null}
+        </div>
+        <div className="rounded-xl border border-white/10 bg-white/[0.025] p-3">
+          <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Last backup</p>
+          <p className="mt-2 text-slate-200">{lastBackupAt ? new Date(lastBackupAt).toLocaleString() : "Never"}</p>
+        </div>
+        <div className="rounded-xl border border-white/10 bg-white/[0.025] p-3">
+          <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Last restore</p>
+          <p className="mt-2 text-slate-200">{lastRestoreAt ? new Date(lastRestoreAt).toLocaleString() : "Never"}</p>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        {!session ? (
+          <button className="rounded-xl bg-lumo-violet px-3 py-2 text-xs font-medium text-white transition hover:bg-lumo-violet/90 disabled:opacity-60" disabled={isBusy} type="button" onClick={handleConnect}>
+            Connect Google Drive
+          </button>
+        ) : (
+          <button className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-medium text-slate-200 transition hover:bg-white/[0.07] disabled:opacity-60" disabled={isBusy} type="button" onClick={handleDisconnect}>
+            Disconnect
+          </button>
+        )}
+        <button className="rounded-xl border border-lumo-teal/20 bg-lumo-teal/10 px-3 py-2 text-xs font-medium text-lumo-teal transition hover:bg-lumo-teal/15 disabled:opacity-60" disabled={isBusy || !session} type="button" onClick={handleBackup}>
+          Back up now
+        </button>
+        <button className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-medium text-slate-200 transition hover:bg-white/[0.07] disabled:opacity-60" disabled={isBusy || !session} type="button" onClick={handleRefresh}>
+          Refresh backup list
+        </button>
+        {statusText ? <span className="self-center text-xs text-slate-500">{statusText}...</span> : null}
+      </div>
+
+      <div className="rounded-xl border border-white/10 bg-white/[0.025] p-3">
+        <div className="flex items-center justify-between gap-3">
+          <p className="font-medium text-slate-200">Available Drive backups</p>
+          <span className="text-xs text-slate-500">{backups.length} found</span>
+        </div>
+        <div className="mt-3 space-y-2">
+          {backups.length === 0 ? (
+            <p className="text-xs text-slate-500">Connect and refresh to list encrypted backups in appDataFolder.</p>
+          ) : (
+            backups.map((backup) => (
+              <div key={backup.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-white/[0.03] px-3 py-2">
+                <div>
+                  <p className="text-sm text-slate-200">{new Date(backup.createdAt).toLocaleString()}</p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {backup.deviceName} · {backup.appVersion} · {formatBytes(backup.size)}
+                  </p>
+                </div>
+                <button className="rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-medium text-slate-200 transition hover:bg-white/[0.07] disabled:opacity-60" disabled={isBusy} type="button" onClick={() => handleRestore(backup)}>
+                  Restore from Drive
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      <div className="space-y-2 text-xs leading-5 text-slate-500">
+        <p>Google sign-in is optional. Lumo remains local-first and fully usable offline without Drive.</p>
+        <p>Drive backups are encrypted before upload to hidden app-specific appDataFolder storage. Google Drive does not receive plaintext notes or attachments.</p>
+        <p>The Cloud Backup Password is separate from the Lock Password. If it is forgotten, existing Drive backups cannot be restored, but local app data remains usable.</p>
+      </div>
+      <SecretPromptModal prompt={secretPrompt} onClose={() => setSecretPrompt(null)} />
+    </div>
+  );
+}
+
 export function SettingsScreen() {
   const [searchIndexStatus, setSearchIndexStatus] = useState<"idle" | "working" | "done" | "error">("idle");
   const [appVersion, setAppVersion] = useState("");
@@ -628,6 +964,10 @@ export function SettingsScreen() {
               />
             </SettingsCard>
 
+            <SettingsCard title="Sync">
+              <SyncSettingsPanel appVersion={appVersion || "Unknown"} />
+            </SettingsCard>
+
             <SettingsCard title="Privacy / Locked Notes">
               <div className="space-y-3 text-sm text-slate-300">
                 <p>
@@ -645,6 +985,10 @@ export function SettingsScreen() {
                 <p className="text-slate-500">
                   Password recovery is not available. Changing the Lock Password re-encrypts locked notes
                   and encrypted attachments, then closes the current unlocked session.
+                </p>
+                <p className="text-slate-500">
+                  Optional Google Drive backups use hidden appDataFolder storage and are encrypted before upload.
+                  The Cloud Backup Password is separate from the Lock Password and cannot be recovered by Lumo.
                 </p>
                 <div className="flex flex-wrap items-center gap-3 pt-2">
                   <span className="text-xs text-slate-500">

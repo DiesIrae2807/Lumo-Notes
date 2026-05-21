@@ -16,6 +16,12 @@ import { NotesProvider } from "./store/notesStore";
 import { SettingsProvider } from "./store/settingsStore";
 import { useNotes } from "./store/notesStore";
 import { confirmDialog } from "./utils/confirm";
+import { notify, notifyError } from "./utils/toast";
+import {
+  openTextFiles,
+  parseMarkdownImport,
+  validateBackup,
+} from "./services/fileTransfer";
 
 const appWindow = getCurrentWindow();
 
@@ -362,7 +368,43 @@ function Workspace() {
 }
 
 function FirstRunWelcome() {
-  const { createNote } = useNotes();
+  const { createNote, importMarkdownNotes, restoreBackupMerge } = useNotes();
+
+  const importOrRestore = async () => {
+    try {
+      const files = await openTextFiles("Import or restore Lumo Notes", ["json", "md", "markdown"], true);
+      if (files.length === 0) return;
+
+      const backupFiles = files.filter((file) => file.name.toLowerCase().endsWith(".json"));
+      const markdownFiles = files.filter((file) => /\.(md|markdown)$/i.test(file.name));
+      if (backupFiles.length > 0 && markdownFiles.length > 0) {
+        notifyError("Import cancelled", "Select either Markdown notes or one JSON backup, not both.");
+        return;
+      }
+
+      if (backupFiles.length > 0) {
+        if (backupFiles.length > 1) {
+          notifyError("Restore cancelled", "Select one JSON backup file at a time.");
+          return;
+        }
+        const backup = validateBackup(JSON.parse(backupFiles[0].content));
+        const confirmed = await confirmDialog({
+          confirmLabel: "Merge Backup",
+          message: `Merge ${backup.notes.length} notes from this backup into the current database? Existing notes will not be deleted.`,
+          title: "Restore backup",
+        });
+        if (!confirmed) return;
+        const count = await restoreBackupMerge(backup);
+        notify({ kind: "success", title: `${count} backup note${count === 1 ? "" : "s"} restored` });
+        return;
+      }
+
+      const count = await importMarkdownNotes(markdownFiles.map(parseMarkdownImport));
+      notify({ kind: "success", title: `${count} Markdown note${count === 1 ? "" : "s"} imported` });
+    } catch (error) {
+      notifyError("Import or restore failed", error);
+    }
+  };
 
   return (
     <main className="column-panel editor-glow grid min-h-0 place-items-center px-6">
@@ -386,7 +428,7 @@ function FirstRunWelcome() {
           </button>
           <button
             className="rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2.5 text-sm text-slate-300 transition hover:bg-white/[0.07] hover:text-white active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-lumo-violet/50"
-            onClick={() => window.dispatchEvent(new Event("lumo-open-command-palette"))}
+            onClick={() => void importOrRestore()}
           >
             Import or restore
           </button>

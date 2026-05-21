@@ -842,8 +842,9 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         if (existing) return existing;
 
         const idAlreadyUsed = localFolders.some((folder) => folder.id === incoming?.id);
+        const generatedId = uniqueFolderId(name, localFolders);
         const folder: Folder = {
-          id: incoming && !idAlreadyUsed ? incoming.id : folderId(name),
+          id: incoming && !idAlreadyUsed ? incoming.id : generatedId,
           name,
           colorClass: incoming?.colorClass || nextFolderColor(localFolders.length),
         };
