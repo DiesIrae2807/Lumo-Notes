@@ -47,7 +47,7 @@ type NotesContextValue = {
   changeLockPassword: () => Promise<void>;
   configureLockPassword: () => Promise<void>;
   importMarkdownNotes: (imports: ParsedMarkdownNote[]) => Promise<number>;
-  restoreBackupMerge: (backup: LumoBackup) => Promise<number>;
+  restoreBackupMerge: (backup: LumoBackup) => Promise<RestoreBackupSummary>;
   attachFileToSelectedNote: () => Promise<Attachment | null>;
   openAttachment: (id: string) => Promise<void>;
   removeAttachment: (id: string) => Promise<void>;
@@ -77,6 +77,23 @@ type NotesContextValue = {
   setActiveFolderId: (folderId: string) => void;
   setActiveTag: (tag: string) => void;
 };
+
+export type RestoreBackupSummary = {
+  notes: { added: number; updated: number; skipped: number };
+  folders: { added: number; updated: number; skipped: number };
+  tags: { added: number; updated: number; skipped: number };
+  attachments: { restored: number; skipped: number };
+  conflicts: number;
+};
+
+export function restoreSummaryText(summary: RestoreBackupSummary) {
+  return [
+    `Notes: ${summary.notes.added} added, ${summary.notes.updated} updated, ${summary.notes.skipped} skipped`,
+    `Folders: ${summary.folders.added} added, ${summary.folders.updated} updated, ${summary.folders.skipped} skipped`,
+    `Tags: ${summary.tags.added} added, ${summary.tags.updated} updated, ${summary.tags.skipped} skipped`,
+    `Attachments: ${summary.attachments.restored} restored, ${summary.attachments.skipped} skipped`,
+  ].join(". ");
+}
 
 const NotesContext = createContext<NotesContextValue | null>(null);
 
@@ -829,6 +846,13 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       const now = new Date().toISOString();
       const localFolders = [...folders];
       const foldersToCreate: Folder[] = [];
+      const summary: RestoreBackupSummary = {
+        notes: { added: 0, skipped: 0, updated: 0 },
+        folders: { added: 0, skipped: 0, updated: 0 },
+        tags: { added: 0, skipped: 0, updated: 0 },
+        attachments: { restored: 0, skipped: 0 },
+        conflicts: 0,
+      };
       if (backup.lockMetadata && !lockPasswordConfigured) {
         await database.restoreLockBackupMetadata(backup.lockMetadata);
         setLockPasswordConfigured(true);
@@ -836,10 +860,11 @@ export function NotesProvider({ children }: { children: ReactNode }) {
 
       const ensureFolder = (incoming: Folder | null, fallbackName: string) => {
         const name = incoming?.name?.trim() || fallbackName || "Uncategorized";
-        const existing = localFolders.find(
-          (folder) => folder.name.toLowerCase() === name.toLowerCase(),
-        );
-        if (existing) return existing;
+        const existingById = incoming ? localFolders.find((folder) => folder.id === incoming.id) : null;
+        if (existingById) {
+          summary.folders.skipped += 1;
+          return existingById;
+        }
 
         const idAlreadyUsed = localFolders.some((folder) => folder.id === incoming?.id);
         const generatedId = uniqueFolderId(name, localFolders);
@@ -850,6 +875,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         };
         localFolders.push(folder);
         foldersToCreate.push(folder);
+        summary.folders.added += 1;
         return folder;
       };
 
@@ -857,22 +883,16 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         ensureFolder(folder, folder.name);
       }
 
-      const existingNoteIds = new Set(notes.map((note) => note.id));
-      const restoredNoteIdByBackupId = new Map<string, string>();
-      const notesToCreate = backup.notes.map((incoming) => {
+      const notesToRestore = backup.notes.map((incoming) => {
         const backupFolder =
           backup.folders.find((folder) => folder.id === incoming.folderId) ?? null;
         const folder = ensureFolder(backupFolder, incoming.folderName);
-        const id = existingNoteIds.has(incoming.id) ? noteId() : incoming.id;
-        existingNoteIds.add(id);
-        restoredNoteIdByBackupId.set(incoming.id, id);
         const relationshipTags = backup.noteTags
           .filter((item) => item.noteId === incoming.id)
           .map((item) => item.tag);
 
         return {
           ...incoming,
-          id,
           folderId: folder.id,
           folderName: folder.name,
           content: incoming.isLocked ? "" : incoming.content,
@@ -890,7 +910,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       const tagsToCreate = uniqueByLower([
         ...backup.tags,
         ...backup.noteTags.map((item) => item.tag),
-        ...notesToCreate.flatMap((note) => note.tags),
+        ...notesToRestore.flatMap((note) => note.tags),
       ]);
 
       for (const folder of foldersToCreate) {
@@ -900,51 +920,43 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       for (const tag of tagsToCreate) {
         if (!availableTags.some((existing) => existing.toLowerCase() === tag.toLowerCase())) {
           await database.createTag(tag, now, now);
+          summary.tags.added += 1;
+        } else {
+          summary.tags.skipped += 1;
         }
       }
 
-      for (const note of notesToCreate) {
-        await database.createNote(note);
+      for (const note of notesToRestore) {
+        const result = await database.restoreBackupNote(note);
+        summary.notes[result.status] += 1;
       }
       const backupAttachments = backup.attachments?.filter((attachment) => typeof attachment.dataBase64 === "string") ?? [];
       const restoredAttachmentBackups = backupAttachments.length
-        ? await database.restoreBackupAttachments(
-            backupAttachments.map((attachment) => ({
-              ...attachment,
-              noteId: restoredNoteIdByBackupId.get(attachment.noteId) ?? attachment.noteId,
-            })),
-          )
+        ? await database.restoreBackupAttachments(backupAttachments)
         : [];
-      const restoredAttachments = restoredAttachmentBackups.map((item) => item.attachment);
-      const restoredAttachmentIdByBackupId = new Map(
-        restoredAttachmentBackups.map((item) => [item.originalId, item.attachment.id]),
-      );
-      if (restoredAttachmentIdByBackupId.size > 0) {
-        await Promise.all(
-          notesToCreate.map(async (note) => {
-            if (note.isLocked) return;
-            const content = remapAttachmentReferences(note.content, restoredAttachmentIdByBackupId);
-            if (content === note.content) return;
-            note.content = content;
-            note.preview = getPlainTextPreview(content);
-            await database.updateNote(note);
-          }),
-        );
+      for (const item of restoredAttachmentBackups) {
+        if (item.status === "skipped") summary.attachments.skipped += 1;
+        else summary.attachments.restored += 1;
       }
 
-      setFolders(localFolders);
-      setDatabaseTags((current) => uniqueByLower([...current, ...tagsToCreate]).sort((a, b) => a.localeCompare(b)));
-      setNotes((current) => [...notesToCreate, ...current]);
-      if (restoredAttachments.length > 0) {
-        setAttachments((current) => [...restoredAttachments, ...current]);
-      }
-      setSelectedNoteId(notesToCreate[0]?.id ?? selectedNoteId);
+      await database.rebuildSearchIndex();
+      const [nextNotes, nextFolders, nextTags, nextAttachments] = await Promise.all([
+        database.getNotes(),
+        database.getFolders(),
+        database.getTags(),
+        database.getAttachments(),
+      ]);
+      setFolders(nextFolders.length > 0 ? nextFolders : localFolders);
+      setDatabaseTags(nextTags);
+      setNotes(nextNotes);
+      setAttachments(nextAttachments);
+      setSelectedNoteId(notesToRestore[0]?.id ?? selectedNoteId);
       setActiveViewState("all");
       setActiveFolderIdState(null);
       setActiveTagState(null);
       setSearchQuery("");
-      notify({ kind: "success", title: `${notesToCreate.length} backup note${notesToCreate.length === 1 ? "" : "s"} restored` });
-      return notesToCreate.length;
+      notify({ kind: "success", title: "Backup restore complete", message: restoreSummaryText(summary) });
+      return summary;
     },
     [availableTags, flushNoteSave, folders, lockPasswordConfigured, notes, selectedNoteId],
   );

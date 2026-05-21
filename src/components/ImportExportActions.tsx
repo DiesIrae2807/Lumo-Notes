@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNotes } from "../store/notesStore";
+import { restoreSummaryText, useNotes } from "../store/notesStore";
 import { useSettings } from "../store/settingsStore";
 import {
   chooseFolderAndWriteFiles,
@@ -128,8 +128,8 @@ export function ImportExportActions({ compact = false }: { compact?: boolean }) 
       ) {
         return null;
       }
-      const count = await restoreBackupMerge(backup);
-      return `${count} backup note${count === 1 ? "" : "s"} restored.`;
+      const summary = await restoreBackupMerge(backup);
+      return restoreSummaryText(summary);
     });
 
   return (

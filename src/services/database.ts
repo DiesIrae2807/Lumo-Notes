@@ -37,6 +37,11 @@ export type AttachmentBackupPayload = Attachment & {
 export type RestoredAttachmentBackup = {
   originalId: string;
   attachment: Attachment;
+  status?: "restored" | "skipped";
+};
+
+export type RestoreEntityResult = {
+  status: "added" | "updated" | "skipped";
 };
 
 export type PasswordChangeResult = {
@@ -62,6 +67,10 @@ export async function getTags() {
 
 export async function createNote(note: Note) {
   return invoke<void>("create_note", { note });
+}
+
+export async function restoreBackupNote(note: Note) {
+  return invoke<RestoreEntityResult>("restore_backup_note", { note });
 }
 
 export async function updateNote(note: Note) {

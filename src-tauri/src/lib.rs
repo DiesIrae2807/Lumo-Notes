@@ -17,6 +17,7 @@ pub fn run() {
             db::initialize_database,
             db::get_notes,
             db::create_note,
+            db::restore_backup_note,
             db::update_note,
             db::soft_delete_note,
             db::restore_note,

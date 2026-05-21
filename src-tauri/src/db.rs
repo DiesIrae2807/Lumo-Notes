@@ -94,6 +94,13 @@ pub struct AttachmentBackupDto {
 pub struct RestoredAttachmentBackupDto {
     pub original_id: String,
     pub attachment: AttachmentDto,
+    pub status: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RestoreEntityResultDto {
+    pub status: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -409,6 +416,48 @@ fn insert_note(connection: &Connection, note: &NoteDto) -> Result<(), String> {
                 note.title,
                 note.content,
                 note.preview,
+                note.folder_id,
+                note.folder_name,
+                note.is_pinned as i64,
+                note.is_favorite as i64,
+                note.is_deleted as i64,
+                note.is_archived as i64,
+                note.is_locked as i64,
+                note.encrypted_content.as_deref(),
+                note.encrypted_preview.as_deref(),
+                note.encryption_nonce.as_deref(),
+                note.locked_at.as_deref(),
+                note.created_at,
+                note.updated_at
+            ],
+        )
+        .map_err(|error| error.to_string())?;
+
+    replace_note_tags(connection, note)
+}
+
+fn update_note_from_backup(connection: &Connection, note: &NoteDto) -> Result<(), String> {
+    connection
+        .execute(
+            "UPDATE notes
+             SET title = ?2, content = ?3, preview = ?4, folder_id = ?5, folder_name = ?6,
+                 is_pinned = ?7, is_favorite = ?8, is_deleted = ?9, is_archived = ?10,
+                 is_locked = ?11, encrypted_content = ?12, encrypted_preview = ?13,
+                 encryption_nonce = ?14, locked_at = ?15, created_at = ?16, updated_at = ?17
+             WHERE id = ?1",
+            params![
+                note.id,
+                note.title,
+                if note.is_locked {
+                    ""
+                } else {
+                    note.content.as_str()
+                },
+                if note.is_locked {
+                    ""
+                } else {
+                    note.preview.as_str()
+                },
                 note.folder_id,
                 note.folder_name,
                 note.is_pinned as i64,
@@ -1298,18 +1347,26 @@ pub fn restore_backup_attachments(
             continue;
         }
         let original_id = incoming.id.clone();
-        let mut id = original_id.clone();
-        let id_exists: bool = connection
-            .query_row(
-                "SELECT EXISTS(SELECT 1 FROM attachments WHERE id = ?1)",
-                params![id],
-                |row| row.get::<_, i64>(0),
-            )
-            .map_err(|error| error.to_string())?
-            != 0;
-        if id_exists {
-            id = attachment_id()?;
+        if let Some(existing) = attachment_by_id(&connection, &original_id)? {
+            if !Path::new(&existing.stored_path).exists() {
+                let bytes = crypto::base64_decode(&incoming.data_base64)?;
+                fs::write(&existing.stored_path, bytes).map_err(|error| error.to_string())?;
+                let _ = upsert_search_index_note(&connection, &existing.note_id);
+                restored.push(RestoredAttachmentBackupDto {
+                    original_id,
+                    attachment: existing,
+                    status: "restored".to_string(),
+                });
+            } else {
+                restored.push(RestoredAttachmentBackupDto {
+                    original_id,
+                    attachment: existing,
+                    status: "skipped".to_string(),
+                });
+            }
+            continue;
         }
+        let id = original_id.clone();
         let filename = sanitize_file_name(&incoming.filename);
         let stored_filename = if incoming.is_encrypted {
             encrypted_attachment_filename(&id, &filename)
@@ -1358,6 +1415,7 @@ pub fn restore_backup_attachments(
         restored.push(RestoredAttachmentBackupDto {
             original_id,
             attachment,
+            status: "restored".to_string(),
         });
     }
     Ok(restored)
@@ -2457,6 +2515,43 @@ pub fn create_note(state: tauri::State<'_, DbState>, note: NoteDto) -> Result<()
 }
 
 #[tauri::command]
+pub fn restore_backup_note(
+    state: tauri::State<'_, DbState>,
+    note: NoteDto,
+) -> Result<RestoreEntityResultDto, String> {
+    let connection = connect(&state.path)?;
+    create_schema(&connection)?;
+    ensure_note_folder_exists(&connection, &note)?;
+    let existing_updated_at = connection
+        .query_row(
+            "SELECT updated_at FROM notes WHERE id = ?1",
+            params![note.id],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?;
+
+    let status = match existing_updated_at {
+        None => {
+            insert_note(&connection, &note)?;
+            "added"
+        }
+        Some(existing) if note.updated_at.as_str() > existing.as_str() => {
+            update_note_from_backup(&connection, &note)?;
+            "updated"
+        }
+        Some(_) => {
+            replace_note_tags(&connection, &note)?;
+            "skipped"
+        }
+    };
+    let _ = upsert_search_index_note(&connection, &note.id);
+    Ok(RestoreEntityResultDto {
+        status: status.to_string(),
+    })
+}
+
+#[tauri::command]
 pub fn update_note(
     state: tauri::State<'_, DbState>,
     lock_state: tauri::State<'_, LockState>,
@@ -2795,7 +2890,7 @@ pub fn create_tag(
     let tag_id = tag_id_for(&name);
     connection
         .execute(
-            "INSERT INTO tags (id, name, created_at, updated_at) VALUES (?1, ?2, ?3, ?4)",
+            "INSERT OR IGNORE INTO tags (id, name, created_at, updated_at) VALUES (?1, ?2, ?3, ?4)",
             params![tag_id, name.trim(), created_at, updated_at],
         )
         .map_err(|error| error.to_string())?;

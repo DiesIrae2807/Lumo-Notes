@@ -14,7 +14,7 @@ import { ToastProvider } from "./components/ToastProvider";
 import { ConfirmProvider } from "./components/ConfirmProvider";
 import { NotesProvider } from "./store/notesStore";
 import { SettingsProvider } from "./store/settingsStore";
-import { useNotes } from "./store/notesStore";
+import { restoreSummaryText, useNotes } from "./store/notesStore";
 import { confirmDialog } from "./utils/confirm";
 import { notify, notifyError } from "./utils/toast";
 import {
@@ -394,8 +394,8 @@ function FirstRunWelcome() {
           title: "Restore backup",
         });
         if (!confirmed) return;
-        const count = await restoreBackupMerge(backup);
-        notify({ kind: "success", title: `${count} backup note${count === 1 ? "" : "s"} restored` });
+        const summary = await restoreBackupMerge(backup);
+        notify({ kind: "success", title: "Backup restore complete", message: restoreSummaryText(summary) });
         return;
       }
 

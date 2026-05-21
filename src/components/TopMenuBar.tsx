@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNotes } from "../store/notesStore";
+import { restoreSummaryText, useNotes } from "../store/notesStore";
 import { useSettings } from "../store/settingsStore";
 import {
   chooseFolderAndWriteFiles,
@@ -230,8 +230,8 @@ export function TopMenuBar({ onExit }: { onExit: () => void }) {
       ) {
         return;
       }
-      const count = await restoreBackupMerge(backup);
-      setMessage(`${count} backup note${count === 1 ? "" : "s"} restored.`);
+      const summary = await restoreBackupMerge(backup);
+      setMessage(restoreSummaryText(summary));
     });
 
   const deleteFromEditMenu = async () => {
