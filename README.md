@@ -1,6 +1,23 @@
 # Lumo Notes
 
-Lumo Notes is a local-first Windows desktop note-taking app built with Tauri, React, TypeScript, Tailwind CSS, and SQLite.
+Lumo Notes is a local-first Windows desktop note-taking app built with Tauri, React, TypeScript, Tailwind CSS, and SQLite. Notes, attachments, settings, and backups are owned by the user and stored locally by default.
+
+Current release: `0.2.0`
+
+## Features
+
+- Local-first notes backed by SQLite.
+- Rich-text editing with links, images, task lists, block quotes, headings, and inline formatting.
+- Folders, tags, favorites, pinned notes, archive, trash, backlinks, graph view, search, command palette, focus mode, and File/Edit menu actions.
+- File attachments stored in the app data directory.
+- Locked notes with encrypted note body text, previews, and locked attachment contents.
+- Local JSON backup/export and non-destructive restore.
+- Optional encrypted Google Drive `appDataFolder` backup/restore foundation.
+- Fresh installs start empty; no starter/demo notes are created automatically.
+
+## Release Notes
+
+See [CHANGELOG.md](CHANGELOG.md) for the release changelog.
 
 ## Local Development
 
@@ -59,10 +76,12 @@ Attachments are copied into:
 
 Settings are stored in the SQLite database, in the `app_settings` table.
 
-Backups are not stored automatically. Export Backup asks for a destination and writes the selected JSON backup wherever you choose.
+Local backups are not stored automatically. Export Backup asks for a destination and writes the selected JSON backup wherever you choose.
 
 Optional Google Drive backups use hidden Drive `appDataFolder` storage and encrypt the whole backup package before upload.
 Setup details are in [docs/google-drive-appdata-backups.md](docs/google-drive-appdata-backups.md).
+
+Local and Google Drive restore are non-destructive merge operations. Restoring the same backup more than once should not duplicate notes, folders, tags, note/tag relationships, or attachment metadata.
 
 ## Resetting Local Dev Data
 
@@ -79,7 +98,7 @@ Do not delete `%APPDATA%\com.lumo.notes\` on a real user's machine unless they e
 ## Production Notes
 
 - App name/product name: `Lumo Notes`
-- Version: see `package.json` and `src-tauri/tauri.conf.json`
+- Version: `0.2.0`
 - Bundle identifier: `com.lumo.notes`
 - Publisher placeholder: `Lumo Notes Publisher`
 - Description: `Local-first note-taking app`
@@ -87,6 +106,8 @@ Do not delete `%APPDATA%\com.lumo.notes\` on a real user's machine unless they e
 - Icon: `src-tauri/icons/icon.ico`
 
 The app does not include mandatory authentication, live cloud sync, telemetry, analytics, AI, collaboration, or mobile support.
+
+Google sign-in is optional and only used for encrypted backup files in the user's hidden Google Drive app data storage. Lumo Notes remains usable without signing in.
 
 ## Locked Notes
 
@@ -97,3 +118,21 @@ Locked note titles, folders, tags, and attachment filenames remain visible. Lock
 Attachments on locked notes are encrypted at rest. Opening an encrypted attachment decrypts a temporary copy under the app cache so Windows can hand it to the default application. Temporary decrypted copies are cleared when locked sessions are closed or when the app starts again.
 
 Changing the Lock Password re-encrypts locked note content and encrypted attachments, then closes the current unlocked session. The new password is required to unlock notes afterward.
+
+## Google Drive Backups
+
+Google Drive backup/restore is a manual backup foundation, not live multi-device sync. Lumo Notes uses the least-privilege Drive scope:
+
+```text
+https://www.googleapis.com/auth/drive.appdata
+```
+
+Drive backups are encrypted before upload. Google Drive does not receive plaintext note contents or plaintext attachment contents. The Cloud Backup Password protects the encrypted backup package and is separate from the Lock Password. If the Cloud Backup Password is forgotten, existing Drive backups cannot be restored by Lumo Notes.
+
+The Google OAuth client ID is configured through local environment/config, for example:
+
+```text
+VITE_GOOGLE_CLIENT_ID=your-google-oauth-client-id
+```
+
+Do not commit Google OAuth secrets or local `.env` files.
