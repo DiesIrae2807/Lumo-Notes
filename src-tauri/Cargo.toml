@@ -1,6 +1,6 @@
 [package]
 name = "lumo-notes"
-version = "0.1.1"
+version = "0.2.0"
 description = "Local-first note-taking app"
 authors = ["DiesIrae2807"]
 edition = "2021"
