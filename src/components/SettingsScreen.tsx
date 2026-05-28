@@ -687,6 +687,7 @@ function SyncSettingsPanel({ appVersion }: { appVersion: string }) {
   const [isBusy, setIsBusy] = useState(false);
   const [statusText, setStatusText] = useState("");
   const [secretPrompt, setSecretPrompt] = useState<SecretPromptState>(null);
+  const dirtyNoteIdsAtSyncStart = useRef<Set<string>>(new Set());
 
   const promptSecret = useCallback((title: string, message: string) => {
     return new Promise<string>((resolve) => {
@@ -771,6 +772,44 @@ function SyncSettingsPanel({ appVersion }: { appVersion: string }) {
       notify({ kind: "success", title: "Encrypted Drive backup uploaded" });
     });
 
+  const noteConflictPayloadDiffers = (local: typeof notes[number], incoming: typeof notes[number]) => {
+    const localComparable = {
+      title: local.title,
+      content: local.isLocked ? "" : local.content,
+      preview: local.isLocked ? "" : local.preview,
+      folderId: local.folderId,
+      folderName: local.folderName,
+      tags: [...local.tags].sort(),
+      isPinned: local.isPinned,
+      isFavorite: local.isFavorite,
+      isDeleted: local.isDeleted,
+      isArchived: local.isArchived,
+      isLocked: local.isLocked,
+      encryptedContent: local.encryptedContent ?? null,
+      encryptedPreview: local.encryptedPreview ?? null,
+      encryptionNonce: local.encryptionNonce ?? null,
+      lockedAt: local.lockedAt ?? null,
+    };
+    const incomingComparable = {
+      title: incoming.title,
+      content: incoming.isLocked ? "" : incoming.content,
+      preview: incoming.isLocked ? "" : incoming.preview,
+      folderId: incoming.folderId,
+      folderName: incoming.folderName,
+      tags: [...incoming.tags].sort(),
+      isPinned: incoming.isPinned,
+      isFavorite: incoming.isFavorite,
+      isDeleted: incoming.isDeleted,
+      isArchived: incoming.isArchived,
+      isLocked: incoming.isLocked,
+      encryptedContent: incoming.encryptedContent ?? null,
+      encryptedPreview: incoming.encryptedPreview ?? null,
+      encryptionNonce: incoming.encryptionNonce ?? null,
+      lockedAt: incoming.lockedAt ?? null,
+    };
+    return JSON.stringify(localComparable) !== JSON.stringify(incomingComparable);
+  };
+
   const applyRemoteChange = useCallback(
     async (record: SyncChangeRecord) => {
       const backup = syncChangeToBackup(record);
@@ -779,7 +818,9 @@ function SyncSettingsPanel({ appVersion }: { appVersion: string }) {
       if (record.entityType === "note") {
         const incoming = backup.notes[0];
         const local = incoming ? notes.find((note) => note.id === incoming.id) : null;
-        if (incoming && local && Date.parse(local.updatedAt) > Date.parse(incoming.updatedAt)) {
+        const hasUnsyncedLocalEdit = incoming ? dirtyNoteIdsAtSyncStart.current.has(incoming.id) : false;
+        const remoteDiffers = incoming && local ? noteConflictPayloadDiffers(local, incoming) : false;
+        if (incoming && local && hasUnsyncedLocalEdit && remoteDiffers) {
           const conflictDate = new Date(record.createdAt).toLocaleString();
           const title = `${incoming.title || "Untitled Note"} (conflict from ${record.deviceName || record.deviceId} - ${conflictDate})`;
           const conflictNote = {
@@ -805,7 +846,16 @@ function SyncSettingsPanel({ appVersion }: { appVersion: string }) {
                 : attachment,
             ),
           });
+          notify({
+            kind: "info",
+            title: "Sync conflict detected",
+            message: "A conflict copy was created and your local note was kept unchanged.",
+          });
           return "conflict";
+        }
+
+        if (incoming && local && hasUnsyncedLocalEdit && !remoteDiffers) {
+          return "skipped";
         }
       }
 
@@ -820,6 +870,12 @@ function SyncSettingsPanel({ appVersion }: { appVersion: string }) {
       if (!session) throw new Error("Connect Google Drive first.");
       const password = await requestCloudEncryptionPassword(promptSecret, "sync", remoteCloudState);
       if (!password) return;
+      const lastSyncAt = syncState.lastSyncAt ?? "1970-01-01T00:00:00.000Z";
+      dirtyNoteIdsAtSyncStart.current = new Set(
+        notes
+          .filter((note) => Date.parse(note.updatedAt) > Date.parse(lastSyncAt))
+          .map((note) => note.id),
+      );
       setSyncState((current) => ({ ...current, status: "syncing" }));
       try {
         const summary = await runGoogleDriveSync({

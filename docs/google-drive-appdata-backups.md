@@ -74,9 +74,10 @@ It does not contain note content.
 
 Sync v1 intentionally avoids complex rich-text merging.
 
-- If a remote note is newer or missing locally, it is merged into the local database.
-- If a local note is newer than the remote note, Lumo keeps the local note and creates a conflict copy named
+- If a remote note is newer or missing locally, and the local note has no unsynced edits, it is merged into the local database.
+- If the local note has unsynced edits from this device and a remote note from another device also changed, Lumo keeps the local note and creates a conflict copy named
   `Original Title (conflict from DEVICE - DATE)`.
+- Handled remote conflict records are remembered so the same remote change does not create repeated conflict copies.
 - Folder and tag data are merged through the existing non-destructive restore path.
 - Attachment records are restored idempotently; existing attachment ids are skipped.
 - Missing or corrupted remote records are reported as sync errors.
