@@ -27,6 +27,13 @@ import {
   type CloudBackupManifestEntry,
 } from "../sync/cloudBackup";
 import {
+  getCloudSyncState,
+  runGoogleDriveSync,
+  syncChangeToBackup,
+  type SyncRuntimeState,
+  type SyncChangeRecord,
+} from "../sync/cloudSync";
+import {
   connectGoogleDrive,
   disconnectGoogleDrive,
   getStoredGoogleDriveSession,
@@ -648,12 +655,18 @@ function SecretPromptModal({
 }
 
 function SyncSettingsPanel({ appVersion }: { appVersion: string }) {
-  const { availableTags, folders, notes, restoreBackupMerge } = useNotes();
+  const { attachments, availableTags, folders, notes, restoreBackupMerge } = useNotes();
   const { settings } = useSettings();
   const [session, setSession] = useState<GoogleDriveSession | null>(null);
   const [backups, setBackups] = useState<CloudBackupManifestEntry[]>([]);
   const [lastBackupAt, setLastBackupAt] = useState<string | null>(null);
   const [lastRestoreAt, setLastRestoreAt] = useState<string | null>(null);
+  const [syncState, setSyncState] = useState<SyncRuntimeState>({
+    conflicts: 0,
+    lastSyncAt: null,
+    pendingLocalChanges: 0,
+    status: "idle",
+  });
   const [isBusy, setIsBusy] = useState(false);
   const [statusText, setStatusText] = useState("");
   const [secretPrompt, setSecretPrompt] = useState<SecretPromptState>(null);
@@ -665,13 +678,15 @@ function SyncSettingsPanel({ appVersion }: { appVersion: string }) {
   }, []);
 
   const refreshState = async (loadBackups: boolean) => {
-    const [storedSession, cloudStatus] = await Promise.all([
+    const [storedSession, cloudStatus, nextSyncState] = await Promise.all([
       getStoredGoogleDriveSession(),
       getCloudBackupStatus(),
+      getCloudSyncState({ attachments, folders, notes, tags: availableTags }),
     ]);
     setSession(storedSession);
     setLastBackupAt(cloudStatus.lastBackupAt);
     setLastRestoreAt(cloudStatus.lastRestoreAt);
+    setSyncState(nextSyncState);
     if (storedSession && loadBackups) {
       const nextBackups = await listCloudBackups();
       setBackups(nextBackups);
@@ -732,6 +747,88 @@ function SyncSettingsPanel({ appVersion }: { appVersion: string }) {
       notify({ kind: "success", title: "Encrypted Drive backup uploaded" });
     });
 
+  const applyRemoteChange = useCallback(
+    async (record: SyncChangeRecord) => {
+      const backup = syncChangeToBackup(record);
+      if (!backup) return "skipped";
+
+      if (record.entityType === "note") {
+        const incoming = backup.notes[0];
+        const local = incoming ? notes.find((note) => note.id === incoming.id) : null;
+        if (incoming && local && Date.parse(local.updatedAt) > Date.parse(incoming.updatedAt)) {
+          const conflictDate = new Date(record.createdAt).toLocaleString();
+          const title = `${incoming.title || "Untitled Note"} (conflict from ${record.deviceName || record.deviceId} - ${conflictDate})`;
+          const conflictNote = {
+            ...incoming,
+            id: `note-conflict-${crypto.randomUUID()}`,
+            title,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+          await restoreBackupMerge({
+            ...backup,
+            notes: [conflictNote],
+            noteTags: backup.noteTags.map((item) =>
+              item.noteId === incoming.id ? { ...item, noteId: conflictNote.id } : item,
+            ),
+            attachments: backup.attachments?.map((attachment) =>
+              attachment.noteId === incoming.id
+                ? {
+                    ...attachment,
+                    id: `attachment-conflict-${crypto.randomUUID()}`,
+                    noteId: conflictNote.id,
+                  }
+                : attachment,
+            ),
+          });
+          return "conflict";
+        }
+      }
+
+      await restoreBackupMerge(backup);
+      return "applied";
+    },
+    [notes, restoreBackupMerge],
+  );
+
+  const handleSyncNow = () =>
+    run("Syncing Google Drive", async () => {
+      if (!session) throw new Error("Connect Google Drive first.");
+      const password = await requestCloudBackupPassword(promptSecret, "backup");
+      if (!password) return;
+      setSyncState((current) => ({ ...current, status: "syncing" }));
+      try {
+        const summary = await runGoogleDriveSync({
+          applyRemoteChange,
+          attachments,
+          folders,
+          notes,
+          password,
+          settings,
+          tags: availableTags,
+        });
+        setSyncState({
+          conflicts: summary.conflicts,
+          lastSyncAt: summary.syncedAt,
+          pendingLocalChanges: 0,
+          status: summary.conflicts > 0 ? "conflict" : "synced",
+        });
+        notify({
+          kind: summary.conflicts > 0 ? "info" : "success",
+          title: summary.conflicts > 0 ? "Sync completed with conflicts" : "Sync complete",
+          message: `${summary.uploaded} uploaded, ${summary.applied} applied, ${summary.skipped} skipped, ${summary.conflicts} conflicts.`,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        setSyncState((current) => ({
+          ...current,
+          status: /network|fetch|offline|Failed to fetch/i.test(message) ? "offline" : "error",
+        }));
+        throw error;
+      }
+      await refreshState(false);
+    });
+
   const handleRefresh = () =>
     run("Refreshing Drive backups", async () => {
       if (!session) throw new Error("Connect Google Drive first.");
@@ -787,6 +884,18 @@ function SyncSettingsPanel({ appVersion }: { appVersion: string }) {
           <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Last restore</p>
           <p className="mt-2 text-slate-200">{lastRestoreAt ? new Date(lastRestoreAt).toLocaleString() : "Never"}</p>
         </div>
+        <div className="rounded-xl border border-white/10 bg-white/[0.025] p-3">
+          <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Last sync</p>
+          <p className="mt-2 text-slate-200">{syncState.lastSyncAt ? new Date(syncState.lastSyncAt).toLocaleString() : "Never"}</p>
+        </div>
+        <div className="rounded-xl border border-white/10 bg-white/[0.025] p-3">
+          <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Sync status</p>
+          <p className="mt-2 font-medium text-white">{syncState.status}</p>
+          <p className="mt-1 text-xs text-slate-500">
+            {syncState.pendingLocalChanges} pending local change{syncState.pendingLocalChanges === 1 ? "" : "s"}
+            {syncState.conflicts ? ` · ${syncState.conflicts} conflict${syncState.conflicts === 1 ? "" : "s"}` : ""}
+          </p>
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-2">
@@ -801,6 +910,9 @@ function SyncSettingsPanel({ appVersion }: { appVersion: string }) {
         )}
         <button className="rounded-xl border border-lumo-teal/20 bg-lumo-teal/10 px-3 py-2 text-xs font-medium text-lumo-teal transition hover:bg-lumo-teal/15 disabled:opacity-60" disabled={isBusy || !session} type="button" onClick={handleBackup}>
           Back up now
+        </button>
+        <button className="rounded-xl border border-lumo-teal/20 bg-lumo-teal/10 px-3 py-2 text-xs font-medium text-lumo-teal transition hover:bg-lumo-teal/15 disabled:opacity-60" disabled={isBusy || !session} type="button" onClick={handleSyncNow}>
+          Sync now
         </button>
         <button className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-medium text-slate-200 transition hover:bg-white/[0.07] disabled:opacity-60" disabled={isBusy || !session} type="button" onClick={handleRefresh}>
           Refresh backup list
@@ -836,8 +948,9 @@ function SyncSettingsPanel({ appVersion }: { appVersion: string }) {
 
       <div className="space-y-2 text-xs leading-5 text-slate-500">
         <p>Google sign-in is optional. Lumo remains local-first and fully usable offline without Drive.</p>
-        <p>Drive backups are encrypted before upload to hidden app-specific appDataFolder storage. Google Drive does not receive plaintext notes or attachments.</p>
-        <p>The Cloud Backup Password is separate from the Lock Password. If it is forgotten, existing Drive backups cannot be restored, but local app data remains usable.</p>
+        <p>Drive backups and sync change records are encrypted before upload to hidden app-specific appDataFolder storage. Google Drive does not receive plaintext notes or attachments.</p>
+        <p>The Cloud Backup Password is also used as the Cloud Encryption Password for sync records. It is separate from the Lock Password.</p>
+        <p>Sync v1 is manual and creates conflict copies instead of overwriting local note edits.</p>
       </div>
       <SecretPromptModal prompt={secretPrompt} onClose={() => setSecretPrompt(null)} />
     </div>

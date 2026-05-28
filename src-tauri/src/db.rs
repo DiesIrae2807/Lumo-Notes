@@ -277,6 +277,16 @@ fn create_schema(connection: &Connection) -> Result<(), String> {
                 created_at TEXT NOT NULL,
                 FOREIGN KEY(note_id) REFERENCES notes(id) ON DELETE CASCADE
             );
+
+            CREATE TABLE IF NOT EXISTS sync_tombstones (
+                entity_type TEXT NOT NULL,
+                entity_id TEXT NOT NULL,
+                operation TEXT NOT NULL,
+                deleted_at TEXT NOT NULL,
+                device_id TEXT,
+                payload TEXT,
+                PRIMARY KEY(entity_type, entity_id)
+            );
             ",
         )
         .map_err(|error| error.to_string())?;
@@ -366,6 +376,40 @@ fn migrate_schema(connection: &Connection) -> Result<(), String> {
         connection
             .execute("ALTER TABLE attachments ADD COLUMN encrypted_at TEXT", [])
             .map_err(|error| error.to_string())?;
+    }
+
+    for table in ["notes", "folders", "tags", "attachments"] {
+        if !column_exists(connection, table, "sync_status")? {
+            connection
+                .execute(
+                    &format!("ALTER TABLE {} ADD COLUMN sync_status TEXT NOT NULL DEFAULT 'pending'", table),
+                    [],
+                )
+                .map_err(|error| error.to_string())?;
+        }
+        if !column_exists(connection, table, "local_version")? {
+            connection
+                .execute(
+                    &format!("ALTER TABLE {} ADD COLUMN local_version INTEGER NOT NULL DEFAULT 0", table),
+                    [],
+                )
+                .map_err(|error| error.to_string())?;
+        }
+        if !column_exists(connection, table, "last_synced_at")? {
+            connection
+                .execute(&format!("ALTER TABLE {} ADD COLUMN last_synced_at TEXT", table), [])
+                .map_err(|error| error.to_string())?;
+        }
+        if !column_exists(connection, table, "device_id")? {
+            connection
+                .execute(&format!("ALTER TABLE {} ADD COLUMN device_id TEXT", table), [])
+                .map_err(|error| error.to_string())?;
+        }
+        if !column_exists(connection, table, "deleted_at")? {
+            connection
+                .execute(&format!("ALTER TABLE {} ADD COLUMN deleted_at TEXT", table), [])
+                .map_err(|error| error.to_string())?;
+        }
     }
 
     Ok(())
