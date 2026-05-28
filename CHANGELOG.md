@@ -7,7 +7,7 @@
 - Added optional Google Drive `appDataFolder` backup and restore foundation.
 - Added Google Drive connection controls in Settings > Sync.
 - Added manual encrypted Drive backup upload, backup listing, and restore.
-- Added Cloud Backup Password flow for encrypting Drive backup packages before upload.
+- Added Cloud Encryption Password flow for encrypting Drive backup packages before upload.
 - Added stable local device identity metadata for cloud backup records.
 - Added Google Cloud OAuth setup documentation.
 - Added restore summaries with added, updated, and skipped counts.
@@ -44,5 +44,5 @@
 
 - Google Drive support is manual backup/restore only, not background sync or live multi-device sync.
 - There is no conflict resolution UI yet.
-- Cloud Backup Password changes apply to future backups unless old backups are manually recreated.
+- Cloud Encryption Password changes apply to future backups unless old backups are manually recreated.
 - Existing duplicates created by older restore builds are not automatically deleted.

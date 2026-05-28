@@ -13,8 +13,6 @@ import { confirmDialog } from "../utils/confirm";
 import { useNotes } from "../store/notesStore";
 import { getVersion } from "@tauri-apps/api/app";
 import {
-  createCloudBackupPasswordMetadata,
-  verifyCloudBackupPassword,
   type CloudBackupPasswordMetadata,
 } from "../sync/backupEncryption";
 import {
@@ -39,7 +37,16 @@ import {
   getStoredGoogleDriveSession,
   type GoogleDriveSession,
 } from "../sync/googleDriveAuth";
-import { getRawSetting, setRawSetting } from "../sync/syncSettings";
+import {
+  cloudEncryptionStatus,
+  getLocalCloudEncryptionMetadata,
+  inspectRemoteCloudState,
+  saveNewCloudEncryptionPassword,
+  verifyLocalCloudEncryptionPassword,
+  verifyRemoteCloudEncryptionPassword,
+  type CloudEncryptionStatus,
+  type RemoteCloudState,
+} from "../sync/cloudEncryptionState";
 
 const shortcuts = [
   ["Ctrl+K", "Command palette"],
@@ -536,45 +543,53 @@ function SettingToggle<K extends keyof AppSettings>({
   );
 }
 
-const CLOUD_PASSWORD_KEY = "sync.cloudBackupPassword";
-
 type SecretPromptState = {
   message: string;
   resolve: (value: string) => void;
   title: string;
 } | null;
 
-async function requestCloudBackupPassword(
+async function requestCloudEncryptionPassword(
   promptSecret: (title: string, message: string) => Promise<string>,
-  mode: "backup" | "restore",
+  mode: "backup" | "restore" | "sync",
+  remoteState: RemoteCloudState | null,
 ) {
-  const existing = await getRawSetting<CloudBackupPasswordMetadata | null>(CLOUD_PASSWORD_KEY);
+  const existing = await getLocalCloudEncryptionMetadata();
   if (!existing?.salt || !existing.verifier) {
-    if (mode === "restore") {
+    if (!remoteState || remoteState.kind === "unknown") {
+      throw new Error("Could not verify Google Drive cloud state. Retry remote check before setting or entering a Cloud Encryption Password.");
+    }
+
+    if (remoteState.kind === "existingEncrypted" || mode === "restore") {
       const password = await promptSecret(
-        "Cloud Backup Password",
-        "Enter the Cloud Backup Password that was used when this Drive backup was created.",
+        "Cloud Encryption Password",
+        "Enter the existing Cloud Encryption Password for this Google Drive data. It encrypts Drive backups and sync records.",
       );
-      return password || null;
+      if (!password) return null;
+      await verifyRemoteCloudEncryptionPassword(password, remoteState);
+      return password;
     }
 
     const password = await promptSecret(
-      "Set Cloud Backup Password",
-      "Set a separate Cloud Backup Password. If you forget it, Drive backups cannot be restored. Use at least 8 characters.",
+      "Set Cloud Encryption Password",
+      "Set a Cloud Encryption Password for Google Drive backups and sync records. If you forget it, Drive cloud data cannot be decrypted. Use at least 8 characters.",
     );
     if (!password) return null;
-    const confirmation = await promptSecret("Confirm Cloud Backup Password", "Re-enter the Cloud Backup Password.");
-    if (password !== confirmation) {
-      throw new Error("Cloud Backup Passwords do not match.");
+    const latestRemoteState = await inspectRemoteCloudState();
+    if (latestRemoteState.kind !== "empty") {
+      throw new Error("Existing Lumo cloud data was found. Enter the existing Cloud Encryption Password instead of creating a new one.");
     }
-    const metadata = await createCloudBackupPasswordMetadata(password);
-    await setRawSetting(CLOUD_PASSWORD_KEY, metadata);
+    const confirmation = await promptSecret("Confirm Cloud Encryption Password", "Re-enter the Cloud Encryption Password.");
+    if (password !== confirmation) {
+      throw new Error("Cloud Encryption Passwords do not match.");
+    }
+    await saveNewCloudEncryptionPassword(password);
     return password;
   }
 
-  const password = await promptSecret("Cloud Backup Password", "Enter your Cloud Backup Password.");
+  const password = await promptSecret("Cloud Encryption Password", "Enter your Cloud Encryption Password.");
   if (!password) return null;
-  await verifyCloudBackupPassword(password, existing);
+  await verifyLocalCloudEncryptionPassword(password, existing);
   return password;
 }
 
@@ -631,7 +646,7 @@ function SecretPromptModal({
           type="password"
           value={value}
           onChange={(event) => setValue(event.target.value)}
-          placeholder="Cloud Backup Password"
+          placeholder="Cloud Encryption Password"
         />
         <div className="mt-5 flex justify-end gap-2">
           <button
@@ -667,6 +682,8 @@ function SyncSettingsPanel({ appVersion }: { appVersion: string }) {
     pendingLocalChanges: 0,
     status: "idle",
   });
+  const [remoteCloudState, setRemoteCloudState] = useState<RemoteCloudState | null>(null);
+  const [encryptionStatus, setEncryptionStatus] = useState<CloudEncryptionStatus>("unknown");
   const [isBusy, setIsBusy] = useState(false);
   const [statusText, setStatusText] = useState("");
   const [secretPrompt, setSecretPrompt] = useState<SecretPromptState>(null);
@@ -678,15 +695,19 @@ function SyncSettingsPanel({ appVersion }: { appVersion: string }) {
   }, []);
 
   const refreshState = async (loadBackups: boolean) => {
-    const [storedSession, cloudStatus, nextSyncState] = await Promise.all([
+    const [storedSession, cloudStatus, nextSyncState, localMetadata] = await Promise.all([
       getStoredGoogleDriveSession(),
       getCloudBackupStatus(),
       getCloudSyncState({ attachments, folders, notes, tags: availableTags }),
+      getLocalCloudEncryptionMetadata(),
     ]);
+    const nextRemoteState = storedSession ? await inspectRemoteCloudState() : null;
     setSession(storedSession);
     setLastBackupAt(cloudStatus.lastBackupAt);
     setLastRestoreAt(cloudStatus.lastRestoreAt);
     setSyncState(nextSyncState);
+    setRemoteCloudState(nextRemoteState);
+    setEncryptionStatus(cloudEncryptionStatus(localMetadata, nextRemoteState));
     if (storedSession && loadBackups) {
       const nextBackups = await listCloudBackups();
       setBackups(nextBackups);
@@ -726,13 +747,15 @@ function SyncSettingsPanel({ appVersion }: { appVersion: string }) {
       await disconnectGoogleDrive();
       setSession(null);
       setBackups([]);
+      setRemoteCloudState(null);
+      setEncryptionStatus("unknown");
       notify({ kind: "success", title: "Google Drive disconnected" });
     });
 
   const handleBackup = () =>
     run("Backing up to Google Drive", async () => {
       if (!session) throw new Error("Connect Google Drive first.");
-      const password = await requestCloudBackupPassword(promptSecret, "backup");
+      const password = await requestCloudEncryptionPassword(promptSecret, "backup", remoteCloudState);
       if (!password) return;
       const entry = await uploadEncryptedCloudBackup({
         appVersion,
@@ -744,6 +767,7 @@ function SyncSettingsPanel({ appVersion }: { appVersion: string }) {
       });
       setBackups((current) => [entry, ...current.filter((item) => item.id !== entry.id)]);
       setLastBackupAt(entry.createdAt);
+      await refreshState(false);
       notify({ kind: "success", title: "Encrypted Drive backup uploaded" });
     });
 
@@ -794,7 +818,7 @@ function SyncSettingsPanel({ appVersion }: { appVersion: string }) {
   const handleSyncNow = () =>
     run("Syncing Google Drive", async () => {
       if (!session) throw new Error("Connect Google Drive first.");
-      const password = await requestCloudBackupPassword(promptSecret, "backup");
+      const password = await requestCloudEncryptionPassword(promptSecret, "sync", remoteCloudState);
       if (!password) return;
       setSyncState((current) => ({ ...current, status: "syncing" }));
       try {
@@ -846,7 +870,7 @@ function SyncSettingsPanel({ appVersion }: { appVersion: string }) {
         title: "Restore encrypted Drive backup?",
       });
       if (!confirmed) return;
-      const password = await requestCloudBackupPassword(promptSecret, "restore");
+      const password = await requestCloudEncryptionPassword(promptSecret, "restore", remoteCloudState);
       if (!password) return;
       let backup;
       try {
@@ -862,7 +886,49 @@ function SyncSettingsPanel({ appVersion }: { appVersion: string }) {
       await restoreBackupMerge(backup);
       await markCloudRestoreComplete();
       setLastRestoreAt(new Date().toISOString());
+      await refreshState(false);
     });
+
+  const handleRetryRemoteCheck = () =>
+    run("Checking Google Drive cloud data", async () => {
+      if (!session) throw new Error("Connect Google Drive first.");
+      await refreshState(false);
+      notify({ kind: "success", title: "Google Drive cloud state refreshed" });
+    });
+
+  const handleConfigureCloudEncryption = () =>
+    run(
+      encryptionStatus === "needsExistingPassword"
+        ? "Verifying Cloud Encryption Password"
+        : "Setting Cloud Encryption Password",
+      async () => {
+        if (!session) throw new Error("Connect Google Drive first.");
+        const password = await requestCloudEncryptionPassword(promptSecret, "backup", remoteCloudState);
+        if (!password) return;
+        await refreshState(false);
+        notify({ kind: "success", title: "Cloud Encryption Password configured" });
+      },
+    );
+
+  const remoteStateLabel =
+    remoteCloudState?.kind === "empty"
+      ? "No cloud data found"
+      : remoteCloudState?.kind === "existingEncrypted"
+        ? "Existing encrypted cloud data found"
+        : remoteCloudState?.kind === "unknown"
+          ? "Could not check"
+          : session
+            ? "Checking..."
+            : "Not checked";
+
+  const encryptionStatusLabel =
+    encryptionStatus === "configured"
+      ? "Configured"
+      : encryptionStatus === "needsExistingPassword"
+        ? "Needs existing password"
+        : encryptionStatus === "notConfigured"
+          ? "Not configured"
+          : "Unknown";
 
   return (
     <div className="space-y-4 text-sm text-slate-300">
@@ -896,6 +962,16 @@ function SyncSettingsPanel({ appVersion }: { appVersion: string }) {
             {syncState.conflicts ? ` · ${syncState.conflicts} conflict${syncState.conflicts === 1 ? "" : "s"}` : ""}
           </p>
         </div>
+        <div className="rounded-xl border border-white/10 bg-white/[0.025] p-3">
+          <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Cloud encryption</p>
+          <p className="mt-2 font-medium text-white">{encryptionStatusLabel}</p>
+          <p className="mt-1 text-xs text-slate-500">Separate from the Lock Password.</p>
+        </div>
+        <div className="rounded-xl border border-white/10 bg-white/[0.025] p-3">
+          <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Remote state</p>
+          <p className="mt-2 font-medium text-white">{remoteStateLabel}</p>
+          {remoteCloudState?.error ? <p className="mt-1 text-xs text-amber-200">{remoteCloudState.error}</p> : null}
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-2">
@@ -917,6 +993,16 @@ function SyncSettingsPanel({ appVersion }: { appVersion: string }) {
         <button className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-medium text-slate-200 transition hover:bg-white/[0.07] disabled:opacity-60" disabled={isBusy || !session} type="button" onClick={handleRefresh}>
           Refresh backup list
         </button>
+        {session && encryptionStatus !== "configured" && remoteCloudState?.kind !== "unknown" ? (
+          <button className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-medium text-slate-200 transition hover:bg-white/[0.07] disabled:opacity-60" disabled={isBusy} type="button" onClick={handleConfigureCloudEncryption}>
+            {encryptionStatus === "needsExistingPassword" ? "Enter Cloud Encryption Password" : "Set Cloud Encryption Password"}
+          </button>
+        ) : null}
+        {session && (!remoteCloudState || remoteCloudState.kind === "unknown") ? (
+          <button className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-medium text-slate-200 transition hover:bg-white/[0.07] disabled:opacity-60" disabled={isBusy} type="button" onClick={handleRetryRemoteCheck}>
+            Retry remote check
+          </button>
+        ) : null}
         {statusText ? <span className="self-center text-xs text-slate-500">{statusText}...</span> : null}
       </div>
 
@@ -949,7 +1035,8 @@ function SyncSettingsPanel({ appVersion }: { appVersion: string }) {
       <div className="space-y-2 text-xs leading-5 text-slate-500">
         <p>Google sign-in is optional. Lumo remains local-first and fully usable offline without Drive.</p>
         <p>Drive backups and sync change records are encrypted before upload to hidden app-specific appDataFolder storage. Google Drive does not receive plaintext notes or attachments.</p>
-        <p>The Cloud Backup Password is also used as the Cloud Encryption Password for sync records. It is separate from the Lock Password.</p>
+        <p>The Cloud Encryption Password protects Google Drive backups and sync records. It is separate from the Lock Password.</p>
+        <p>If Google Drive already contains encrypted Lumo data, this device must enter the existing Cloud Encryption Password instead of creating a new one.</p>
         <p>Sync v1 is manual and creates conflict copies instead of overwriting local note edits.</p>
       </div>
       <SecretPromptModal prompt={secretPrompt} onClose={() => setSecretPrompt(null)} />
@@ -1101,7 +1188,7 @@ export function SettingsScreen() {
                 </p>
                 <p className="text-slate-500">
                   Optional Google Drive backups use hidden appDataFolder storage and are encrypted before upload.
-                  The Cloud Backup Password is separate from the Lock Password and cannot be recovered by Lumo.
+                  The Cloud Encryption Password is separate from the Lock Password and cannot be recovered by Lumo.
                 </p>
                 <div className="flex flex-wrap items-center gap-3 pt-2">
                   <span className="text-xs text-slate-500">

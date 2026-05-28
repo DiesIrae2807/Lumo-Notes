@@ -49,9 +49,9 @@ loopback redirects for an installed/desktop app.
 - Backups are uploaded only after the user connects Google Drive and clicks **Back up now**.
 - Sync records are uploaded only after the user connects Google Drive and clicks **Sync now**.
 - Backup files are stored in hidden Google Drive `appDataFolder` storage, not in a visible Drive folder.
-- Lumo encrypts the whole backup package and each sync change record before upload with the Cloud Backup Password.
-- The Cloud Backup Password also acts as the Cloud Encryption Password for sync v1 records.
-- The Cloud Backup Password is not stored directly. If it is forgotten, existing Drive backups and sync records cannot be restored.
+- Lumo encrypts the whole backup package and each sync change record before upload with the Cloud Encryption Password.
+- The Cloud Encryption Password protects both Drive backups and sync v1 records.
+- The Cloud Encryption Password is not stored directly. If it is forgotten, existing Drive backups and sync records cannot be restored.
 - Locked notes and locked attachments remain encrypted in the local backup payload, and the whole cloud package is encrypted again before upload.
 - Locked note content is not decrypted just to merge a sync record.
 - Lumo remains offline-capable and local-first. Drive is only used for optional manual backup, restore, and sync.

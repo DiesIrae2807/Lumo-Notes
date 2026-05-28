@@ -23,7 +23,7 @@ import {
 } from "./googleDriveClient";
 import { getRawSetting, setRawSetting } from "./syncSettings";
 
-const SYNC_MANIFEST_NAME = "lumo-sync-manifest.json";
+export const SYNC_MANIFEST_NAME = "lumo-sync-manifest.json";
 const LAST_SYNC_KEY = "sync.googleDriveLastSyncAt";
 const SEEN_CHANGE_IDS_KEY = "sync.googleDriveSeenChangeIds";
 const CONFLICT_COUNT_KEY = "sync.googleDriveConflictCount";

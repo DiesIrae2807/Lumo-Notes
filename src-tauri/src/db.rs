@@ -2389,7 +2389,7 @@ pub fn create_cloud_backup_password_metadata(
     password: String,
 ) -> Result<CloudBackupPasswordMetadataDto, String> {
     if password.len() < 8 {
-        return Err("Use at least 8 characters for the Cloud Backup Password.".to_string());
+        return Err("Use at least 8 characters for the Cloud Encryption Password.".to_string());
     }
     let salt = crypto::random_base64(16);
     let key = crypto::derive_key(&password, &salt)?;
@@ -2410,7 +2410,7 @@ pub fn verify_cloud_backup_password(
 ) -> Result<(), String> {
     let key = crypto::derive_key(&password, &salt)?;
     if crypto::verifier_for_key(&key) != verifier {
-        return Err("Wrong Cloud Backup Password.".to_string());
+        return Err("Wrong Cloud Encryption Password.".to_string());
     }
     Ok(())
 }
