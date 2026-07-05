@@ -75,9 +75,10 @@ It does not contain note content.
 Sync v1 intentionally avoids complex rich-text merging.
 
 - If a remote note is newer or missing locally, and the local note has no unsynced edits, it is merged into the local database.
-- If the local note has unsynced edits from this device and a remote note from another device also changed, Lumo keeps the local note and creates a conflict copy named
-  `Original Title (conflict from DEVICE - DATE)`.
-- Handled remote conflict records are remembered so the same remote change does not create repeated conflict copies.
+- If the local note has unsynced edits from this device and a remote note from another device also changed, Lumo keeps the local note unchanged and stores one unresolved sync conflict.
+- The user can resolve the conflict from Settings > Sync by choosing Keep mine, Keep theirs, Keep both, or Decide later.
+- Keep both creates a new note named `Original Title (conflict from DEVICE - DATE)`.
+- Handled remote conflict records are remembered so the same remote change does not create repeated conflict records or duplicate notes.
 - Folder and tag data are merged through the existing non-destructive restore path.
 - Attachment records are restored idempotently; existing attachment ids are skipped.
 - Missing or corrupted remote records are reported as sync errors.
@@ -93,11 +94,10 @@ Implemented:
 - Stable local device id/name metadata.
 - Manual encrypted sync change upload/download.
 - Sync status, last sync time, and pending local change count in Settings > Sync.
-- Safe conflict-copy behavior for note conflicts.
+- Durable user-driven conflict resolution for note conflicts.
 
 Not implemented yet:
 
 - Background sync.
 - Multi-device live sync.
-- Conflict resolution UI.
 - Collaboration.

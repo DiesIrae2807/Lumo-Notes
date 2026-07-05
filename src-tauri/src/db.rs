@@ -187,6 +187,25 @@ pub struct DeviceIdentityDto {
     pub created_at: String,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncConflictDto {
+    pub id: String,
+    pub entity_type: String,
+    pub entity_id: String,
+    pub local_payload: String,
+    pub remote_payload: String,
+    pub local_device_id: Option<String>,
+    pub remote_device_id: Option<String>,
+    pub remote_change_id: String,
+    pub detected_at: String,
+    pub status: String,
+    pub resolution: Option<String>,
+    pub resolved_at: Option<String>,
+    pub result_entity_id: Option<String>,
+    pub resolution_synced_at: Option<String>,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GoogleOAuthCodeDto {
@@ -286,6 +305,23 @@ fn create_schema(connection: &Connection) -> Result<(), String> {
                 device_id TEXT,
                 payload TEXT,
                 PRIMARY KEY(entity_type, entity_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS sync_conflicts (
+                id TEXT PRIMARY KEY,
+                entity_type TEXT NOT NULL,
+                entity_id TEXT NOT NULL,
+                local_payload TEXT NOT NULL,
+                remote_payload TEXT NOT NULL,
+                local_device_id TEXT,
+                remote_device_id TEXT,
+                remote_change_id TEXT NOT NULL UNIQUE,
+                detected_at TEXT NOT NULL,
+                status TEXT NOT NULL,
+                resolution TEXT,
+                resolved_at TEXT,
+                result_entity_id TEXT,
+                resolution_synced_at TEXT
             );
             ",
         )
@@ -410,6 +446,12 @@ fn migrate_schema(connection: &Connection) -> Result<(), String> {
                 .execute(&format!("ALTER TABLE {} ADD COLUMN deleted_at TEXT", table), [])
                 .map_err(|error| error.to_string())?;
         }
+    }
+
+    if !column_exists(connection, "sync_conflicts", "resolution_synced_at")? {
+        connection
+            .execute("ALTER TABLE sync_conflicts ADD COLUMN resolution_synced_at TEXT", [])
+            .map_err(|error| error.to_string())?;
     }
 
     Ok(())
@@ -1019,6 +1061,45 @@ fn get_attachments_from_connection(connection: &Connection) -> Result<Vec<Attach
         .map_err(|error| error.to_string())?;
 
     rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())
+}
+
+fn sync_conflict_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<SyncConflictDto> {
+    Ok(SyncConflictDto {
+        id: row.get(0)?,
+        entity_type: row.get(1)?,
+        entity_id: row.get(2)?,
+        local_payload: row.get(3)?,
+        remote_payload: row.get(4)?,
+        local_device_id: row.get(5)?,
+        remote_device_id: row.get(6)?,
+        remote_change_id: row.get(7)?,
+        detected_at: row.get(8)?,
+        status: row.get(9)?,
+        resolution: row.get(10)?,
+        resolved_at: row.get(11)?,
+        result_entity_id: row.get(12)?,
+        resolution_synced_at: row.get(13)?,
+    })
+}
+
+fn get_sync_conflict_by_remote_change_id(
+    connection: &Connection,
+    remote_change_id: &str,
+) -> Result<Option<SyncConflictDto>, String> {
+    connection
+        .query_row(
+            "
+            SELECT id, entity_type, entity_id, local_payload, remote_payload,
+                   local_device_id, remote_device_id, remote_change_id, detected_at,
+                   status, resolution, resolved_at, result_entity_id, resolution_synced_at
+            FROM sync_conflicts
+            WHERE remote_change_id = ?1
+            ",
+            params![remote_change_id],
+            sync_conflict_from_row,
+        )
+        .optional()
         .map_err(|error| error.to_string())
 }
 
@@ -2385,6 +2466,153 @@ pub fn get_or_create_device_identity(
 }
 
 #[tauri::command]
+pub fn create_sync_conflict(
+    state: tauri::State<'_, DbState>,
+    conflict: SyncConflictDto,
+) -> Result<SyncConflictDto, String> {
+    let connection = connect(&state.path)?;
+    create_schema(&connection)?;
+    if let Some(existing) = get_sync_conflict_by_remote_change_id(&connection, &conflict.remote_change_id)? {
+        return Ok(existing);
+    }
+    connection
+        .execute(
+            "
+            INSERT INTO sync_conflicts (
+                id, entity_type, entity_id, local_payload, remote_payload,
+                local_device_id, remote_device_id, remote_change_id, detected_at,
+                status, resolution, resolved_at, result_entity_id, resolution_synced_at
+            )
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
+            ",
+            params![
+                &conflict.id,
+                &conflict.entity_type,
+                &conflict.entity_id,
+                &conflict.local_payload,
+                &conflict.remote_payload,
+                conflict.local_device_id.as_deref(),
+                conflict.remote_device_id.as_deref(),
+                &conflict.remote_change_id,
+                &conflict.detected_at,
+                &conflict.status,
+                conflict.resolution.as_deref(),
+                conflict.resolved_at.as_deref(),
+                conflict.result_entity_id.as_deref(),
+                conflict.resolution_synced_at.as_deref(),
+            ],
+        )
+        .map_err(|error| error.to_string())?;
+    get_sync_conflict_by_remote_change_id(&connection, &conflict.remote_change_id)?
+        .ok_or_else(|| "Sync conflict could not be stored.".to_string())
+}
+
+#[tauri::command]
+pub fn list_sync_conflicts(
+    state: tauri::State<'_, DbState>,
+    status: Option<String>,
+    unsynced_resolutions_only: Option<bool>,
+) -> Result<Vec<SyncConflictDto>, String> {
+    let connection = connect(&state.path)?;
+    create_schema(&connection)?;
+    let mut query = "
+        SELECT id, entity_type, entity_id, local_payload, remote_payload,
+               local_device_id, remote_device_id, remote_change_id, detected_at,
+               status, resolution, resolved_at, result_entity_id, resolution_synced_at
+        FROM sync_conflicts
+    "
+    .to_string();
+    let mut clauses = Vec::new();
+    if status.is_some() {
+        clauses.push("status = ?1");
+    }
+    if unsynced_resolutions_only.unwrap_or(false) {
+        clauses.push("status = 'resolved' AND resolution_synced_at IS NULL");
+    }
+    if !clauses.is_empty() {
+        query.push_str(" WHERE ");
+        query.push_str(&clauses.join(" AND "));
+    }
+    query.push_str(" ORDER BY detected_at DESC");
+
+    let mut statement = connection.prepare(&query).map_err(|error| error.to_string())?;
+    let rows = if let Some(status) = status {
+        statement
+            .query_map(params![status], sync_conflict_from_row)
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+    } else {
+        statement
+            .query_map([], sync_conflict_from_row)
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+    };
+    rows.map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn resolve_sync_conflict(
+    state: tauri::State<'_, DbState>,
+    id: String,
+    resolution: String,
+    resolved_at: String,
+    result_entity_id: Option<String>,
+) -> Result<SyncConflictDto, String> {
+    if !matches!(resolution.as_str(), "keep_local" | "keep_remote" | "keep_both") {
+        return Err("Unsupported sync conflict resolution.".to_string());
+    }
+    let connection = connect(&state.path)?;
+    create_schema(&connection)?;
+    let changed_rows = connection
+        .execute(
+            "
+            UPDATE sync_conflicts
+            SET status = 'resolved',
+                resolution = ?2,
+                resolved_at = ?3,
+                result_entity_id = ?4,
+                resolution_synced_at = NULL
+            WHERE id = ?1
+            ",
+            params![id, resolution, resolved_at, result_entity_id.as_deref()],
+        )
+        .map_err(|error| error.to_string())?;
+    if changed_rows == 0 {
+        return Err("Sync conflict not found.".to_string());
+    }
+    connection
+        .query_row(
+            "
+            SELECT id, entity_type, entity_id, local_payload, remote_payload,
+                   local_device_id, remote_device_id, remote_change_id, detected_at,
+                   status, resolution, resolved_at, result_entity_id, resolution_synced_at
+            FROM sync_conflicts
+            WHERE id = ?1
+            ",
+            params![id],
+            sync_conflict_from_row,
+        )
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn mark_sync_conflict_resolution_synced(
+    state: tauri::State<'_, DbState>,
+    id: String,
+    synced_at: String,
+) -> Result<(), String> {
+    let connection = connect(&state.path)?;
+    create_schema(&connection)?;
+    connection
+        .execute(
+            "UPDATE sync_conflicts SET resolution_synced_at = ?2 WHERE id = ?1 AND status = 'resolved'",
+            params![id, synced_at],
+        )
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
 pub fn create_cloud_backup_password_metadata(
     password: String,
 ) -> Result<CloudBackupPasswordMetadataDto, String> {
@@ -2593,6 +2821,31 @@ pub fn restore_backup_note(
     Ok(RestoreEntityResultDto {
         status: status.to_string(),
     })
+}
+
+#[tauri::command]
+pub fn replace_note_from_backup(
+    state: tauri::State<'_, DbState>,
+    note: NoteDto,
+) -> Result<(), String> {
+    let connection = connect(&state.path)?;
+    create_schema(&connection)?;
+    ensure_note_folder_exists(&connection, &note)?;
+    let exists: bool = connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM notes WHERE id = ?1)",
+            params![note.id],
+            |row| row.get::<_, i64>(0),
+        )
+        .map_err(|error| error.to_string())?
+        != 0;
+    if exists {
+        update_note_from_backup(&connection, &note)?;
+    } else {
+        insert_note(&connection, &note)?;
+    }
+    let _ = upsert_search_index_note(&connection, &note.id);
+    Ok(())
 }
 
 #[tauri::command]

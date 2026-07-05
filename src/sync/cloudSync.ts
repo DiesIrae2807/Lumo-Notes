@@ -7,6 +7,8 @@ import {
 } from "../services/fileTransfer";
 import {
   getAttachmentBackupPayloads,
+  listSyncConflicts,
+  markSyncConflictResolutionSynced,
   type AttachmentBackupPayload,
 } from "../services/database";
 import {
@@ -30,7 +32,7 @@ const CONFLICT_COUNT_KEY = "sync.googleDriveConflictCount";
 
 export type SyncStatus = "idle" | "syncing" | "synced" | "offline" | "error" | "conflict";
 
-export type SyncEntityType = "note" | "folder" | "tag" | "note_tag" | "attachment";
+export type SyncEntityType = "note" | "folder" | "tag" | "note_tag" | "attachment" | "conflict_resolution";
 export type SyncOperation = "upsert" | "delete";
 
 export type SyncChangeRecord = {
@@ -43,6 +45,17 @@ export type SyncChangeRecord = {
   entityId: string;
   operation: SyncOperation;
   payload: unknown;
+};
+
+export type SyncConflictResolutionPayload = {
+  conflictId: string;
+  originalNoteId: string;
+  sourceRemoteChangeId: string;
+  selectedResolution: "keep_local" | "keep_remote" | "keep_both";
+  resultingNoteId?: string | null;
+  resolvingDeviceId: string;
+  resolvedAt: string;
+  finalNotePayload?: LumoBackup | null;
 };
 
 type SyncManifestEntry = {
@@ -146,7 +159,7 @@ export async function getCloudSyncState(input: {
   const pendingLocalChanges =
     input.notes.filter((note) => noteUpdatedAfter(note, since)).length +
     input.attachments.filter((attachment) => Date.parse(attachment.createdAt) > Date.parse(since)).length;
-  const conflicts = (await getRawSetting<number | null>(CONFLICT_COUNT_KEY)) ?? 0;
+  const conflicts = (await listSyncConflicts({ status: "unresolved" })).length;
   return {
     conflicts,
     lastSyncAt,
@@ -264,6 +277,49 @@ async function buildLocalChangeRecords(input: {
     });
   }
 
+  const resolvedConflicts = await listSyncConflicts({ unsyncedResolutionsOnly: true });
+  for (const conflict of resolvedConflicts) {
+    if (!conflict.resolution || !conflict.resolvedAt) continue;
+    let finalNotePayload: LumoBackup | null = null;
+    if (conflict.resolution === "keep_local") {
+      finalNotePayload = validateBackup(JSON.parse(conflict.localPayload));
+    } else if (conflict.resolution === "keep_remote") {
+      finalNotePayload = validateBackup(JSON.parse(conflict.remotePayload));
+    } else if (conflict.resolution === "keep_both" && conflict.resultEntityId) {
+      const resultNote = input.notes.find((note) => note.id === conflict.resultEntityId);
+      if (resultNote) {
+        finalNotePayload = createBackup(
+          [resultNote],
+          input.folders.filter((folder) => folder.id === resultNote.folderId),
+          resultNote.tags,
+          true,
+          attachmentPayloads.filter((attachment) => attachment.noteId === resultNote.id),
+          null,
+        );
+      }
+    }
+    changes.push({
+      changeId: changeId("conflict_resolution", conflict.id, conflict.resolvedAt, device.deviceId),
+      createdAt: conflict.resolvedAt,
+      deviceId: device.deviceId,
+      deviceName: device.deviceName,
+      entityId: conflict.id,
+      entityType: "conflict_resolution",
+      operation: "upsert",
+      payload: {
+        conflictId: conflict.id,
+        finalNotePayload,
+        originalNoteId: conflict.entityId,
+        resolvingDeviceId: device.deviceId,
+        resolvedAt: conflict.resolvedAt,
+        resultingNoteId: conflict.resultEntityId ?? null,
+        selectedResolution: conflict.resolution,
+        sourceRemoteChangeId: conflict.remoteChangeId,
+      } satisfies SyncConflictResolutionPayload,
+      schemaVersion: 1,
+    });
+  }
+
   return changes;
 }
 
@@ -336,10 +392,18 @@ export async function runGoogleDriveSync(input: {
   const entriesToAdd: SyncManifestEntry[] = [];
 
   for (const record of localChanges) {
-    if (existingChangeIds.has(record.changeId)) continue;
+    if (existingChangeIds.has(record.changeId)) {
+      if (record.entityType === "conflict_resolution") {
+        await markSyncConflictResolutionSynced(record.entityId, new Date().toISOString());
+      }
+      continue;
+    }
     const entry = await uploadChangeRecord(record, input.password);
     entriesToAdd.push(entry);
     seen.add(record.changeId);
+    if (record.entityType === "conflict_resolution") {
+      await markSyncConflictResolutionSynced(record.entityId, new Date().toISOString());
+    }
   }
 
   const nextManifest = {

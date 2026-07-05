@@ -7,11 +7,22 @@ import {
   type CustomThemeColors,
 } from "../types/settings";
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { rebuildSearchIndex } from "../services/database";
+import {
+  createSyncConflict,
+  getAttachmentBackupPayloads,
+  listSyncConflicts,
+  rebuildSearchIndex,
+  replaceNoteFromBackup,
+  restoreBackupAttachments,
+  resolveSyncConflict,
+  type SyncConflict,
+  type SyncConflictResolution,
+} from "../services/database";
 import { notify, notifyError } from "../utils/toast";
 import { confirmDialog } from "../utils/confirm";
 import { useNotes } from "../store/notesStore";
 import { getVersion } from "@tauri-apps/api/app";
+import { createBackup, validateBackup } from "../services/fileTransfer";
 import {
   type CloudBackupPasswordMetadata,
 } from "../sync/backupEncryption";
@@ -30,6 +41,7 @@ import {
   syncChangeToBackup,
   type SyncRuntimeState,
   type SyncChangeRecord,
+  type SyncConflictResolutionPayload,
 } from "../sync/cloudSync";
 import {
   connectGoogleDrive,
@@ -47,6 +59,7 @@ import {
   type CloudEncryptionStatus,
   type RemoteCloudState,
 } from "../sync/cloudEncryptionState";
+import { getOrCreateDeviceIdentity } from "../sync/deviceIdentity";
 
 const shortcuts = [
   ["Ctrl+K", "Command palette"],
@@ -687,6 +700,8 @@ function SyncSettingsPanel({ appVersion }: { appVersion: string }) {
   const [isBusy, setIsBusy] = useState(false);
   const [statusText, setStatusText] = useState("");
   const [secretPrompt, setSecretPrompt] = useState<SecretPromptState>(null);
+  const [unresolvedConflicts, setUnresolvedConflicts] = useState<SyncConflict[]>([]);
+  const [activeConflict, setActiveConflict] = useState<SyncConflict | null>(null);
   const dirtyNoteIdsAtSyncStart = useRef<Set<string>>(new Set());
 
   const promptSecret = useCallback((title: string, message: string) => {
@@ -696,17 +711,19 @@ function SyncSettingsPanel({ appVersion }: { appVersion: string }) {
   }, []);
 
   const refreshState = async (loadBackups: boolean) => {
-    const [storedSession, cloudStatus, nextSyncState, localMetadata] = await Promise.all([
+    const [storedSession, cloudStatus, nextSyncState, localMetadata, nextConflicts] = await Promise.all([
       getStoredGoogleDriveSession(),
       getCloudBackupStatus(),
       getCloudSyncState({ attachments, folders, notes, tags: availableTags }),
       getLocalCloudEncryptionMetadata(),
+      listSyncConflicts({ status: "unresolved" }),
     ]);
     const nextRemoteState = storedSession ? await inspectRemoteCloudState() : null;
     setSession(storedSession);
     setLastBackupAt(cloudStatus.lastBackupAt);
     setLastRestoreAt(cloudStatus.lastRestoreAt);
     setSyncState(nextSyncState);
+    setUnresolvedConflicts(nextConflicts);
     setRemoteCloudState(nextRemoteState);
     setEncryptionStatus(cloudEncryptionStatus(localMetadata, nextRemoteState));
     if (storedSession && loadBackups) {
@@ -810,8 +827,177 @@ function SyncSettingsPanel({ appVersion }: { appVersion: string }) {
     return JSON.stringify(localComparable) !== JSON.stringify(incomingComparable);
   };
 
+  const buildLocalConflictBackup = useCallback(
+    async (noteId: string) => {
+      const localNote = notes.find((note) => note.id === noteId);
+      if (!localNote) return null;
+      const attachmentPayloads = await getAttachmentBackupPayloads();
+      return createBackup(
+        [localNote],
+        folders.filter((folder) => folder.id === localNote.folderId),
+        localNote.tags,
+        true,
+        attachmentPayloads.filter((attachment) => attachment.noteId === localNote.id),
+        null,
+      );
+    },
+    [folders, notes],
+  );
+
+  const conflictTitle = (conflict: SyncConflict) => {
+    try {
+      const remote = validateBackup(JSON.parse(conflict.remotePayload)).notes[0];
+      const local = validateBackup(JSON.parse(conflict.localPayload)).notes[0];
+      return remote?.title || local?.title || "Untitled Note";
+    } catch {
+      return "Untitled Note";
+    }
+  };
+
+  const conflictPreview = (payload: string) => {
+    try {
+      const note = validateBackup(JSON.parse(payload)).notes[0];
+      if (!note) return "No preview available.";
+      if (note.isLocked) return "Locked note content is hidden.";
+      return (note.preview || note.content || "No preview available.").slice(0, 180);
+    } catch {
+      return "No preview available.";
+    }
+  };
+
+  const applyRemoteResolution = useCallback(
+    async (payload: SyncConflictResolutionPayload) => {
+      if (!payload.finalNotePayload) return "skipped";
+      const finalBackup = validateBackup(payload.finalNotePayload);
+      const finalNote = finalBackup.notes[0];
+      if (!finalNote) return "skipped";
+      if (payload.selectedResolution === "keep_both") {
+        await restoreBackupMerge(finalBackup);
+      } else {
+        await replaceNoteFromBackup(finalNote);
+        if (finalBackup.attachments?.length) {
+          await restoreBackupAttachments(finalBackup.attachments);
+        }
+      }
+      try {
+        await resolveSyncConflict(
+          payload.conflictId,
+          payload.selectedResolution,
+          payload.resolvedAt,
+          payload.resultingNoteId ?? null,
+        );
+      } catch {
+        // The conflict may only have existed on the resolving device.
+      }
+      notify({
+        kind: "info",
+        title:
+          payload.selectedResolution === "keep_local"
+            ? "Kept local version"
+            : payload.selectedResolution === "keep_remote"
+              ? "Kept remote version"
+              : "Kept both versions",
+      });
+      return "applied";
+    },
+    [restoreBackupMerge],
+  );
+
+  const reloadConflicts = useCallback(async () => {
+    const nextConflicts = await listSyncConflicts({ status: "unresolved" });
+    setUnresolvedConflicts(nextConflicts);
+    setSyncState((current) => ({
+      ...current,
+      conflicts: nextConflicts.length,
+      status: nextConflicts.length > 0 ? "conflict" : current.pendingLocalChanges > 0 ? "idle" : "synced",
+    }));
+    return nextConflicts;
+  }, []);
+
+  const resolveConflict = useCallback(
+    async (conflict: SyncConflict, resolution: SyncConflictResolution) => {
+      const localBackup = validateBackup(JSON.parse(conflict.localPayload));
+      const remoteBackup = validateBackup(JSON.parse(conflict.remotePayload));
+      const remoteNote = remoteBackup.notes[0];
+      if (!remoteNote) throw new Error("The preserved remote conflict payload is missing its note.");
+      let resultEntityId: string | null = null;
+
+      if (resolution === "keep_remote") {
+        const confirmed = await confirmDialog({
+          confirmLabel: "Keep theirs",
+          message: "This will replace your current local version with the preserved remote version.",
+          title: "Keep remote version?",
+        });
+        if (!confirmed) return;
+        await replaceNoteFromBackup(remoteNote);
+        if (remoteBackup.attachments?.length) {
+          await restoreBackupAttachments(remoteBackup.attachments);
+        }
+      } else if (resolution === "keep_both") {
+        const now = new Date().toISOString();
+        const suffixDate = new Date(conflict.detectedAt).toLocaleString();
+        const newNoteId = `note-conflict-${crypto.randomUUID()}`;
+        const attachmentIdMap = new Map<string, string>();
+        const clonedAttachments = remoteBackup.attachments?.map((attachment) => {
+          const newAttachmentId = `attachment-conflict-${crypto.randomUUID()}`;
+          attachmentIdMap.set(attachment.id, newAttachmentId);
+          return {
+            ...attachment,
+            id: newAttachmentId,
+            noteId: newNoteId,
+          };
+        });
+        const remapContent = (value: string) => {
+          let next = value;
+          attachmentIdMap.forEach((newId, oldId) => {
+            next = next.split(`attachment://${oldId}`).join(`attachment://${newId}`);
+          });
+          return next;
+        };
+        const clonedNote = {
+          ...remoteNote,
+          id: newNoteId,
+          title: `${remoteNote.title || "Untitled Note"} (conflict from ${conflict.remoteDeviceId || "remote device"} - ${suffixDate})`,
+          content: remoteNote.isLocked ? "" : remapContent(remoteNote.content),
+          preview: remoteNote.isLocked ? "" : remoteNote.preview,
+          createdAt: now,
+          updatedAt: now,
+        };
+        await restoreBackupMerge({
+          ...remoteBackup,
+          notes: [clonedNote],
+          noteTags: remoteBackup.noteTags.map((item) =>
+            item.noteId === remoteNote.id ? { ...item, noteId: newNoteId } : item,
+          ),
+          attachments: clonedAttachments,
+        });
+        resultEntityId = newNoteId;
+      }
+
+      const resolvedAt = new Date().toISOString();
+      await resolveSyncConflict(conflict.id, resolution, resolvedAt, resultEntityId);
+      setActiveConflict(null);
+      await reloadConflicts();
+      notify({
+        kind: "success",
+        title:
+          resolution === "keep_local"
+            ? "Kept local version"
+            : resolution === "keep_remote"
+              ? "Kept remote version"
+              : "Kept both versions",
+        message: resolution === "keep_local" ? localBackup.notes[0]?.title : remoteNote.title,
+      });
+    },
+    [reloadConflicts, restoreBackupMerge],
+  );
+
   const applyRemoteChange = useCallback(
     async (record: SyncChangeRecord) => {
+      if (record.entityType === "conflict_resolution") {
+        return applyRemoteResolution(record.payload as SyncConflictResolutionPayload);
+      }
+
       const backup = syncChangeToBackup(record);
       if (!backup) return "skipped";
 
@@ -821,35 +1007,30 @@ function SyncSettingsPanel({ appVersion }: { appVersion: string }) {
         const hasUnsyncedLocalEdit = incoming ? dirtyNoteIdsAtSyncStart.current.has(incoming.id) : false;
         const remoteDiffers = incoming && local ? noteConflictPayloadDiffers(local, incoming) : false;
         if (incoming && local && hasUnsyncedLocalEdit && remoteDiffers) {
-          const conflictDate = new Date(record.createdAt).toLocaleString();
-          const title = `${incoming.title || "Untitled Note"} (conflict from ${record.deviceName || record.deviceId} - ${conflictDate})`;
-          const conflictNote = {
-            ...incoming,
-            id: `note-conflict-${crypto.randomUUID()}`,
-            title,
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          };
-          await restoreBackupMerge({
-            ...backup,
-            notes: [conflictNote],
-            noteTags: backup.noteTags.map((item) =>
-              item.noteId === incoming.id ? { ...item, noteId: conflictNote.id } : item,
-            ),
-            attachments: backup.attachments?.map((attachment) =>
-              attachment.noteId === incoming.id
-                ? {
-                    ...attachment,
-                    id: `attachment-conflict-${crypto.randomUUID()}`,
-                    noteId: conflictNote.id,
-                  }
-                : attachment,
-            ),
+          const device = await getOrCreateDeviceIdentity();
+          const localBackup = await buildLocalConflictBackup(incoming.id);
+          if (!localBackup) return "skipped";
+          const conflict = await createSyncConflict({
+            id: `sync-conflict-${record.changeId}`,
+            detectedAt: new Date().toISOString(),
+            entityId: incoming.id,
+            entityType: "note",
+            localDeviceId: device.deviceId,
+            localPayload: JSON.stringify(localBackup),
+            remoteChangeId: record.changeId,
+            remoteDeviceId: record.deviceId,
+            remotePayload: JSON.stringify(backup),
+            resolution: null,
+            resolvedAt: null,
+            resultEntityId: null,
+            resolutionSyncedAt: null,
+            status: "unresolved",
           });
+          setActiveConflict(conflict);
           notify({
             kind: "info",
             title: "Sync conflict detected",
-            message: "A conflict copy was created and your local note was kept unchanged.",
+            message: "Both versions were preserved.",
           });
           return "conflict";
         }
@@ -862,7 +1043,7 @@ function SyncSettingsPanel({ appVersion }: { appVersion: string }) {
       await restoreBackupMerge(backup);
       return "applied";
     },
-    [notes, restoreBackupMerge],
+    [applyRemoteResolution, buildLocalConflictBackup, notes, restoreBackupMerge],
   );
 
   const handleSyncNow = () =>
@@ -893,10 +1074,17 @@ function SyncSettingsPanel({ appVersion }: { appVersion: string }) {
           pendingLocalChanges: 0,
           status: summary.conflicts > 0 ? "conflict" : "synced",
         });
+        const nextConflicts = await reloadConflicts();
+        if (!activeConflict && nextConflicts[0] && summary.conflicts > 0) {
+          setActiveConflict(nextConflicts[0]);
+        }
         notify({
           kind: summary.conflicts > 0 ? "info" : "success",
           title: summary.conflicts > 0 ? "Sync completed with conflicts" : "Sync complete",
-          message: `${summary.uploaded} uploaded, ${summary.applied} applied, ${summary.skipped} skipped, ${summary.conflicts} conflicts.`,
+          message:
+            summary.conflicts > 0
+              ? "Sync conflict detected. Both versions were preserved."
+              : `${summary.uploaded} uploaded, ${summary.applied} applied, ${summary.skipped} skipped, ${summary.conflicts} conflicts.`,
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -1064,6 +1252,39 @@ function SyncSettingsPanel({ appVersion }: { appVersion: string }) {
 
       <div className="rounded-xl border border-white/10 bg-white/[0.025] p-3">
         <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="font-medium text-slate-200">Unresolved sync conflicts</p>
+            <p className="mt-1 text-xs text-slate-500">
+              {unresolvedConflicts.length} unresolved conflict{unresolvedConflicts.length === 1 ? "" : "s"}
+            </p>
+          </div>
+          <button className="rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-medium text-slate-200 transition hover:bg-white/[0.07] disabled:opacity-60" disabled={isBusy} type="button" onClick={() => void reloadConflicts()}>
+            Refresh
+          </button>
+        </div>
+        <div className="mt-3 space-y-2">
+          {unresolvedConflicts.length === 0 ? (
+            <p className="text-xs text-slate-500">No unresolved conflicts.</p>
+          ) : (
+            unresolvedConflicts.map((conflict) => (
+              <div key={conflict.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-white/[0.03] px-3 py-2">
+                <div>
+                  <p className="text-sm text-slate-200">{conflictTitle(conflict)}</p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Detected {new Date(conflict.detectedAt).toLocaleString()} · Local {conflict.localDeviceId || "this device"} · Remote {conflict.remoteDeviceId || "remote device"}
+                  </p>
+                </div>
+                <button className="rounded-lg border border-lumo-teal/20 bg-lumo-teal/10 px-3 py-2 text-xs font-medium text-lumo-teal transition hover:bg-lumo-teal/15 disabled:opacity-60" disabled={isBusy} type="button" onClick={() => setActiveConflict(conflict)}>
+                  Resolve
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-white/10 bg-white/[0.025] p-3">
+        <div className="flex items-center justify-between gap-3">
           <p className="font-medium text-slate-200">Available Drive backups</p>
           <span className="text-xs text-slate-500">{backups.length} found</span>
         </div>
@@ -1093,8 +1314,53 @@ function SyncSettingsPanel({ appVersion }: { appVersion: string }) {
         <p>Drive backups and sync change records are encrypted before upload to hidden app-specific appDataFolder storage. Google Drive does not receive plaintext notes or attachments.</p>
         <p>The Cloud Encryption Password protects Google Drive backups and sync records. It is separate from the Lock Password.</p>
         <p>If Google Drive already contains encrypted Lumo data, this device must enter the existing Cloud Encryption Password instead of creating a new one.</p>
-        <p>Sync v1 is manual and creates conflict copies instead of overwriting local note edits.</p>
+        <p>Sync v1 is manual and stores conflicts until you choose how to resolve them.</p>
       </div>
+      {activeConflict ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-night-950/75 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-2xl rounded-2xl border border-white/10 bg-night-900 p-5 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-base font-semibold text-white">Resolve sync conflict</p>
+                <p className="mt-1 text-xs leading-5 text-slate-500">Both versions were preserved. Choose what should sync across devices.</p>
+              </div>
+              <button className="rounded-lg px-2 py-1 text-sm text-slate-400 transition hover:bg-white/[0.05] hover:text-white" type="button" onClick={() => setActiveConflict(null)}>
+                Close
+              </button>
+            </div>
+            <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.025] p-3">
+              <p className="text-sm font-medium text-slate-200">{conflictTitle(activeConflict)}</p>
+              <p className="mt-1 text-xs text-slate-500">
+                Local {activeConflict.localDeviceId || "this device"} · Remote {activeConflict.remoteDeviceId || "remote device"} · Detected {new Date(activeConflict.detectedAt).toLocaleString()}
+              </p>
+            </div>
+            <div className="mt-3 grid gap-3 md:grid-cols-2">
+              <div className="rounded-xl border border-white/10 bg-white/[0.025] p-3">
+                <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Mine</p>
+                <p className="mt-2 text-xs leading-5 text-slate-300">{conflictPreview(activeConflict.localPayload)}</p>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-white/[0.025] p-3">
+                <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Theirs</p>
+                <p className="mt-2 text-xs leading-5 text-slate-300">{conflictPreview(activeConflict.remotePayload)}</p>
+              </div>
+            </div>
+            <div className="mt-5 flex flex-wrap justify-end gap-2">
+              <button className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-medium text-slate-200 transition hover:bg-white/[0.07] disabled:opacity-60" disabled={isBusy} type="button" onClick={() => setActiveConflict(null)}>
+                Decide later
+              </button>
+              <button className="rounded-xl border border-lumo-teal/20 bg-lumo-teal/10 px-3 py-2 text-xs font-medium text-lumo-teal transition hover:bg-lumo-teal/15 disabled:opacity-60" disabled={isBusy} type="button" onClick={() => void resolveConflict(activeConflict, "keep_local")}>
+                Keep mine
+              </button>
+              <button className="rounded-xl border border-lumo-teal/20 bg-lumo-teal/10 px-3 py-2 text-xs font-medium text-lumo-teal transition hover:bg-lumo-teal/15 disabled:opacity-60" disabled={isBusy} type="button" onClick={() => void resolveConflict(activeConflict, "keep_remote")}>
+                Keep theirs
+              </button>
+              <button className="rounded-xl bg-lumo-violet px-3 py-2 text-xs font-medium text-white transition hover:bg-lumo-violet/90 disabled:opacity-60" disabled={isBusy} type="button" onClick={() => void resolveConflict(activeConflict, "keep_both")}>
+                Keep both
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       <SecretPromptModal prompt={secretPrompt} onClose={() => setSecretPrompt(null)} />
     </div>
   );

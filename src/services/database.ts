@@ -44,6 +44,25 @@ export type RestoreEntityResult = {
   status: "added" | "updated" | "skipped";
 };
 
+export type SyncConflictResolution = "keep_local" | "keep_remote" | "keep_both";
+
+export type SyncConflict = {
+  id: string;
+  entityType: string;
+  entityId: string;
+  localPayload: string;
+  remotePayload: string;
+  localDeviceId?: string | null;
+  remoteDeviceId?: string | null;
+  remoteChangeId: string;
+  detectedAt: string;
+  status: "unresolved" | "resolved";
+  resolution?: SyncConflictResolution | null;
+  resolvedAt?: string | null;
+  resultEntityId?: string | null;
+  resolutionSyncedAt?: string | null;
+};
+
 export type PasswordChangeResult = {
   changedNotes: number;
   changedAttachments: number;
@@ -71,6 +90,10 @@ export async function createNote(note: Note) {
 
 export async function restoreBackupNote(note: Note) {
   return invoke<RestoreEntityResult>("restore_backup_note", { note });
+}
+
+export async function replaceNoteFromBackup(note: Note) {
+  return invoke<void>("replace_note_from_backup", { note });
 }
 
 export async function updateNote(note: Note) {
@@ -237,4 +260,36 @@ export async function saveAttachmentAs(id: string) {
 
 export async function getAttachmentDataUrl(id: string) {
   return invoke<string>("get_attachment_data_url", { id });
+}
+
+export async function createSyncConflict(conflict: SyncConflict) {
+  return invoke<SyncConflict>("create_sync_conflict", { conflict });
+}
+
+export async function listSyncConflicts(options?: {
+  status?: SyncConflict["status"];
+  unsyncedResolutionsOnly?: boolean;
+}) {
+  return invoke<SyncConflict[]>("list_sync_conflicts", {
+    status: options?.status ?? null,
+    unsyncedResolutionsOnly: options?.unsyncedResolutionsOnly ?? false,
+  });
+}
+
+export async function resolveSyncConflict(
+  id: string,
+  resolution: SyncConflictResolution,
+  resolvedAt: string,
+  resultEntityId?: string | null,
+) {
+  return invoke<SyncConflict>("resolve_sync_conflict", {
+    id,
+    resolution,
+    resolvedAt,
+    resultEntityId: resultEntityId ?? null,
+  });
+}
+
+export async function markSyncConflictResolutionSynced(id: string, syncedAt: string) {
+  return invoke<void>("mark_sync_conflict_resolution_synced", { id, syncedAt });
 }
