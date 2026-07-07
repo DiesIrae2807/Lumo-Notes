@@ -2,6 +2,17 @@
 
 This document describes the current desktop implementation as inspected in `src/sync`, `src/store`, `src/services`, and `src-tauri/src/db.rs`. It is a contract for interoperating with the existing app, not a design for future behavior.
 
+## Format Summary
+
+Lumo currently has two related but different serialized formats:
+
+- **Backup/export format:** `LumoBackup`, defined in `src/services/fileTransfer.ts`. This is a snapshot-style JSON object containing arrays of notes, folders, tags, note-tag relationships, optional attachments, and optional lock metadata. It is used by local JSON backup/export, encrypted Google Drive backup packages, restore/import flows, conflict payload snapshots, and also as the payload inside some sync change records.
+- **Sync format:** `SyncChangeRecord` plus `lumo-sync-manifest.json`, defined in `src/sync/cloudSync.ts`. This is an incremental change-log format. Each change record includes device metadata, a change ID, entity type, entity ID, operation, created timestamp, and a payload. For `note`, `folder`, and `tag` changes, the payload is currently a `LumoBackup` subset. For `attachment` changes, the payload is an attachment backup object. For conflict resolutions, the payload is `SyncConflictResolutionPayload`.
+
+The backup format and sync format are therefore **not the same format**. The desktop sync implementation reuses backup serialization for several change payloads, but robust cross-device sync also depends on the sync manifest, per-change metadata, device IDs, seen-change tracking, conflict records, and encrypted per-change files.
+
+Android currently implements local data plus `LumoBackup` serialization compatibility only. Android does not yet implement `SyncChangeRecord`, the sync manifest, encrypted package wrapper, Google Drive appData storage, device identity, cursors, or conflict tracking.
+
 ## Storage Overview
 
 The desktop app stores local data in SQLite at the Tauri app data path as `lumo-notes.db`. The schema is created and migrated in `src-tauri/src/db.rs`.
@@ -13,6 +24,27 @@ The active synchronization protocol uses Google Drive `appDataFolder`:
 - Full encrypted backups use a separate manifest, `lumo-backup-manifest.json`, and package files named `lumo-backup-{yyyyMMddTHHmmss}-{deviceId}.json.enc`.
 
 The app does not use a remote SQL database, Google Drive changes API cursor, vector clocks, or server-side revisions.
+
+## Implemented Desktop Serialization Inventory
+
+Desktop currently implements:
+
+- Local Markdown export/import with frontmatter in `src/services/fileTransfer.ts`.
+- Local JSON backup/restore using `LumoBackup` in `src/services/fileTransfer.ts` and `restoreBackupMerge` in `src/store/notesStore.tsx`.
+- Encrypted full Google Drive backup packages in `src/sync/cloudBackup.ts`.
+- Incremental Google Drive appData sync change records in `src/sync/cloudSync.ts`.
+- Device identity stored in app settings through `get_or_create_device_identity` in `src-tauri/src/db.rs`.
+- Sync manifest and seen-change tracking through `lumo-sync-manifest.json`, `sync.googleDriveLastSyncAt`, and `sync.googleDriveSeenChangeIds`.
+- Local conflict tracking through `sync_conflicts` in `src-tauri/src/db.rs` and conflict resolution payload upload in `src/sync/cloudSync.ts`.
+- Encrypted payload files using the cloud package wrapper implemented in `src-tauri/src/db.rs` and called through `src/sync/backupEncryption.ts`.
+
+Desktop does not currently implement:
+
+- Written/read sync tombstones, despite having a `sync_tombstones` table.
+- Per-entity revision/vector-clock sync.
+- Folder, tag, attachment, or settings deletion propagation.
+- A first-class standalone `note_tag` sync change, despite `note_tag` being listed as an allowed `SyncEntityType`.
+- Google Drive listing pagination beyond the first 100 files.
 
 ## Timestamps
 
@@ -306,7 +338,85 @@ Conflict resolution:
 - Resolved conflicts with `resolutionSyncedAt IS NULL` are uploaded as `conflict_resolution` change records.
 - Applying a remote `conflict_resolution` applies `finalNotePayload` when present, then attempts to mark the local conflict resolved. If the conflict row does not exist locally, the error is ignored.
 
-## Serialized Sync Format
+## Backup and Export Format
+
+### Markdown Export
+
+Desktop Markdown export is implemented in `noteToMarkdown` and `notesToMarkdownFiles` in `src/services/fileTransfer.ts`. It writes Markdown files with optional frontmatter:
+
+- `title`
+- `folder`
+- `tags`
+- `createdAt`
+- `updatedAt`
+- `isPinned`
+- `isFavorite`
+- `isArchived`
+
+Markdown import is not a full sync format. It does not preserve note IDs, deletion state, lock/encryption metadata, attachments, or conflict metadata.
+
+### JSON Backup Object
+
+The desktop `LumoBackup` type is:
+
+```ts
+type LumoBackup = {
+  metadata: {
+    appName: "Lumo Notes";
+    backupVersion: 1;
+    exportedAt: string;
+  };
+  notes: Note[];
+  folders: Folder[];
+  tags: string[];
+  noteTags: Array<{ noteId: string; tag: string }>;
+  attachments?: AttachmentBackupPayload[];
+  lockMetadata?: LockBackupMetadata | null;
+};
+```
+
+This object is used for local JSON backup/export and restore. It is also embedded inside encrypted Google Drive backup packages and inside several sync change-record payloads.
+
+Important backup behavior:
+
+- `createBackup` can include or exclude trashed notes through `includeTrash`.
+- Locked notes are serialized with blank `content` and `preview`, while encrypted fields remain present.
+- `noteTags` is derived from each serialized note's `tags` array.
+- Attachments are included only when supplied to `createBackup` and only for notes included in the backup.
+- `validateBackup` only checks top-level object shape, app name, backup version, and required arrays; it does not deeply validate every entity field.
+
+### Encrypted Full Backup Package
+
+Google Drive full backups do not upload `LumoBackup` directly. `src/sync/cloudBackup.ts` wraps it in a cloud backup package:
+
+```ts
+type CloudBackupPackage = {
+  metadata: {
+    appName: "Lumo Notes";
+    backupVersion: 1;
+    createdAt: string;
+    deviceId: string;
+    deviceName: string;
+    appVersion: string;
+    backupType: "google-drive-appdata";
+  };
+  backup: LumoBackup;
+  settings?: Pick<AppSettings, "backupIncludeTrash" | "markdownExportFrontmatter" | "defaultExportAction">;
+};
+```
+
+The package is encrypted with the encrypted package wrapper described below and uploaded as `lumo-backup-{yyyyMMddTHHmmss}-{deviceId}.json.enc`. The full-backup manifest is `lumo-backup-manifest.json`.
+
+## Implemented Desktop Sync Format
+
+Desktop incremental sync is separate from backup/export. It uses:
+
+- A plaintext manifest: `lumo-sync-manifest.json`.
+- One encrypted file per change: `changes/lumo-sync-change-{filenameSafe(changeId)}.json.enc`.
+- A plaintext `SyncChangeRecord` inside each encrypted change file.
+- A payload whose shape depends on `entityType`.
+
+The current desktop sync format reuses `LumoBackup` for `note`, `folder`, and `tag` change payloads. This is an implementation choice, not proof that a full backup file is itself a sync log entry.
 
 ### Manifest
 
@@ -367,7 +477,7 @@ For notes, `stamp` is `note.updatedAt`. For attachments, it is `attachment.creat
 
 ### Backup Payload
 
-Note, folder, and tag sync payloads are `LumoBackup` objects:
+For currently implemented desktop sync, note, folder, and tag change payloads are `LumoBackup` objects:
 
 ```json
 {
@@ -392,6 +502,17 @@ For a folder change, `folders` contains one folder and the other entity arrays a
 For a tag change, `tags` contains one string and the other entity arrays are empty.
 
 For an attachment change, `payload` is an `AttachmentBackupPayload` directly in the change record, but `syncChangeToBackup` wraps it in a `LumoBackup` before applying.
+
+### Current Sync Payload Matrix
+
+| `entityType` | `operation` currently emitted | Current payload | Implemented notes |
+| --- | --- | --- | --- |
+| `note` | `upsert` or `delete` | `LumoBackup` with one note, that note's folder, tags, noteTags, changed note attachments | `delete` means soft deletion; payload note has `isDeleted=true`. |
+| `folder` | `upsert` | `LumoBackup` with one folder | Emitted every run unless same change ID already exists. Folder deletion is not emitted. |
+| `tag` | `upsert` | `LumoBackup` with one tag string | Emitted every run unless same change ID already exists. Tag deletion is not emitted. |
+| `note_tag` | none | none | Type exists but no desktop code emits it. |
+| `attachment` | `upsert` | `AttachmentBackupPayload` | Attachment deletion is not emitted. |
+| `conflict_resolution` | `upsert` | `SyncConflictResolutionPayload` | Emitted for resolved local conflicts whose resolution has not been synced. |
 
 ### Conflict Resolution Payload
 
@@ -464,6 +585,178 @@ Remote incoming changes:
 
 - The app loads the manifest, filters entries where `entry.deviceId !== localDeviceId` and `changeId` is not in `sync.googleDriveSeenChangeIds`, downloads/decrypts each file, applies it, and records the change ID as seen.
 - After a run, `sync.googleDriveLastSyncAt` is set to the run completion time, not the max remote `createdAt`.
+
+## Proposed Future Sync Format
+
+This section is a proposal for a more robust desktop/Android sync contract. It is **not fully implemented by desktop today** and should not be described as current behavior until code exists on both platforms.
+
+The goal is to preserve the current encrypted-file-per-change design while making sync payloads less dependent on full-backup semantics.
+
+### Proposed Manifest
+
+Keep `lumo-sync-manifest.json` as the append-only index, but add a durable cursor/revision concept:
+
+```json
+{
+  "appName": "Lumo Notes",
+  "manifestVersion": 2,
+  "updatedAt": "2026-07-05T12:34:56.789Z",
+  "revision": 42,
+  "changes": []
+}
+```
+
+Proposed behavior:
+
+- `revision` increments whenever new entries are appended.
+- Clients store both last successful sync time and last seen manifest revision.
+- Clients still keep a bounded set of seen `changeId`s to handle duplicate or replayed entries.
+
+### Proposed Change Record
+
+```json
+{
+  "schemaVersion": 2,
+  "changeId": "note-note-...-20260705123456789-device-...",
+  "deviceId": "device-...",
+  "deviceName": "Linux PC",
+  "createdAt": "2026-07-05T12:34:56.789Z",
+  "baseUpdatedAt": "2026-07-05T12:30:00.000Z",
+  "entityType": "note",
+  "entityId": "note-...",
+  "operation": "upsert",
+  "payload": {}
+}
+```
+
+Proposed common fields:
+
+- `schemaVersion`: proposed value `2`.
+- `changeId`: globally unique and filename-safe after escaping.
+- `deviceId`, `deviceName`: origin device.
+- `createdAt`: UTC ISO 8601 milliseconds.
+- `baseUpdatedAt`: the entity `updatedAt` observed before the local edit, when known. This supports updatedAt-based conflict detection. It may be null for new entities.
+- `entityType`: `note`, `folder`, `tag`, `note_tag`, `attachment`, `conflict_resolution`, or `tombstone`.
+- `entityId`: ID of the changed entity or relationship key.
+- `operation`: `upsert`, `delete`, or `restore`.
+- `payload`: entity-specific JSON.
+
+### Proposed Entity Payloads
+
+Proposed note payload:
+
+```json
+{
+  "id": "note-...",
+  "title": "Title",
+  "content": "Body",
+  "preview": "Body",
+  "folderId": "uncategorized",
+  "folderName": "Uncategorized",
+  "tags": ["work"],
+  "isPinned": false,
+  "isFavorite": false,
+  "isDeleted": false,
+  "isArchived": false,
+  "isLocked": false,
+  "encryptedContent": null,
+  "encryptedPreview": null,
+  "encryptionNonce": null,
+  "lockedAt": null,
+  "createdAt": "2026-07-05T12:00:00.000Z",
+  "updatedAt": "2026-07-05T12:34:56.789Z"
+}
+```
+
+Proposed folder payload:
+
+```json
+{
+  "id": "uncategorized",
+  "name": "Uncategorized",
+  "colorClass": "bg-slate-400",
+  "createdAt": "2026-07-05T12:00:00.000Z",
+  "updatedAt": "2026-07-05T12:34:56.789Z"
+}
+```
+
+`createdAt` and `updatedAt` are proposed for folder sync payloads because desktop stores them locally but currently omits them from serialized `FolderDto`.
+
+Proposed tag payload:
+
+```json
+{
+  "id": "work",
+  "name": "work",
+  "createdAt": "2026-07-05T12:00:00.000Z",
+  "updatedAt": "2026-07-05T12:34:56.789Z"
+}
+```
+
+Proposed note-tag relationship payload:
+
+```json
+{
+  "noteId": "note-...",
+  "tagId": "work",
+  "tag": "work",
+  "updatedAt": "2026-07-05T12:34:56.789Z"
+}
+```
+
+Proposed tombstone payload:
+
+```json
+{
+  "entityType": "note",
+  "entityId": "note-...",
+  "operation": "delete",
+  "deletedAt": "2026-07-05T12:34:56.789Z",
+  "deviceId": "device-...",
+  "payload": null
+}
+```
+
+Soft deletion and restore should remain note changes:
+
+- Soft delete: `entityType="note"`, `operation="delete"`, note payload has `isDeleted=true`, `isPinned=false`, and updated `updatedAt`.
+- Restore: `entityType="note"`, `operation="restore"` or `upsert`, note payload has `isDeleted=false` and updated `updatedAt`.
+
+Hard/permanent deletion should use tombstones only after desktop and Android both implement tombstone write/read behavior.
+
+### Proposed Conflict Detection
+
+Minimal proposed conflict rule:
+
+- If a remote change targets the same entity as a local unsynced change and both have changed since the last applied cursor/revision, compare `baseUpdatedAt`, current local `updatedAt`, and incoming payload `updatedAt`.
+- If local current `updatedAt` differs from incoming `baseUpdatedAt` and payload fields differ, create a local conflict record.
+- For notes, compare the same fields desktop currently compares: title, content/preview unless locked, folder ID/name, sorted tags, booleans, encrypted fields, nonce, and `lockedAt`.
+
+This extends current desktop behavior, which only detects note conflicts for note IDs considered dirty at sync start.
+
+### Proposed Encrypted Storage
+
+Keep the implemented encrypted package wrapper and Google Drive `appDataFolder` storage:
+
+- Manifest: plaintext `lumo-sync-manifest.json`.
+- Change files: encrypted JSON files under `changes/lumo-sync-change-{filenameSafe(changeId)}.json.enc`.
+- Encrypted content: serialized `SyncChangeRecord`.
+- Attachments: initially keep current `AttachmentBackupPayload`; later move to explicit attachment metadata plus encrypted blob/file references if needed.
+
+### Why Full Backup Is Not Sufficient For Robust Sync
+
+`LumoBackup` is useful for snapshots and for current desktop payload reuse, but by itself it is not enough for robust sync because it lacks:
+
+- Origin device metadata per entity change.
+- Change IDs.
+- Operation semantics independent of entity fields.
+- Base revision or base `updatedAt`.
+- Manifest cursor/revision.
+- Tombstones for hard deletes.
+- A bounded replay/seen-change strategy.
+- Conflict resolution metadata.
+
+Therefore Android should keep `LumoBackup` compatibility for backup/import and for current desktop sync payload interop, but the next cross-device sync milestone should implement `SyncChangeRecord` and manifest handling explicitly.
 
 ## Platform-Neutral Android Contract
 
