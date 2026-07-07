@@ -11,7 +11,12 @@ import com.lumonotes.app.ui.theme.LumoTheme
 
 class MainActivity : ComponentActivity() {
     private val repository: NoteRepository by lazy {
-        NoteRepository(LumoDatabase.getInstance(applicationContext).noteDao())
+        val database = LumoDatabase.getInstance(applicationContext)
+        NoteRepository(
+            noteDao = database.noteDao(),
+            folderDao = database.folderDao(),
+            tagDao = database.tagDao(),
+        )
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

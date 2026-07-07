@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Card
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -24,6 +25,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.lumonotes.app.domain.Note
+import com.lumonotes.app.ui.common.displayDate
 
 @Composable
 fun TrashScreen(
@@ -54,12 +56,15 @@ fun TrashScreen(
             }
             Spacer(Modifier.height(12.dp))
             if (notes.isEmpty()) {
-                Text(
-                    text = "Trash is empty",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 48.dp),
-                )
+                Column(modifier = Modifier.padding(top = 48.dp)) {
+                    Text(text = "Trash is empty", style = MaterialTheme.typography.titleMedium)
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = "Deleted notes stay local and can be restored here.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             } else {
                 LazyColumn(
                     verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -93,6 +98,11 @@ private fun TrashRow(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+                Text(
+                    text = "Deleted ${displayDate(note.updatedAt)}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 if (note.preview.isNotBlank()) {
                     Text(
                         text = note.preview,
@@ -103,8 +113,11 @@ private fun TrashRow(
                     )
                 }
             }
-            TextButton(onClick = onRestore) {
+            FilledTonalButton(onClick = onRestore) {
                 Text("Restore")
+            }
+            TextButton(enabled = false, onClick = {}) {
+                Text("Delete forever")
             }
         }
     }

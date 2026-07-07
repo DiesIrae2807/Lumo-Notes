@@ -4,7 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.lumonotes.app.data.NoteRepository
+import com.lumonotes.app.domain.Folder
 import com.lumonotes.app.domain.Note
+import com.lumonotes.app.domain.Tag
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
@@ -18,6 +20,12 @@ class NoteEditorViewModel(
 ) : ViewModel() {
     val note: StateFlow<Note?> = repository.observeNote(noteId)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    val folders: StateFlow<List<Folder>> = repository.observeFolders()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val tags: StateFlow<List<Tag>> = repository.observeTags()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private var saveJob: Job? = null
 
@@ -46,6 +54,34 @@ class NoteEditorViewModel(
         viewModelScope.launch {
             repository.softDelete(current.id)
             onDeleted()
+        }
+    }
+
+    fun assignFolder(folderId: String) {
+        val current = note.value ?: return
+        viewModelScope.launch {
+            repository.assignFolder(current.id, folderId)
+        }
+    }
+
+    fun createFolder(name: String) {
+        viewModelScope.launch {
+            val folder = repository.createFolder(name)
+            note.value?.let { repository.assignFolder(it.id, folder.id) }
+        }
+    }
+
+    fun addTag(tag: String) {
+        val current = note.value ?: return
+        viewModelScope.launch {
+            repository.addTag(current, tag)
+        }
+    }
+
+    fun removeTag(tag: String) {
+        val current = note.value ?: return
+        viewModelScope.launch {
+            repository.removeTag(current, tag)
         }
     }
 

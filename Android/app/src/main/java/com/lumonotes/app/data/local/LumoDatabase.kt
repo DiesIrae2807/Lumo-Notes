@@ -9,13 +9,15 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
-    entities = [NoteEntity::class],
-    version = 2,
+    entities = [NoteEntity::class, FolderEntity::class, TagEntity::class],
+    version = 3,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
 abstract class LumoDatabase : RoomDatabase() {
     abstract fun noteDao(): NoteDao
+    abstract fun folderDao(): FolderDao
+    abstract fun tagDao(): TagDao
 
     companion object {
         @Volatile
@@ -28,7 +30,7 @@ abstract class LumoDatabase : RoomDatabase() {
                     LumoDatabase::class.java,
                     "lumo-notes.db",
                 )
-                    .addMigrations(MIGRATION_1_2)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                     .build()
                     .also { instance = it }
             }
@@ -78,6 +80,40 @@ abstract class LumoDatabase : RoomDatabase() {
                 )
                 db.execSQL("DROP TABLE notes")
                 db.execSQL("ALTER TABLE notes_new RENAME TO notes")
+            }
+        }
+
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS folders (
+                        id TEXT NOT NULL,
+                        name TEXT NOT NULL,
+                        color_class TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        PRIMARY KEY(id)
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS tags (
+                        id TEXT NOT NULL,
+                        name TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        PRIMARY KEY(id)
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    """
+                    INSERT OR IGNORE INTO folders (id, name, color_class, created_at, updated_at)
+                    VALUES ('uncategorized', 'Uncategorized', 'bg-slate-400', '1970-01-01T00:00:00.000Z', '1970-01-01T00:00:00.000Z')
+                    """.trimIndent(),
+                )
             }
         }
     }

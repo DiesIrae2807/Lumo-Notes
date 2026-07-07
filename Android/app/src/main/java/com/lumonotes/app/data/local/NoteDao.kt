@@ -38,6 +38,28 @@ interface NoteDao {
     )
     fun searchActiveNotes(query: String): Flow<List<NoteEntity>>
 
+    @Query(
+        """
+        SELECT * FROM notes
+        WHERE is_deleted = 0
+          AND folder_id = :folderId
+          AND (:query = '' OR title LIKE '%' || :query || '%' OR content LIKE '%' || :query || '%')
+        ORDER BY updated_at DESC
+        """,
+    )
+    fun observeNotesByFolder(folderId: String, query: String): Flow<List<NoteEntity>>
+
+    @Query(
+        """
+        SELECT * FROM notes
+        WHERE is_deleted = 0
+          AND tags LIKE '%' || :tagNeedle || '%'
+          AND (:query = '' OR title LIKE '%' || :query || '%' OR content LIKE '%' || :query || '%')
+        ORDER BY updated_at DESC
+        """,
+    )
+    fun observeNotesByTag(tagNeedle: String, query: String): Flow<List<NoteEntity>>
+
     @Upsert
     suspend fun upsert(note: NoteEntity)
 
@@ -58,6 +80,27 @@ interface NoteDao {
         preview: String,
         updatedAt: String,
     )
+
+    @Query(
+        """
+        UPDATE notes
+        SET folder_id = :folderId,
+            folder_name = :folderName,
+            updated_at = :updatedAt
+        WHERE id = :id
+        """,
+    )
+    suspend fun updateFolder(id: String, folderId: String, folderName: String, updatedAt: String)
+
+    @Query(
+        """
+        UPDATE notes
+        SET tags = :tags,
+            updated_at = :updatedAt
+        WHERE id = :id
+        """,
+    )
+    suspend fun updateTags(id: String, tags: List<String>, updatedAt: String)
 
     @Query(
         """

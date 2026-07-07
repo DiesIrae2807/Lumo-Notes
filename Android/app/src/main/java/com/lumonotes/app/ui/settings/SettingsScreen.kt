@@ -43,21 +43,39 @@ fun SettingsScreen(
                 )
             }
             Spacer(Modifier.height(16.dp))
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        text = "Sync status",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Medium,
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        text = "Local only. Google Drive, authentication, encryption, and remote synchronization are not implemented in this Android milestone.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
+            SettingsCard(
+                title = "Sync",
+                body = "Local only. Google Drive and remote conflict handling are not implemented yet.",
+            )
+            Spacer(Modifier.height(12.dp))
+            SettingsCard(
+                title = "Encryption",
+                body = "Note locking and attachment encryption are planned for a later milestone.",
+            )
+            Spacer(Modifier.height(12.dp))
+            SettingsCard(
+                title = "About local data",
+                body = "Notes, folders, and tags are stored in the local Room database named lumo-notes.db.",
+            )
+        }
+    }
+}
+
+@Composable
+private fun SettingsCard(title: String, body: String) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Medium,
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = body,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
