@@ -11,7 +11,7 @@ Lumo currently has two related but different serialized formats:
 
 The backup format and sync format are therefore **not the same format**. The desktop sync implementation reuses backup serialization for several change payloads, but robust cross-device sync also depends on the sync manifest, per-change metadata, device IDs, seen-change tracking, conflict records, and encrypted per-change files.
 
-Android currently implements local data plus `LumoBackup` serialization compatibility only. Android does not yet implement `SyncChangeRecord`, the sync manifest, encrypted package wrapper, Google Drive appData storage, device identity, cursors, or conflict tracking.
+Android currently implements local data, `LumoBackup` serialization, `SyncChangeRecord` and sync-manifest serialization, and the encrypted package wrapper. Android does not yet implement Google Drive appData storage, device identity persistence, cursors, live sync, or conflict tracking.
 
 ## Storage Overview
 

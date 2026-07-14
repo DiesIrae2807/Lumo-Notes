@@ -54,6 +54,7 @@ dependencies {
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.room.ktx)
     implementation(libs.androidx.room.runtime)
+    implementation(libs.bouncycastle)
     kapt(libs.androidx.room.compiler)
     testImplementation(libs.junit)
     testImplementation(libs.json)
