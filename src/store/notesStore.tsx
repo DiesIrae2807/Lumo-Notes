@@ -846,6 +846,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       const now = new Date().toISOString();
       const localFolders = [...folders];
       const foldersToCreate: Folder[] = [];
+      const foldersToUpdate: Folder[] = [];
       const summary: RestoreBackupSummary = {
         notes: { added: 0, skipped: 0, updated: 0 },
         folders: { added: 0, skipped: 0, updated: 0 },
@@ -862,7 +863,15 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         const name = incoming?.name?.trim() || fallbackName || "Uncategorized";
         const existingById = incoming ? localFolders.find((folder) => folder.id === incoming.id) : null;
         if (existingById) {
-          summary.folders.skipped += 1;
+          const nextColorClass = incoming?.colorClass || existingById.colorClass;
+          if (existingById.name !== name || existingById.colorClass !== nextColorClass) {
+            existingById.name = name;
+            existingById.colorClass = nextColorClass;
+            foldersToUpdate.push({ ...existingById });
+            summary.folders.updated += 1;
+          } else {
+            summary.folders.skipped += 1;
+          }
           return existingById;
         }
 
@@ -915,6 +924,10 @@ export function NotesProvider({ children }: { children: ReactNode }) {
 
       for (const folder of foldersToCreate) {
         await database.createFolder(folder, now, now);
+      }
+
+      for (const folder of foldersToUpdate) {
+        await database.updateFolder(folder.id, folder.name, folder.colorClass, now);
       }
 
       for (const tag of tagsToCreate) {

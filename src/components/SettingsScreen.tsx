@@ -7,14 +7,23 @@ import {
   type CustomThemeColors,
 } from "../types/settings";
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { rebuildSearchIndex } from "../services/database";
+import {
+  createSyncConflict,
+  getAttachmentBackupPayloads,
+  listSyncConflicts,
+  rebuildSearchIndex,
+  replaceNoteFromBackup,
+  restoreBackupAttachments,
+  resolveSyncConflict,
+  type SyncConflict,
+  type SyncConflictResolution,
+} from "../services/database";
 import { notify, notifyError } from "../utils/toast";
 import { confirmDialog } from "../utils/confirm";
 import { useNotes } from "../store/notesStore";
 import { getVersion } from "@tauri-apps/api/app";
+import { createBackup, validateBackup } from "../services/fileTransfer";
 import {
-  createCloudBackupPasswordMetadata,
-  verifyCloudBackupPassword,
   type CloudBackupPasswordMetadata,
 } from "../sync/backupEncryption";
 import {
@@ -27,12 +36,30 @@ import {
   type CloudBackupManifestEntry,
 } from "../sync/cloudBackup";
 import {
+  getCloudSyncState,
+  runGoogleDriveSync,
+  syncChangeToBackup,
+  type SyncRuntimeState,
+  type SyncChangeRecord,
+  type SyncConflictResolutionPayload,
+} from "../sync/cloudSync";
+import {
   connectGoogleDrive,
   disconnectGoogleDrive,
   getStoredGoogleDriveSession,
   type GoogleDriveSession,
 } from "../sync/googleDriveAuth";
-import { getRawSetting, setRawSetting } from "../sync/syncSettings";
+import {
+  cloudEncryptionStatus,
+  getLocalCloudEncryptionMetadata,
+  inspectRemoteCloudState,
+  saveNewCloudEncryptionPassword,
+  verifyLocalCloudEncryptionPassword,
+  verifyRemoteCloudEncryptionPassword,
+  type CloudEncryptionStatus,
+  type RemoteCloudState,
+} from "../sync/cloudEncryptionState";
+import { getOrCreateDeviceIdentity } from "../sync/deviceIdentity";
 
 const shortcuts = [
   ["Ctrl+K", "Command palette"],
@@ -529,45 +556,53 @@ function SettingToggle<K extends keyof AppSettings>({
   );
 }
 
-const CLOUD_PASSWORD_KEY = "sync.cloudBackupPassword";
-
 type SecretPromptState = {
   message: string;
   resolve: (value: string) => void;
   title: string;
 } | null;
 
-async function requestCloudBackupPassword(
+async function requestCloudEncryptionPassword(
   promptSecret: (title: string, message: string) => Promise<string>,
-  mode: "backup" | "restore",
+  mode: "backup" | "restore" | "sync",
+  remoteState: RemoteCloudState | null,
 ) {
-  const existing = await getRawSetting<CloudBackupPasswordMetadata | null>(CLOUD_PASSWORD_KEY);
+  const existing = await getLocalCloudEncryptionMetadata();
   if (!existing?.salt || !existing.verifier) {
-    if (mode === "restore") {
+    if (!remoteState || remoteState.kind === "unknown") {
+      throw new Error("Could not verify Google Drive cloud state. Retry remote check before setting or entering a Cloud Encryption Password.");
+    }
+
+    if (remoteState.kind === "existingEncrypted" || mode === "restore") {
       const password = await promptSecret(
-        "Cloud Backup Password",
-        "Enter the Cloud Backup Password that was used when this Drive backup was created.",
+        "Cloud Encryption Password",
+        "Enter the existing Cloud Encryption Password for this Google Drive data. It encrypts Drive backups and sync records.",
       );
-      return password || null;
+      if (!password) return null;
+      await verifyRemoteCloudEncryptionPassword(password, remoteState);
+      return password;
     }
 
     const password = await promptSecret(
-      "Set Cloud Backup Password",
-      "Set a separate Cloud Backup Password. If you forget it, Drive backups cannot be restored. Use at least 8 characters.",
+      "Set Cloud Encryption Password",
+      "Set a Cloud Encryption Password for Google Drive backups and sync records. If you forget it, Drive cloud data cannot be decrypted. Use at least 8 characters.",
     );
     if (!password) return null;
-    const confirmation = await promptSecret("Confirm Cloud Backup Password", "Re-enter the Cloud Backup Password.");
-    if (password !== confirmation) {
-      throw new Error("Cloud Backup Passwords do not match.");
+    const latestRemoteState = await inspectRemoteCloudState();
+    if (latestRemoteState.kind !== "empty") {
+      throw new Error("Existing Lumo cloud data was found. Enter the existing Cloud Encryption Password instead of creating a new one.");
     }
-    const metadata = await createCloudBackupPasswordMetadata(password);
-    await setRawSetting(CLOUD_PASSWORD_KEY, metadata);
+    const confirmation = await promptSecret("Confirm Cloud Encryption Password", "Re-enter the Cloud Encryption Password.");
+    if (password !== confirmation) {
+      throw new Error("Cloud Encryption Passwords do not match.");
+    }
+    await saveNewCloudEncryptionPassword(password);
     return password;
   }
 
-  const password = await promptSecret("Cloud Backup Password", "Enter your Cloud Backup Password.");
+  const password = await promptSecret("Cloud Encryption Password", "Enter your Cloud Encryption Password.");
   if (!password) return null;
-  await verifyCloudBackupPassword(password, existing);
+  await verifyLocalCloudEncryptionPassword(password, existing);
   return password;
 }
 
@@ -624,7 +659,7 @@ function SecretPromptModal({
           type="password"
           value={value}
           onChange={(event) => setValue(event.target.value)}
-          placeholder="Cloud Backup Password"
+          placeholder="Cloud Encryption Password"
         />
         <div className="mt-5 flex justify-end gap-2">
           <button
@@ -648,15 +683,26 @@ function SecretPromptModal({
 }
 
 function SyncSettingsPanel({ appVersion }: { appVersion: string }) {
-  const { availableTags, folders, notes, restoreBackupMerge } = useNotes();
+  const { attachments, availableTags, folders, notes, restoreBackupMerge } = useNotes();
   const { settings } = useSettings();
   const [session, setSession] = useState<GoogleDriveSession | null>(null);
   const [backups, setBackups] = useState<CloudBackupManifestEntry[]>([]);
   const [lastBackupAt, setLastBackupAt] = useState<string | null>(null);
   const [lastRestoreAt, setLastRestoreAt] = useState<string | null>(null);
+  const [syncState, setSyncState] = useState<SyncRuntimeState>({
+    conflicts: 0,
+    lastSyncAt: null,
+    pendingLocalChanges: 0,
+    status: "idle",
+  });
+  const [remoteCloudState, setRemoteCloudState] = useState<RemoteCloudState | null>(null);
+  const [encryptionStatus, setEncryptionStatus] = useState<CloudEncryptionStatus>("unknown");
   const [isBusy, setIsBusy] = useState(false);
   const [statusText, setStatusText] = useState("");
   const [secretPrompt, setSecretPrompt] = useState<SecretPromptState>(null);
+  const [unresolvedConflicts, setUnresolvedConflicts] = useState<SyncConflict[]>([]);
+  const [activeConflict, setActiveConflict] = useState<SyncConflict | null>(null);
+  const dirtyNoteIdsAtSyncStart = useRef<Set<string>>(new Set());
 
   const promptSecret = useCallback((title: string, message: string) => {
     return new Promise<string>((resolve) => {
@@ -665,13 +711,21 @@ function SyncSettingsPanel({ appVersion }: { appVersion: string }) {
   }, []);
 
   const refreshState = async (loadBackups: boolean) => {
-    const [storedSession, cloudStatus] = await Promise.all([
+    const [storedSession, cloudStatus, nextSyncState, localMetadata, nextConflicts] = await Promise.all([
       getStoredGoogleDriveSession(),
       getCloudBackupStatus(),
+      getCloudSyncState({ attachments, folders, notes, tags: availableTags }),
+      getLocalCloudEncryptionMetadata(),
+      listSyncConflicts({ status: "unresolved" }),
     ]);
+    const nextRemoteState = storedSession ? await inspectRemoteCloudState() : null;
     setSession(storedSession);
     setLastBackupAt(cloudStatus.lastBackupAt);
     setLastRestoreAt(cloudStatus.lastRestoreAt);
+    setSyncState(nextSyncState);
+    setUnresolvedConflicts(nextConflicts);
+    setRemoteCloudState(nextRemoteState);
+    setEncryptionStatus(cloudEncryptionStatus(localMetadata, nextRemoteState));
     if (storedSession && loadBackups) {
       const nextBackups = await listCloudBackups();
       setBackups(nextBackups);
@@ -711,13 +765,15 @@ function SyncSettingsPanel({ appVersion }: { appVersion: string }) {
       await disconnectGoogleDrive();
       setSession(null);
       setBackups([]);
+      setRemoteCloudState(null);
+      setEncryptionStatus("unknown");
       notify({ kind: "success", title: "Google Drive disconnected" });
     });
 
   const handleBackup = () =>
     run("Backing up to Google Drive", async () => {
       if (!session) throw new Error("Connect Google Drive first.");
-      const password = await requestCloudBackupPassword(promptSecret, "backup");
+      const password = await requestCloudEncryptionPassword(promptSecret, "backup", remoteCloudState);
       if (!password) return;
       const entry = await uploadEncryptedCloudBackup({
         appVersion,
@@ -729,7 +785,316 @@ function SyncSettingsPanel({ appVersion }: { appVersion: string }) {
       });
       setBackups((current) => [entry, ...current.filter((item) => item.id !== entry.id)]);
       setLastBackupAt(entry.createdAt);
+      await refreshState(false);
       notify({ kind: "success", title: "Encrypted Drive backup uploaded" });
+    });
+
+  const noteConflictPayloadDiffers = (local: typeof notes[number], incoming: typeof notes[number]) => {
+    const localComparable = {
+      title: local.title,
+      content: local.isLocked ? "" : local.content,
+      preview: local.isLocked ? "" : local.preview,
+      folderId: local.folderId,
+      folderName: local.folderName,
+      tags: [...local.tags].sort(),
+      isPinned: local.isPinned,
+      isFavorite: local.isFavorite,
+      isDeleted: local.isDeleted,
+      isArchived: local.isArchived,
+      isLocked: local.isLocked,
+      encryptedContent: local.encryptedContent ?? null,
+      encryptedPreview: local.encryptedPreview ?? null,
+      encryptionNonce: local.encryptionNonce ?? null,
+      lockedAt: local.lockedAt ?? null,
+    };
+    const incomingComparable = {
+      title: incoming.title,
+      content: incoming.isLocked ? "" : incoming.content,
+      preview: incoming.isLocked ? "" : incoming.preview,
+      folderId: incoming.folderId,
+      folderName: incoming.folderName,
+      tags: [...incoming.tags].sort(),
+      isPinned: incoming.isPinned,
+      isFavorite: incoming.isFavorite,
+      isDeleted: incoming.isDeleted,
+      isArchived: incoming.isArchived,
+      isLocked: incoming.isLocked,
+      encryptedContent: incoming.encryptedContent ?? null,
+      encryptedPreview: incoming.encryptedPreview ?? null,
+      encryptionNonce: incoming.encryptionNonce ?? null,
+      lockedAt: incoming.lockedAt ?? null,
+    };
+    return JSON.stringify(localComparable) !== JSON.stringify(incomingComparable);
+  };
+
+  const buildLocalConflictBackup = useCallback(
+    async (noteId: string) => {
+      const localNote = notes.find((note) => note.id === noteId);
+      if (!localNote) return null;
+      const attachmentPayloads = await getAttachmentBackupPayloads();
+      return createBackup(
+        [localNote],
+        folders.filter((folder) => folder.id === localNote.folderId),
+        localNote.tags,
+        true,
+        attachmentPayloads.filter((attachment) => attachment.noteId === localNote.id),
+        null,
+      );
+    },
+    [folders, notes],
+  );
+
+  const conflictTitle = (conflict: SyncConflict) => {
+    try {
+      const remote = validateBackup(JSON.parse(conflict.remotePayload)).notes[0];
+      const local = validateBackup(JSON.parse(conflict.localPayload)).notes[0];
+      return remote?.title || local?.title || "Untitled Note";
+    } catch {
+      return "Untitled Note";
+    }
+  };
+
+  const conflictPreview = (payload: string) => {
+    try {
+      const note = validateBackup(JSON.parse(payload)).notes[0];
+      if (!note) return "No preview available.";
+      if (note.isLocked) return "Locked note content is hidden.";
+      return (note.preview || note.content || "No preview available.").slice(0, 180);
+    } catch {
+      return "No preview available.";
+    }
+  };
+
+  const applyRemoteResolution = useCallback(
+    async (payload: SyncConflictResolutionPayload) => {
+      if (!payload.finalNotePayload) return "skipped";
+      const finalBackup = validateBackup(payload.finalNotePayload);
+      const finalNote = finalBackup.notes[0];
+      if (!finalNote) return "skipped";
+      if (payload.selectedResolution === "keep_both") {
+        await restoreBackupMerge(finalBackup);
+      } else {
+        await replaceNoteFromBackup(finalNote);
+        if (finalBackup.attachments?.length) {
+          await restoreBackupAttachments(finalBackup.attachments);
+        }
+      }
+      try {
+        await resolveSyncConflict(
+          payload.conflictId,
+          payload.selectedResolution,
+          payload.resolvedAt,
+          payload.resultingNoteId ?? null,
+        );
+      } catch {
+        // The conflict may only have existed on the resolving device.
+      }
+      notify({
+        kind: "info",
+        title:
+          payload.selectedResolution === "keep_local"
+            ? "Kept local version"
+            : payload.selectedResolution === "keep_remote"
+              ? "Kept remote version"
+              : "Kept both versions",
+      });
+      return "applied";
+    },
+    [restoreBackupMerge],
+  );
+
+  const reloadConflicts = useCallback(async () => {
+    const nextConflicts = await listSyncConflicts({ status: "unresolved" });
+    setUnresolvedConflicts(nextConflicts);
+    setSyncState((current) => ({
+      ...current,
+      conflicts: nextConflicts.length,
+      status: nextConflicts.length > 0 ? "conflict" : current.pendingLocalChanges > 0 ? "idle" : "synced",
+    }));
+    return nextConflicts;
+  }, []);
+
+  const resolveConflict = useCallback(
+    async (conflict: SyncConflict, resolution: SyncConflictResolution) => {
+      const localBackup = validateBackup(JSON.parse(conflict.localPayload));
+      const remoteBackup = validateBackup(JSON.parse(conflict.remotePayload));
+      const remoteNote = remoteBackup.notes[0];
+      if (!remoteNote) throw new Error("The preserved remote conflict payload is missing its note.");
+      let resultEntityId: string | null = null;
+
+      if (resolution === "keep_remote") {
+        const confirmed = await confirmDialog({
+          confirmLabel: "Keep theirs",
+          message: "This will replace your current local version with the preserved remote version.",
+          title: "Keep remote version?",
+        });
+        if (!confirmed) return;
+        await replaceNoteFromBackup(remoteNote);
+        if (remoteBackup.attachments?.length) {
+          await restoreBackupAttachments(remoteBackup.attachments);
+        }
+      } else if (resolution === "keep_both") {
+        const now = new Date().toISOString();
+        const suffixDate = new Date(conflict.detectedAt).toLocaleString();
+        const newNoteId = `note-conflict-${crypto.randomUUID()}`;
+        const attachmentIdMap = new Map<string, string>();
+        const clonedAttachments = remoteBackup.attachments?.map((attachment) => {
+          const newAttachmentId = `attachment-conflict-${crypto.randomUUID()}`;
+          attachmentIdMap.set(attachment.id, newAttachmentId);
+          return {
+            ...attachment,
+            id: newAttachmentId,
+            noteId: newNoteId,
+          };
+        });
+        const remapContent = (value: string) => {
+          let next = value;
+          attachmentIdMap.forEach((newId, oldId) => {
+            next = next.split(`attachment://${oldId}`).join(`attachment://${newId}`);
+          });
+          return next;
+        };
+        const clonedNote = {
+          ...remoteNote,
+          id: newNoteId,
+          title: `${remoteNote.title || "Untitled Note"} (conflict from ${conflict.remoteDeviceId || "remote device"} - ${suffixDate})`,
+          content: remoteNote.isLocked ? "" : remapContent(remoteNote.content),
+          preview: remoteNote.isLocked ? "" : remoteNote.preview,
+          createdAt: now,
+          updatedAt: now,
+        };
+        await restoreBackupMerge({
+          ...remoteBackup,
+          notes: [clonedNote],
+          noteTags: remoteBackup.noteTags.map((item) =>
+            item.noteId === remoteNote.id ? { ...item, noteId: newNoteId } : item,
+          ),
+          attachments: clonedAttachments,
+        });
+        resultEntityId = newNoteId;
+      }
+
+      const resolvedAt = new Date().toISOString();
+      await resolveSyncConflict(conflict.id, resolution, resolvedAt, resultEntityId);
+      setActiveConflict(null);
+      await reloadConflicts();
+      notify({
+        kind: "success",
+        title:
+          resolution === "keep_local"
+            ? "Kept local version"
+            : resolution === "keep_remote"
+              ? "Kept remote version"
+              : "Kept both versions",
+        message: resolution === "keep_local" ? localBackup.notes[0]?.title : remoteNote.title,
+      });
+    },
+    [reloadConflicts, restoreBackupMerge],
+  );
+
+  const applyRemoteChange = useCallback(
+    async (record: SyncChangeRecord) => {
+      if (record.entityType === "conflict_resolution") {
+        return applyRemoteResolution(record.payload as SyncConflictResolutionPayload);
+      }
+
+      const backup = syncChangeToBackup(record);
+      if (!backup) return "skipped";
+
+      if (record.entityType === "note") {
+        const incoming = backup.notes[0];
+        const local = incoming ? notes.find((note) => note.id === incoming.id) : null;
+        const hasUnsyncedLocalEdit = incoming ? dirtyNoteIdsAtSyncStart.current.has(incoming.id) : false;
+        const remoteDiffers = incoming && local ? noteConflictPayloadDiffers(local, incoming) : false;
+        if (incoming && local && hasUnsyncedLocalEdit && remoteDiffers) {
+          const device = await getOrCreateDeviceIdentity();
+          const localBackup = await buildLocalConflictBackup(incoming.id);
+          if (!localBackup) return "skipped";
+          const conflict = await createSyncConflict({
+            id: `sync-conflict-${record.changeId}`,
+            detectedAt: new Date().toISOString(),
+            entityId: incoming.id,
+            entityType: "note",
+            localDeviceId: device.deviceId,
+            localPayload: JSON.stringify(localBackup),
+            remoteChangeId: record.changeId,
+            remoteDeviceId: record.deviceId,
+            remotePayload: JSON.stringify(backup),
+            resolution: null,
+            resolvedAt: null,
+            resultEntityId: null,
+            resolutionSyncedAt: null,
+            status: "unresolved",
+          });
+          setActiveConflict(conflict);
+          notify({
+            kind: "info",
+            title: "Sync conflict detected",
+            message: "Both versions were preserved.",
+          });
+          return "conflict";
+        }
+
+        if (incoming && local && hasUnsyncedLocalEdit && !remoteDiffers) {
+          return "skipped";
+        }
+      }
+
+      await restoreBackupMerge(backup);
+      return "applied";
+    },
+    [applyRemoteResolution, buildLocalConflictBackup, notes, restoreBackupMerge],
+  );
+
+  const handleSyncNow = () =>
+    run("Syncing Google Drive", async () => {
+      if (!session) throw new Error("Connect Google Drive first.");
+      const password = await requestCloudEncryptionPassword(promptSecret, "sync", remoteCloudState);
+      if (!password) return;
+      const lastSyncAt = syncState.lastSyncAt ?? "1970-01-01T00:00:00.000Z";
+      dirtyNoteIdsAtSyncStart.current = new Set(
+        notes
+          .filter((note) => Date.parse(note.updatedAt) > Date.parse(lastSyncAt))
+          .map((note) => note.id),
+      );
+      setSyncState((current) => ({ ...current, status: "syncing" }));
+      try {
+        const summary = await runGoogleDriveSync({
+          applyRemoteChange,
+          attachments,
+          folders,
+          notes,
+          password,
+          settings,
+          tags: availableTags,
+        });
+        setSyncState({
+          conflicts: summary.conflicts,
+          lastSyncAt: summary.syncedAt,
+          pendingLocalChanges: 0,
+          status: summary.conflicts > 0 ? "conflict" : "synced",
+        });
+        const nextConflicts = await reloadConflicts();
+        if (!activeConflict && nextConflicts[0] && summary.conflicts > 0) {
+          setActiveConflict(nextConflicts[0]);
+        }
+        notify({
+          kind: summary.conflicts > 0 ? "info" : "success",
+          title: summary.conflicts > 0 ? "Sync completed with conflicts" : "Sync complete",
+          message:
+            summary.conflicts > 0
+              ? "Sync conflict detected. Both versions were preserved."
+              : `${summary.uploaded} uploaded, ${summary.applied} applied, ${summary.skipped} skipped, ${summary.conflicts} conflicts.`,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        setSyncState((current) => ({
+          ...current,
+          status: /network|fetch|offline|Failed to fetch/i.test(message) ? "offline" : "error",
+        }));
+        throw error;
+      }
+      await refreshState(false);
     });
 
   const handleRefresh = () =>
@@ -749,7 +1114,7 @@ function SyncSettingsPanel({ appVersion }: { appVersion: string }) {
         title: "Restore encrypted Drive backup?",
       });
       if (!confirmed) return;
-      const password = await requestCloudBackupPassword(promptSecret, "restore");
+      const password = await requestCloudEncryptionPassword(promptSecret, "restore", remoteCloudState);
       if (!password) return;
       let backup;
       try {
@@ -765,7 +1130,49 @@ function SyncSettingsPanel({ appVersion }: { appVersion: string }) {
       await restoreBackupMerge(backup);
       await markCloudRestoreComplete();
       setLastRestoreAt(new Date().toISOString());
+      await refreshState(false);
     });
+
+  const handleRetryRemoteCheck = () =>
+    run("Checking Google Drive cloud data", async () => {
+      if (!session) throw new Error("Connect Google Drive first.");
+      await refreshState(false);
+      notify({ kind: "success", title: "Google Drive cloud state refreshed" });
+    });
+
+  const handleConfigureCloudEncryption = () =>
+    run(
+      encryptionStatus === "needsExistingPassword"
+        ? "Verifying Cloud Encryption Password"
+        : "Setting Cloud Encryption Password",
+      async () => {
+        if (!session) throw new Error("Connect Google Drive first.");
+        const password = await requestCloudEncryptionPassword(promptSecret, "backup", remoteCloudState);
+        if (!password) return;
+        await refreshState(false);
+        notify({ kind: "success", title: "Cloud Encryption Password configured" });
+      },
+    );
+
+  const remoteStateLabel =
+    remoteCloudState?.kind === "empty"
+      ? "No cloud data found"
+      : remoteCloudState?.kind === "existingEncrypted"
+        ? "Existing encrypted cloud data found"
+        : remoteCloudState?.kind === "unknown"
+          ? "Could not check"
+          : session
+            ? "Checking..."
+            : "Not checked";
+
+  const encryptionStatusLabel =
+    encryptionStatus === "configured"
+      ? "Configured"
+      : encryptionStatus === "needsExistingPassword"
+        ? "Needs existing password"
+        : encryptionStatus === "notConfigured"
+          ? "Not configured"
+          : "Unknown";
 
   return (
     <div className="space-y-4 text-sm text-slate-300">
@@ -787,6 +1194,28 @@ function SyncSettingsPanel({ appVersion }: { appVersion: string }) {
           <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Last restore</p>
           <p className="mt-2 text-slate-200">{lastRestoreAt ? new Date(lastRestoreAt).toLocaleString() : "Never"}</p>
         </div>
+        <div className="rounded-xl border border-white/10 bg-white/[0.025] p-3">
+          <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Last sync</p>
+          <p className="mt-2 text-slate-200">{syncState.lastSyncAt ? new Date(syncState.lastSyncAt).toLocaleString() : "Never"}</p>
+        </div>
+        <div className="rounded-xl border border-white/10 bg-white/[0.025] p-3">
+          <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Sync status</p>
+          <p className="mt-2 font-medium text-white">{syncState.status}</p>
+          <p className="mt-1 text-xs text-slate-500">
+            {syncState.pendingLocalChanges} pending local change{syncState.pendingLocalChanges === 1 ? "" : "s"}
+            {syncState.conflicts ? ` · ${syncState.conflicts} conflict${syncState.conflicts === 1 ? "" : "s"}` : ""}
+          </p>
+        </div>
+        <div className="rounded-xl border border-white/10 bg-white/[0.025] p-3">
+          <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Cloud encryption</p>
+          <p className="mt-2 font-medium text-white">{encryptionStatusLabel}</p>
+          <p className="mt-1 text-xs text-slate-500">Separate from the Lock Password.</p>
+        </div>
+        <div className="rounded-xl border border-white/10 bg-white/[0.025] p-3">
+          <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Remote state</p>
+          <p className="mt-2 font-medium text-white">{remoteStateLabel}</p>
+          {remoteCloudState?.error ? <p className="mt-1 text-xs text-amber-200">{remoteCloudState.error}</p> : null}
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-2">
@@ -802,10 +1231,56 @@ function SyncSettingsPanel({ appVersion }: { appVersion: string }) {
         <button className="rounded-xl border border-lumo-teal/20 bg-lumo-teal/10 px-3 py-2 text-xs font-medium text-lumo-teal transition hover:bg-lumo-teal/15 disabled:opacity-60" disabled={isBusy || !session} type="button" onClick={handleBackup}>
           Back up now
         </button>
+        <button className="rounded-xl border border-lumo-teal/20 bg-lumo-teal/10 px-3 py-2 text-xs font-medium text-lumo-teal transition hover:bg-lumo-teal/15 disabled:opacity-60" disabled={isBusy || !session} type="button" onClick={handleSyncNow}>
+          Sync now
+        </button>
         <button className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-medium text-slate-200 transition hover:bg-white/[0.07] disabled:opacity-60" disabled={isBusy || !session} type="button" onClick={handleRefresh}>
           Refresh backup list
         </button>
+        {session && encryptionStatus !== "configured" && remoteCloudState?.kind !== "unknown" ? (
+          <button className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-medium text-slate-200 transition hover:bg-white/[0.07] disabled:opacity-60" disabled={isBusy} type="button" onClick={handleConfigureCloudEncryption}>
+            {encryptionStatus === "needsExistingPassword" ? "Enter Cloud Encryption Password" : "Set Cloud Encryption Password"}
+          </button>
+        ) : null}
+        {session && (!remoteCloudState || remoteCloudState.kind === "unknown") ? (
+          <button className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-medium text-slate-200 transition hover:bg-white/[0.07] disabled:opacity-60" disabled={isBusy} type="button" onClick={handleRetryRemoteCheck}>
+            Retry remote check
+          </button>
+        ) : null}
         {statusText ? <span className="self-center text-xs text-slate-500">{statusText}...</span> : null}
+      </div>
+
+      <div className="rounded-xl border border-white/10 bg-white/[0.025] p-3">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="font-medium text-slate-200">Unresolved sync conflicts</p>
+            <p className="mt-1 text-xs text-slate-500">
+              {unresolvedConflicts.length} unresolved conflict{unresolvedConflicts.length === 1 ? "" : "s"}
+            </p>
+          </div>
+          <button className="rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-medium text-slate-200 transition hover:bg-white/[0.07] disabled:opacity-60" disabled={isBusy} type="button" onClick={() => void reloadConflicts()}>
+            Refresh
+          </button>
+        </div>
+        <div className="mt-3 space-y-2">
+          {unresolvedConflicts.length === 0 ? (
+            <p className="text-xs text-slate-500">No unresolved conflicts.</p>
+          ) : (
+            unresolvedConflicts.map((conflict) => (
+              <div key={conflict.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-white/[0.03] px-3 py-2">
+                <div>
+                  <p className="text-sm text-slate-200">{conflictTitle(conflict)}</p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Detected {new Date(conflict.detectedAt).toLocaleString()} · Local {conflict.localDeviceId || "this device"} · Remote {conflict.remoteDeviceId || "remote device"}
+                  </p>
+                </div>
+                <button className="rounded-lg border border-lumo-teal/20 bg-lumo-teal/10 px-3 py-2 text-xs font-medium text-lumo-teal transition hover:bg-lumo-teal/15 disabled:opacity-60" disabled={isBusy} type="button" onClick={() => setActiveConflict(conflict)}>
+                  Resolve
+                </button>
+              </div>
+            ))
+          )}
+        </div>
       </div>
 
       <div className="rounded-xl border border-white/10 bg-white/[0.025] p-3">
@@ -836,9 +1311,56 @@ function SyncSettingsPanel({ appVersion }: { appVersion: string }) {
 
       <div className="space-y-2 text-xs leading-5 text-slate-500">
         <p>Google sign-in is optional. Lumo remains local-first and fully usable offline without Drive.</p>
-        <p>Drive backups are encrypted before upload to hidden app-specific appDataFolder storage. Google Drive does not receive plaintext notes or attachments.</p>
-        <p>The Cloud Backup Password is separate from the Lock Password. If it is forgotten, existing Drive backups cannot be restored, but local app data remains usable.</p>
+        <p>Drive backups and sync change records are encrypted before upload to hidden app-specific appDataFolder storage. Google Drive does not receive plaintext notes or attachments.</p>
+        <p>The Cloud Encryption Password protects Google Drive backups and sync records. It is separate from the Lock Password.</p>
+        <p>If Google Drive already contains encrypted Lumo data, this device must enter the existing Cloud Encryption Password instead of creating a new one.</p>
+        <p>Sync v1 is manual and stores conflicts until you choose how to resolve them.</p>
       </div>
+      {activeConflict ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-night-950/75 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-2xl rounded-2xl border border-white/10 bg-night-900 p-5 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-base font-semibold text-white">Resolve sync conflict</p>
+                <p className="mt-1 text-xs leading-5 text-slate-500">Both versions were preserved. Choose what should sync across devices.</p>
+              </div>
+              <button className="rounded-lg px-2 py-1 text-sm text-slate-400 transition hover:bg-white/[0.05] hover:text-white" type="button" onClick={() => setActiveConflict(null)}>
+                Close
+              </button>
+            </div>
+            <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.025] p-3">
+              <p className="text-sm font-medium text-slate-200">{conflictTitle(activeConflict)}</p>
+              <p className="mt-1 text-xs text-slate-500">
+                Local {activeConflict.localDeviceId || "this device"} · Remote {activeConflict.remoteDeviceId || "remote device"} · Detected {new Date(activeConflict.detectedAt).toLocaleString()}
+              </p>
+            </div>
+            <div className="mt-3 grid gap-3 md:grid-cols-2">
+              <div className="rounded-xl border border-white/10 bg-white/[0.025] p-3">
+                <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Mine</p>
+                <p className="mt-2 text-xs leading-5 text-slate-300">{conflictPreview(activeConflict.localPayload)}</p>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-white/[0.025] p-3">
+                <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Theirs</p>
+                <p className="mt-2 text-xs leading-5 text-slate-300">{conflictPreview(activeConflict.remotePayload)}</p>
+              </div>
+            </div>
+            <div className="mt-5 flex flex-wrap justify-end gap-2">
+              <button className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-medium text-slate-200 transition hover:bg-white/[0.07] disabled:opacity-60" disabled={isBusy} type="button" onClick={() => setActiveConflict(null)}>
+                Decide later
+              </button>
+              <button className="rounded-xl border border-lumo-teal/20 bg-lumo-teal/10 px-3 py-2 text-xs font-medium text-lumo-teal transition hover:bg-lumo-teal/15 disabled:opacity-60" disabled={isBusy} type="button" onClick={() => void resolveConflict(activeConflict, "keep_local")}>
+                Keep mine
+              </button>
+              <button className="rounded-xl border border-lumo-teal/20 bg-lumo-teal/10 px-3 py-2 text-xs font-medium text-lumo-teal transition hover:bg-lumo-teal/15 disabled:opacity-60" disabled={isBusy} type="button" onClick={() => void resolveConflict(activeConflict, "keep_remote")}>
+                Keep theirs
+              </button>
+              <button className="rounded-xl bg-lumo-violet px-3 py-2 text-xs font-medium text-white transition hover:bg-lumo-violet/90 disabled:opacity-60" disabled={isBusy} type="button" onClick={() => void resolveConflict(activeConflict, "keep_both")}>
+                Keep both
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       <SecretPromptModal prompt={secretPrompt} onClose={() => setSecretPrompt(null)} />
     </div>
   );
@@ -988,7 +1510,7 @@ export function SettingsScreen() {
                 </p>
                 <p className="text-slate-500">
                   Optional Google Drive backups use hidden appDataFolder storage and are encrypted before upload.
-                  The Cloud Backup Password is separate from the Lock Password and cannot be recovered by Lumo.
+                  The Cloud Encryption Password is separate from the Lock Password and cannot be recovered by Lumo.
                 </p>
                 <div className="flex flex-wrap items-center gap-3 pt-2">
                   <span className="text-xs text-slate-500">

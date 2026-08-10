@@ -127,7 +127,7 @@ Google Drive backup/restore is a manual backup foundation, not live multi-device
 https://www.googleapis.com/auth/drive.appdata
 ```
 
-Drive backups are encrypted before upload. Google Drive does not receive plaintext note contents or plaintext attachment contents. The Cloud Backup Password protects the encrypted backup package and is separate from the Lock Password. If the Cloud Backup Password is forgotten, existing Drive backups cannot be restored by Lumo Notes.
+Drive backups and sync records are encrypted before upload. Google Drive does not receive plaintext note contents or plaintext attachment contents. The Cloud Encryption Password protects encrypted Drive data and is separate from the Lock Password. If the Cloud Encryption Password is forgotten, existing Drive backups and sync records cannot be restored by Lumo Notes.
 
 The Google OAuth client ID is configured through local environment/config, for example:
 
