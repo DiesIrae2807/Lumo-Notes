@@ -5,6 +5,8 @@ import com.lumonotes.app.data.local.FolderDao
 import com.lumonotes.app.data.local.TagDao
 import com.lumonotes.app.data.local.toDomain
 import com.lumonotes.app.data.local.toEntity
+import com.lumonotes.app.data.sync.LocalChangeTracker
+import com.lumonotes.app.data.sync.NoOpLocalChangeTracker
 import com.lumonotes.app.domain.Folder
 import com.lumonotes.app.domain.Note
 import com.lumonotes.app.domain.Tag
@@ -21,6 +23,8 @@ class NoteRepository(
     private val noteDao: NoteDao,
     private val folderDao: FolderDao,
     private val tagDao: TagDao,
+    private val changeTracker: LocalChangeTracker = NoOpLocalChangeTracker,
+    private val transaction: MutationTransaction = ImmediateMutationTransaction,
 ) {
     fun observeActiveNotes(): Flow<List<Note>> =
         noteDao.observeActiveNotes().map { notes -> notes.map { it.toDomain() } }
@@ -47,10 +51,13 @@ class NoteRepository(
         tagDao.observeTags().map { tags -> tags.map { it.toDomain() } }
 
     suspend fun createNote(): Note {
-        ensureDefaultFolder()
-        val note = createDefaultNote()
-        noteDao.upsert(note.toEntity())
-        return note
+        return transaction.run {
+            ensureDefaultFolder()
+            val note = createDefaultNote()
+            noteDao.upsert(note.toEntity())
+            changeTracker.trackNote(note)
+            note
+        }
     }
 
     suspend fun createFolder(name: String): Folder {
@@ -63,7 +70,10 @@ class NoteRepository(
             createdAt = now,
             updatedAt = now,
         )
-        folderDao.upsert(folder.toEntity())
+        transaction.run {
+            folderDao.upsert(folder.toEntity())
+            changeTracker.trackFolder(folder)
+        }
         return folder
     }
 
@@ -71,37 +81,52 @@ class NoteRepository(
         val cleanName = name.trim().ifEmpty { "tag" }
         val now = contractNow()
         val tag = Tag(id = tagIdFor(cleanName), name = cleanName, createdAt = now, updatedAt = now)
-        tagDao.upsert(tag.toEntity())
+        transaction.run {
+            tagDao.upsert(tag.toEntity())
+            changeTracker.trackTag(tag)
+        }
         return tag
     }
 
     suspend fun saveText(note: Note, title: String, content: String) {
         val cleanTitle = title.trim().ifEmpty { "Untitled Note" }
-        noteDao.updateText(
-            id = note.id,
-            title = cleanTitle,
-            content = content,
-            preview = plainTextPreview(content),
-            updatedAt = contractNow(),
-        )
+        transaction.run {
+            val changed = noteDao.updateText(
+                id = note.id,
+                title = cleanTitle,
+                content = content,
+                preview = plainTextPreview(content),
+                updatedAt = contractNow(),
+            )
+            if (changed > 0) trackCurrentNote(note.id)
+        }
     }
 
     suspend fun softDelete(id: String) {
-        noteDao.softDelete(id = id, updatedAt = contractNow())
+        transaction.run {
+            if (noteDao.softDelete(id = id, updatedAt = contractNow()) > 0) trackCurrentNote(id)
+        }
     }
 
     suspend fun restore(id: String) {
-        noteDao.restore(id = id, updatedAt = contractNow())
+        transaction.run {
+            if (noteDao.restore(id = id, updatedAt = contractNow()) > 0) trackCurrentNote(id)
+        }
     }
 
     suspend fun assignFolder(noteId: String, folderId: String) {
         val folder = folderDao.getFolder(folderId)?.toDomain() ?: createDefaultFolder()
-        noteDao.updateFolder(
-            id = noteId,
-            folderId = folder.id,
-            folderName = folder.name,
-            updatedAt = contractNow(),
-        )
+        transaction.run {
+            if (noteDao.updateFolder(
+                    id = noteId,
+                    folderId = folder.id,
+                    folderName = folder.name,
+                    updatedAt = contractNow(),
+                ) > 0
+            ) {
+                trackCurrentNote(noteId)
+            }
+        }
     }
 
     suspend fun setTags(noteId: String, tags: List<String>) {
@@ -110,10 +135,17 @@ class NoteRepository(
             .filter { it.isNotEmpty() }
             .distinctBy { it.lowercase() }
         val now = contractNow()
-        cleanTags.forEach { tag ->
-            tagDao.upsert(Tag(id = tagIdFor(tag), name = tag, createdAt = now, updatedAt = now).toEntity())
+        transaction.run {
+            cleanTags.forEach { tagName ->
+                val tagId = tagIdFor(tagName)
+                if (tagDao.getTag(tagId) == null) {
+                    val tag = Tag(id = tagId, name = tagName, createdAt = now, updatedAt = now)
+                    tagDao.upsert(tag.toEntity())
+                    changeTracker.trackTag(tag)
+                }
+            }
+            if (noteDao.updateTags(id = noteId, tags = cleanTags, updatedAt = now) > 0) trackCurrentNote(noteId)
         }
-        noteDao.updateTags(id = noteId, tags = cleanTags, updatedAt = now)
     }
 
     suspend fun addTag(note: Note, tag: String) {
@@ -130,6 +162,10 @@ class NoteRepository(
         if (folderDao.getFolder("uncategorized") == null) {
             folderDao.upsert(createDefaultFolder().toEntity())
         }
+    }
+
+    private suspend fun trackCurrentNote(id: String) {
+        noteDao.getNote(id)?.toDomain()?.let { changeTracker.trackNote(it) }
     }
 
     private fun tagNeedle(tag: String): String = "\"${tag.replace("\"", "\\\"")}\""

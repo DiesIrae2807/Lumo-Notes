@@ -28,6 +28,9 @@ interface NoteDao {
     @Query("SELECT * FROM notes WHERE id = :id LIMIT 1")
     fun observeNote(id: String): Flow<NoteEntity?>
 
+    @Query("SELECT * FROM notes WHERE id = :id LIMIT 1")
+    suspend fun getNote(id: String): NoteEntity?
+
     @Query(
         """
         SELECT * FROM notes
@@ -70,7 +73,7 @@ interface NoteDao {
             content = :content,
             preview = :preview,
             updated_at = :updatedAt
-        WHERE id = :id
+        WHERE id = :id AND (title != :title OR content != :content OR preview != :preview)
         """,
     )
     suspend fun updateText(
@@ -79,7 +82,7 @@ interface NoteDao {
         content: String,
         preview: String,
         updatedAt: String,
-    )
+    ): Int
 
     @Query(
         """
@@ -87,20 +90,20 @@ interface NoteDao {
         SET folder_id = :folderId,
             folder_name = :folderName,
             updated_at = :updatedAt
-        WHERE id = :id
+        WHERE id = :id AND (folder_id != :folderId OR folder_name != :folderName)
         """,
     )
-    suspend fun updateFolder(id: String, folderId: String, folderName: String, updatedAt: String)
+    suspend fun updateFolder(id: String, folderId: String, folderName: String, updatedAt: String): Int
 
     @Query(
         """
         UPDATE notes
         SET tags = :tags,
             updated_at = :updatedAt
-        WHERE id = :id
+        WHERE id = :id AND tags != :tags
         """,
     )
-    suspend fun updateTags(id: String, tags: List<String>, updatedAt: String)
+    suspend fun updateTags(id: String, tags: List<String>, updatedAt: String): Int
 
     @Query(
         """
@@ -108,18 +111,18 @@ interface NoteDao {
         SET is_deleted = 1,
             is_pinned = 0,
             updated_at = :updatedAt
-        WHERE id = :id
+        WHERE id = :id AND is_deleted = 0
         """,
     )
-    suspend fun softDelete(id: String, updatedAt: String)
+    suspend fun softDelete(id: String, updatedAt: String): Int
 
     @Query(
         """
         UPDATE notes
         SET is_deleted = 0,
             updated_at = :updatedAt
-        WHERE id = :id
+        WHERE id = :id AND is_deleted = 1
         """,
     )
-    suspend fun restore(id: String, updatedAt: String)
+    suspend fun restore(id: String, updatedAt: String): Int
 }

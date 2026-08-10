@@ -11,7 +11,7 @@ Lumo currently has two related but different serialized formats:
 
 The backup format and sync format are therefore **not the same format**. The desktop sync implementation reuses backup serialization for several change payloads, but robust cross-device sync also depends on the sync manifest, per-change metadata, device IDs, seen-change tracking, conflict records, and encrypted per-change files.
 
-Android currently implements local data, `LumoBackup` serialization, `SyncChangeRecord` and sync-manifest serialization, and the encrypted package wrapper. Android does not yet implement Google Drive appData storage, device identity persistence, cursors, live sync, or conflict tracking.
+Android currently implements local data, `LumoBackup` serialization, `SyncChangeRecord` and sync-manifest serialization, the encrypted package wrapper, persistent device identity, persistent singleton sync status, bounded seen-change tracking, uploaded-change tracking, deduplicated pending local entity states, and local note-conflict storage. Android does not yet implement Google Drive appData storage, OAuth, live sync, remote change application, or conflict-resolution UI.
 
 ## Storage Overview
 
@@ -585,6 +585,8 @@ Remote incoming changes:
 
 - The app loads the manifest, filters entries where `entry.deviceId !== localDeviceId` and `changeId` is not in `sync.googleDriveSeenChangeIds`, downloads/decrypts each file, applies it, and records the change ID as seen.
 - After a run, `sync.googleDriveLastSyncAt` is set to the run completion time, not the max remote `createdAt`.
+
+Android's pre-Drive sync foundation uses local Room tables for seen change IDs, uploaded change IDs, one coalesced pending state per entity, and note conflicts. This is Android-local bookkeeping and is not part of the serialized sync payload. Unlike desktop's current `lastSyncAt` scan, Android mutations update the pending entity state transactionally with the local Room write; an unchanged state fingerprint does not create another pending row. The future Drive engine must still emit the desktop-compatible `SyncChangeRecord` and manifest formats documented above. Android does not store a manifest revision because the implemented version 1 desktop manifest has no revision or cursor.
 
 ## Proposed Future Sync Format
 

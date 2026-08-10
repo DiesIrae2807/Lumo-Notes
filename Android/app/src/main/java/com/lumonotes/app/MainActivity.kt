@@ -6,7 +6,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import com.lumonotes.app.data.NoteRepository
+import com.lumonotes.app.data.RoomMutationTransaction
 import com.lumonotes.app.data.local.LumoDatabase
+import com.lumonotes.app.data.sync.RoomLocalChangeTracker
 import com.lumonotes.app.ui.navigation.LumoNavHost
 import com.lumonotes.app.ui.theme.LumoTheme
 
@@ -17,6 +19,8 @@ class MainActivity : ComponentActivity() {
             noteDao = database.noteDao(),
             folderDao = database.folderDao(),
             tagDao = database.tagDao(),
+            changeTracker = RoomLocalChangeTracker(database.syncStateDao()),
+            transaction = RoomMutationTransaction(database),
         )
     }
 

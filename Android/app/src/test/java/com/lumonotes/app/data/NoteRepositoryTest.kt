@@ -7,6 +7,10 @@ import com.lumonotes.app.data.local.NoteEntity
 import com.lumonotes.app.data.local.TagDao
 import com.lumonotes.app.data.local.TagEntity
 import com.lumonotes.app.domain.createDefaultNote
+import com.lumonotes.app.data.sync.LocalChangeTracker
+import com.lumonotes.app.domain.Folder
+import com.lumonotes.app.domain.Note
+import com.lumonotes.app.domain.Tag
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
@@ -91,6 +95,27 @@ class NoteRepositoryTest {
         assertEquals("Changed", saved.title)
         assertEquals("Body", saved.content)
     }
+
+    @Test
+    fun unchangedAutosaveDoesNotAdvanceTimestampOrTrackAnotherChange() = runTest {
+        val tracker = CountingChangeTracker()
+        val trackedRepository = NoteRepository(noteDao, folderDao, tagDao, changeTracker = tracker)
+        val note = trackedRepository.createNote()
+        val callsAfterCreate = tracker.notes.size
+
+        trackedRepository.saveText(note, note.title, note.content)
+
+        val unchanged = trackedRepository.observeNote(note.id).first()!!
+        assertEquals(note.updatedAt, unchanged.updatedAt)
+        assertEquals(callsAfterCreate, tracker.notes.size)
+    }
+}
+
+private class CountingChangeTracker : LocalChangeTracker {
+    val notes = mutableListOf<Note>()
+    override suspend fun trackNote(note: Note): Boolean = notes.add(note)
+    override suspend fun trackFolder(folder: Folder) = true
+    override suspend fun trackTag(tag: Tag) = true
 }
 
 private class FakeNoteDao : NoteDao {
@@ -104,6 +129,8 @@ private class FakeNoteDao : NoteDao {
 
     override fun observeNote(id: String): Flow<NoteEntity?> =
         notes.map { list -> list.firstOrNull { it.id == id } }
+
+    override suspend fun getNote(id: String): NoteEntity? = notes.value.firstOrNull { it.id == id }
 
     override fun searchActiveNotes(query: String): Flow<List<NoteEntity>> =
         notes.map { list ->
@@ -135,34 +162,47 @@ private class FakeNoteDao : NoteDao {
         notes.value = notes.value.filterNot { it.id == note.id } + note
     }
 
-    override suspend fun updateText(id: String, title: String, content: String, preview: String, updatedAt: String) {
+    override suspend fun updateText(id: String, title: String, content: String, preview: String, updatedAt: String): Int {
+        val existing = notes.value.firstOrNull { it.id == id } ?: return 0
+        if (existing.title == title && existing.content == content && existing.preview == preview) return 0
         notes.value = notes.value.map {
             if (it.id == id) it.copy(title = title, content = content, preview = preview, updatedAt = updatedAt) else it
         }
+        return 1
     }
 
-    override suspend fun updateFolder(id: String, folderId: String, folderName: String, updatedAt: String) {
+    override suspend fun updateFolder(id: String, folderId: String, folderName: String, updatedAt: String): Int {
+        val existing = notes.value.firstOrNull { it.id == id } ?: return 0
+        if (existing.folderId == folderId && existing.folderName == folderName) return 0
         notes.value = notes.value.map {
             if (it.id == id) it.copy(folderId = folderId, folderName = folderName, updatedAt = updatedAt) else it
         }
+        return 1
     }
 
-    override suspend fun updateTags(id: String, tags: List<String>, updatedAt: String) {
+    override suspend fun updateTags(id: String, tags: List<String>, updatedAt: String): Int {
+        val existing = notes.value.firstOrNull { it.id == id } ?: return 0
+        if (existing.tags == tags) return 0
         notes.value = notes.value.map {
             if (it.id == id) it.copy(tags = tags, updatedAt = updatedAt) else it
         }
+        return 1
     }
 
-    override suspend fun softDelete(id: String, updatedAt: String) {
+    override suspend fun softDelete(id: String, updatedAt: String): Int {
+        val existing = notes.value.firstOrNull { it.id == id && !it.isDeleted } ?: return 0
         notes.value = notes.value.map {
             if (it.id == id) it.copy(isDeleted = true, isPinned = false, updatedAt = updatedAt) else it
         }
+        return 1
     }
 
-    override suspend fun restore(id: String, updatedAt: String) {
+    override suspend fun restore(id: String, updatedAt: String): Int {
+        val existing = notes.value.firstOrNull { it.id == id && it.isDeleted } ?: return 0
         notes.value = notes.value.map {
             if (it.id == id) it.copy(isDeleted = false, updatedAt = updatedAt) else it
         }
+        return 1
     }
 }
 
